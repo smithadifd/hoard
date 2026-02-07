@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { syncLibrary } from '@/lib/sync/library';
 import { syncWishlist } from '@/lib/sync/wishlist';
 import { syncPrices } from '@/lib/sync/prices';
+import { syncHltb } from '@/lib/sync/hltb';
 import { getRecentSyncLogs } from '@/lib/db/queries';
 
 /**
@@ -61,10 +62,7 @@ export async function POST(request: NextRequest) {
       case 'prices':
         return streamSync(syncPrices, 'Price');
       case 'hltb':
-        // Phase 3
-        return NextResponse.json({
-          data: { message: 'HLTB backfill not yet implemented (Phase 3)' },
-        });
+        return streamSync(syncHltb, 'HLTB');
       default:
         return NextResponse.json(
           { error: `Unknown sync type: ${type}` },

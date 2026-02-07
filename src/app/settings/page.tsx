@@ -1,16 +1,20 @@
-import { getAllSettings } from '@/lib/db/queries';
+import { getAllSettings, getScoringConfig } from '@/lib/db/queries';
 import { SettingsForm } from '@/components/settings/SettingsForm';
+import { ScoringConfig } from '@/components/settings/ScoringConfig';
 
 /**
- * Settings Page - Configure API keys and trigger syncs.
- * Server Component loads current settings, passes to client form.
+ * Settings Page - Configure API keys, scoring preferences, and trigger syncs.
+ * Server Component loads current settings, passes to client forms.
  */
 export default function SettingsPage() {
   let initialSettings: Record<string, string> = {};
+  let scoringConfig = getScoringConfig();
+
   try {
     initialSettings = getAllSettings();
+    scoringConfig = getScoringConfig();
   } catch {
-    // DB not initialized yet — render with empty settings
+    // DB not initialized yet — render with defaults
   }
 
   return (
@@ -24,7 +28,11 @@ export default function SettingsPage() {
 
       <SettingsForm initialSettings={initialSettings} />
 
-      {/* TODO Phase 3: Scoring weights configuration */}
+      <ScoringConfig
+        initialWeights={scoringConfig.weights}
+        initialThresholds={scoringConfig.thresholds}
+      />
+
       {/* TODO Phase 5: Alert schedule configuration */}
     </div>
   );

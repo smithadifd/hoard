@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign } from 'lucide-react';
+import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock } from 'lucide-react';
 
 interface SettingsFormProps {
   initialSettings: Record<string, string>;
@@ -75,6 +75,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     library: 'idle',
     wishlist: 'idle',
     prices: 'idle',
+    hltb: 'idle',
   });
   const [syncMessage, setSyncMessage] = useState<Record<string, string>>({});
 
@@ -256,6 +257,17 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               body: JSON.stringify({ type: 'prices' }),
             })}
             disabled={!hasItadKey}
+          />
+          <SyncButton
+            label="Sync HLTB"
+            icon={<Clock className="h-4 w-4" />}
+            status={syncStatus.hltb}
+            message={syncMessage.hltb}
+            onClick={() => handleStreamSync('hltb', '/api/sync', {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'hltb' }),
+            })}
+            disabled={!hasSteamKeys}
           />
         </div>
         {!hasItadKey && hasSteamKeys && (

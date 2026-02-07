@@ -5,7 +5,7 @@
  * Pure functions that use the Drizzle ORM query builder.
  */
 
-import { eq, and, like, sql, desc, asc, inArray } from 'drizzle-orm';
+import { eq, and, or, like, sql, desc, asc, inArray, isNull, lt } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { getDb } from './index';
 import {
@@ -19,6 +19,8 @@ import {
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore } from '@/lib/scoring/engine';
+import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
+import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 
 // ============================================
 // Settings
@@ -50,6 +52,47 @@ export function getAllSettings(): Record<string, string> {
     result[row.key] = row.value;
   }
   return result;
+}
+
+// ============================================
+// Scoring Configuration (cached)
+// ============================================
+
+let scoringConfigCache: {
+  weights: ScoringWeights;
+  thresholds: ScoringThresholds;
+  loadedAt: number;
+} | null = null;
+
+const SCORING_CACHE_TTL_MS = 60_000; // 1 minute
+
+export function getScoringConfig(): { weights: ScoringWeights; thresholds: ScoringThresholds } {
+  const now = Date.now();
+  if (scoringConfigCache && (now - scoringConfigCache.loadedAt) < SCORING_CACHE_TTL_MS) {
+    return scoringConfigCache;
+  }
+
+  let weights: ScoringWeights = DEFAULT_WEIGHTS;
+  let thresholds: ScoringThresholds = DEFAULT_THRESHOLDS;
+
+  try {
+    const weightsJson = getSetting('scoring_weights');
+    if (weightsJson) {
+      weights = { ...DEFAULT_WEIGHTS, ...JSON.parse(weightsJson) };
+    }
+    const thresholdsJson = getSetting('scoring_thresholds');
+    if (thresholdsJson) {
+      const parsed = JSON.parse(thresholdsJson);
+      thresholds = {
+        maxDollarsPerHour: { ...DEFAULT_THRESHOLDS.maxDollarsPerHour, ...parsed.maxDollarsPerHour },
+      };
+    }
+  } catch {
+    // Malformed JSON — use defaults
+  }
+
+  scoringConfigCache = { weights, thresholds, loadedAt: now };
+  return { weights, thresholds };
 }
 
 // ============================================
@@ -429,6 +472,7 @@ export function getEnrichedGames(
       if (snapshot.dealScore !== null) {
         base.dealScore = snapshot.dealScore;
       } else if (snapshot.priceCurrent > 0) {
+        const { weights, thresholds } = getScoringConfig();
         const score = calculateDealScore({
           currentPrice: snapshot.priceCurrent,
           regularPrice: snapshot.priceRegular,
@@ -436,7 +480,7 @@ export function getEnrichedGames(
           reviewPercent: r.reviewScore,
           hltbMainHours: r.hltbMain,
           personalInterest: r.personalInterest ?? 3,
-        });
+        }, weights, thresholds);
         base.dealScore = score.overall;
         base.dealRating = score.rating;
         base.dealSummary = score.summary;
@@ -560,6 +604,7 @@ export function getEnrichedGameById(gameId: number): EnrichedGame | null {
     game.storeUrl = snapshot.url ?? undefined;
 
     if (snapshot.priceCurrent > 0) {
+      const { weights, thresholds } = getScoringConfig();
       const score = calculateDealScore({
         currentPrice: snapshot.priceCurrent,
         regularPrice: snapshot.priceRegular,
@@ -567,7 +612,7 @@ export function getEnrichedGameById(gameId: number): EnrichedGame | null {
         reviewPercent: row.reviewScore,
         hltbMainHours: row.hltbMain,
         personalInterest: row.personalInterest ?? 3,
-      });
+      }, weights, thresholds);
       game.dealScore = score.overall;
       game.dealRating = score.rating;
       game.dealSummary = score.summary;
@@ -718,6 +763,70 @@ export function bulkUpdateGameItadIds(updates: Array<{ steamAppId: number; itadG
       .where(eq(games.steamAppId, steamAppId))
       .run();
   }
+}
+
+// ============================================
+// HLTB Sync
+// ============================================
+
+export function getGamesForHltbSync(): Array<{ id: number; title: string }> {
+  const db = getDb();
+  const staleThreshold = new Date();
+  staleThreshold.setDate(staleThreshold.getDate() - 90); // 90 days
+
+  return db
+    .select({
+      id: games.id,
+      title: games.title,
+    })
+    .from(games)
+    .where(
+      or(
+        isNull(games.hltbLastUpdated),
+        lt(games.hltbLastUpdated, staleThreshold.toISOString())
+      )
+    )
+    .orderBy(desc(games.reviewCount))
+    .all();
+}
+
+export function updateGameHltbData(
+  gameId: number,
+  data: {
+    hltbId?: number;
+    hltbMain?: number;
+    hltbMainExtra?: number;
+    hltbCompletionist?: number;
+  }
+): void {
+  const db = getDb();
+  db.update(games)
+    .set({
+      hltbId: data.hltbId,
+      hltbMain: data.hltbMain,
+      hltbMainExtra: data.hltbMainExtra,
+      hltbCompletionist: data.hltbCompletionist,
+      hltbLastUpdated: new Date().toISOString(),
+    })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+export function getHltbCoverage(): { withHltb: number; total: number } {
+  const db = getDb();
+  const totalRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(games)
+    .get();
+  const hltbRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(games)
+    .where(sql`${games.hltbMain} > 0`)
+    .get();
+  return {
+    withHltb: hltbRow?.count ?? 0,
+    total: totalRow?.count ?? 0,
+  };
 }
 
 export function insertPriceSnapshot(data: {

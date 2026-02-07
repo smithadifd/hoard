@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, SlidersHorizontal, Shuffle, X } from 'lucide-react';
+import { Search, SlidersHorizontal, Shuffle, X, ArrowUpNarrowWide, ArrowDownNarrowWide } from 'lucide-react';
 import type { GameFilters as GameFiltersType } from '@/types';
 
 interface GameFiltersProps {
@@ -132,19 +132,32 @@ export function GameFilters({
           {/* Sort */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Sort By</label>
-            <select
-              value={filters.sortBy || 'title'}
-              onChange={(e) => updateFilter('sortBy', e.target.value as GameFiltersType['sortBy'])}
-              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
-            >
-              <option value="title">Title</option>
-              <option value="dealScore">Deal Score</option>
-              <option value="price">Price</option>
-              <option value="review">Review Score</option>
-              <option value="hltbMain">Duration</option>
-              <option value="playtime">Playtime</option>
-              <option value="releaseDate">Release Date</option>
-            </select>
+            <div className="flex gap-1">
+              <select
+                value={filters.sortBy || 'title'}
+                onChange={(e) => updateFilter('sortBy', e.target.value as GameFiltersType['sortBy'])}
+                className="min-w-0 flex-1 px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+              >
+                <option value="title">Title</option>
+                <option value="dealScore">Deal Score</option>
+                <option value="price">Price</option>
+                <option value="review">Review Score</option>
+                <option value="hltbMain">Duration</option>
+                <option value="playtime">Playtime</option>
+                <option value="releaseDate">Release Date</option>
+              </select>
+              <button
+                onClick={() => updateFilter('sortOrder', filters.sortOrder === 'desc' ? 'asc' : 'desc')}
+                className="shrink-0 px-2 py-1.5 rounded-md border border-input bg-background text-muted-foreground hover:text-foreground transition-colors"
+                title={filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'}
+              >
+                {filters.sortOrder === 'desc' ? (
+                  <ArrowDownNarrowWide className="h-4 w-4" />
+                ) : (
+                  <ArrowUpNarrowWide className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
