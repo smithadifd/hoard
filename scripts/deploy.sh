@@ -18,7 +18,7 @@ set -euo pipefail
 REMOTE="synology"
 REMOTE_PATH="/volume3/docker/hoard"
 REMOTE_DOCKER_PATH="export PATH=/usr/local/bin:/usr/syno/bin:\$PATH"
-REPO_URL="https://github.com/smithadifd/hoard.git"
+REPO_URL="git@github.com:smithadifd/hoard.git"
 COMPOSE_FILE="docker-compose.prod.yml"
 APP_PORT=3001
 
