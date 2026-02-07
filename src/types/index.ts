@@ -65,6 +65,7 @@ export interface GameFilters {
   view?: 'library' | 'wishlist' | 'watchlist';
   owned?: boolean;
   played?: boolean; // Has any playtime
+  playtimeStatus?: 'unplayed' | 'underplayed'; // unplayed=0min, underplayed=1-60min
   maxHours?: number; // Max HLTB main hours
   minHours?: number;
   genres?: string[];

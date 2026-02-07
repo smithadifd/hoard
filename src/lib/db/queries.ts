@@ -299,16 +299,21 @@ export function getEnrichedGames(
     conditions.push(like(games.title, `%${filters.search}%`));
   }
 
-  if (filters.coop !== undefined) {
-    conditions.push(eq(games.isCoop, filters.coop));
+  if (filters.coop === true) {
+    conditions.push(sql`${games.isCoop} = 1`);
+  } else if (filters.coop === false) {
+    conditions.push(sql`(${games.isCoop} IS NULL OR ${games.isCoop} = 0)`);
   }
 
-  if (filters.multiplayer !== undefined) {
-    conditions.push(eq(games.isMultiplayer, filters.multiplayer));
+  if (filters.multiplayer === true) {
+    conditions.push(sql`${games.isMultiplayer} = 1`);
+  } else if (filters.multiplayer === false) {
+    conditions.push(sql`(${games.isMultiplayer} IS NULL OR ${games.isMultiplayer} = 0)`);
   }
 
   if (filters.minReview !== undefined) {
-    conditions.push(sql`${games.reviewScore} >= ${filters.minReview}`);
+    // Include games with no review data (NULL) — don't penalize for missing metadata
+    conditions.push(sql`(${games.reviewScore} IS NULL OR ${games.reviewScore} >= ${filters.minReview})`);
   }
 
   if (filters.maxHours !== undefined) {
@@ -316,13 +321,29 @@ export function getEnrichedGames(
   }
 
   if (filters.minHours !== undefined) {
-    conditions.push(sql`${games.hltbMain} >= ${filters.minHours}`);
+    conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} >= ${filters.minHours}`);
   }
 
   if (filters.played === true) {
     conditions.push(sql`${userGames.playtimeMinutes} > 0`);
   } else if (filters.played === false) {
     conditions.push(sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`);
+  }
+
+  if (filters.playtimeStatus === 'unplayed') {
+    conditions.push(sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`);
+  } else if (filters.playtimeStatus === 'underplayed') {
+    conditions.push(sql`${userGames.playtimeMinutes} > 0 AND ${userGames.playtimeMinutes} < 60`);
+  }
+
+  if (filters.genres && filters.genres.length > 0) {
+    conditions.push(
+      sql`${games.id} IN (
+        SELECT gt.game_id FROM game_tags gt
+        INNER JOIN tags t ON gt.tag_id = t.id
+        WHERE t.type = 'genre' AND t.name IN (${sql.join(filters.genres.map(g => sql`${g}`), sql`, `)})
+      )`
+    );
   }
 
   if (filters.onSale === true) {
@@ -971,4 +992,47 @@ export function updateUserGame(
     .run();
 
   return result.changes > 0;
+}
+
+// ============================================
+// Backlog / Genre Queries
+// ============================================
+
+export function getAllGenres(): string[] {
+  const db = getDb();
+  const rows = db
+    .select({ name: tags.name })
+    .from(tags)
+    .where(eq(tags.type, 'genre'))
+    .orderBy(asc(tags.name))
+    .all();
+  return rows.map((r) => r.name);
+}
+
+export function getBacklogStats(): { unplayedCount: number; totalOwned: number } {
+  const db = getDb();
+  const userId = 'default';
+
+  const totalRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGames)
+    .where(and(eq(userGames.userId, userId), eq(userGames.isOwned, true)))
+    .get();
+
+  const unplayedRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGames)
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`
+      )
+    )
+    .get();
+
+  return {
+    unplayedCount: unplayedRow?.count ?? 0,
+    totalOwned: totalRow?.count ?? 0,
+  };
 }

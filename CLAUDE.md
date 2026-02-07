@@ -219,11 +219,11 @@ npm run lint
 - [ ] Configurable value scoring engine
 - [ ] Deal score display on game cards and detail page
 
-### Phase 4: Backlog Recommender
-- [ ] Filter by duration, genre, tags, co-op
-- [ ] "Pick for me" random selection with active filters
-- [ ] "Date night" preset (co-op + short duration)
-- [ ] Unplayed/underplayed game highlighting
+### Phase 4: Backlog Recommender ← COMPLETE
+- [x] Filter by duration, genre, tags, co-op
+- [x] "Pick for me" random selection with active filters
+- [x] "Date night" preset (co-op + short duration)
+- [x] Unplayed/underplayed game highlighting
 
 ### Phase 5: Alerts & Discord
 - [ ] Watchlist management (flag games, set thresholds)

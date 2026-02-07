@@ -42,6 +42,18 @@ export function GameCard({ game }: GameCardProps) {
             <DealIndicator rating={game.dealRating} score={game.dealScore} />
           </div>
         )}
+
+        {/* Playtime Status Badge */}
+        {game.isOwned && game.playtimeMinutes === 0 && (
+          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/80 text-white backdrop-blur-sm">
+            Unplayed
+          </span>
+        )}
+        {game.isOwned && game.playtimeMinutes > 0 && game.playtimeMinutes < 60 && (
+          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/80 text-white backdrop-blur-sm">
+            &lt;1h played
+          </span>
+        )}
       </div>
 
       {/* Info */}
