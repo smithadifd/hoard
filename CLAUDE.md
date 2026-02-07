@@ -195,29 +195,29 @@ npm run lint
 
 ## Phased Roadmap
 
-### Phase 1: Foundation + Steam Integration ← CURRENT
+### Phase 1: Foundation + Steam Integration ← COMPLETE
 - [x] Project scaffolding, Docker, database schema
-- [ ] Steam API authentication (API key based)
-- [ ] Import library with playtime
-- [ ] Import wishlist
-- [ ] Basic game list/grid view with search and sort
-- [ ] Game detail page with Steam data + reviews
-- [ ] Settings page for API key configuration
+- [x] Steam API authentication (API key based)
+- [x] Import library with playtime
+- [x] Import wishlist
+- [x] Basic game list/grid view with search and sort
+- [x] Game detail page with Steam data + reviews
+- [x] Settings page for API key configuration
 
-### Phase 2: Price Intelligence
-- [ ] ITAD integration for current prices across stores
-- [ ] Historical low data from ITAD
-- [ ] Deal quality indicator (current vs. ATL)
-- [ ] loaded.com/Eneba link-out per game
-- [ ] Start snapshotting prices on schedule
-- [ ] Price comparison on game detail page
+### Phase 2: Price Intelligence ← COMPLETE
+- [x] ITAD integration for current prices across stores
+- [x] Historical low data from ITAD
+- [x] Deal quality indicator (current vs. ATL)
+- [x] loaded.com/Eneba link-out per game
+- [x] Start snapshotting prices on schedule
+- [x] Price comparison on game detail page
 
-### Phase 3: Duration & Value Scoring
-- [ ] HowLongToBeat integration with caching
-- [ ] HLTB backfill for existing library
-- [ ] $/hour calculations
-- [ ] Configurable value scoring engine
-- [ ] Deal score display on game cards and detail page
+### Phase 3: Duration & Value Scoring ← COMPLETE
+- [x] HowLongToBeat integration with caching
+- [x] HLTB backfill for existing library
+- [x] $/hour calculations
+- [x] Configurable value scoring engine
+- [x] Deal score display on game cards and detail page
 
 ### Phase 4: Backlog Recommender ← COMPLETE
 - [x] Filter by duration, genre, tags, co-op
@@ -225,11 +225,13 @@ npm run lint
 - [x] "Date night" preset (co-op + short duration)
 - [x] Unplayed/underplayed game highlighting
 
-### Phase 5: Alerts & Discord
-- [ ] Watchlist management (flag games, set thresholds)
-- [ ] Scheduled price checking via cron
-- [ ] Discord webhook notifications
-- [ ] Alert history and management
+### Phase 5: Alerts & Discord ← COMPLETE
+- [x] Watchlist management (flag games, set thresholds)
+- [x] Scheduled price checking via cron (chained after price sync)
+- [x] Discord webhook notifications
+- [x] Alert history and management
+- [x] Dedicated /watchlist page with table view
+- [x] Settings: alert throttle config + test webhook button
 
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
@@ -251,9 +253,10 @@ See `.env.example` for the full list. Key variables:
 | `STEAM_API_KEY` | Yes | Steam Web API key |
 | `STEAM_USER_ID` | Yes | Your Steam64 ID |
 | `ITAD_API_KEY` | Phase 2 | IsThereAnyDeal API key |
-| `DISCORD_WEBHOOK_URL` | Phase 5 | Discord channel webhook |
+| `DISCORD_WEBHOOK_URL` | No | Discord channel webhook for alerts |
 | `CRON_PRICE_CHECK` | No | Price check schedule (default: every 12h) |
 | `CRON_LIBRARY_SYNC` | No | Library sync schedule (default: daily 3am) |
+| `ALERT_THROTTLE_HOURS` | No | Min hours between alerts per game (default: 24) |
 
 ---
 

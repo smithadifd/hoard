@@ -26,6 +26,9 @@ export interface AppConfig {
   cronPriceCheck: string;
   cronLibrarySync: string;
   cronHltbSync: string;
+
+  // Alerts
+  alertThrottleHours: number;
 }
 
 let config: AppConfig | null = null;
@@ -42,6 +45,7 @@ export function getConfig(): AppConfig {
       cronPriceCheck: process.env.CRON_PRICE_CHECK || '0 */12 * * *',
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
       cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0',
+      alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),
     };
   }
   return config;
@@ -81,5 +85,8 @@ export function getEffectiveConfig(): AppConfig {
     steamUserId: dbSettings['steam_user_id'] || envConfig.steamUserId,
     itadApiKey: dbSettings['itad_api_key'] || envConfig.itadApiKey,
     discordWebhookUrl: dbSettings['discord_webhook_url'] || envConfig.discordWebhookUrl,
+    alertThrottleHours: dbSettings['alert_throttle_hours']
+      ? parseInt(dbSettings['alert_throttle_hours'], 10)
+      : envConfig.alertThrottleHours,
   };
 }

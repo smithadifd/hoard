@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  getAllPriceAlertsWithGames,
+  upsertPriceAlert,
+} from '@/lib/db/queries';
 
 /**
  * GET /api/alerts
- * List all price alerts.
+ * List all price alerts with game data.
+ * Optional query: ?active=true to filter active-only.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // TODO Phase 5: Fetch alerts from database
-    return NextResponse.json({ data: [] });
+    const { searchParams } = new URL(request.url);
+    const activeOnly = searchParams.get('active') === 'true';
+
+    let alerts = getAllPriceAlertsWithGames();
+    if (activeOnly) {
+      alerts = alerts.filter((a) => a.isActive);
+    }
+
+    return NextResponse.json({ data: alerts });
   } catch (error) {
     console.error('Failed to fetch alerts:', error);
     return NextResponse.json(
@@ -19,17 +31,28 @@ export async function GET() {
 
 /**
  * POST /api/alerts
- * Create a new price alert.
+ * Create or update a price alert.
+ * Body: { gameId, targetPrice?, notifyOnAllTimeLow?, notifyOnThreshold? }
  */
 export async function POST(request: NextRequest) {
   try {
-    const _body = await request.json();
+    const body = await request.json();
+    const { gameId, targetPrice, notifyOnAllTimeLow, notifyOnThreshold } = body;
 
-    // TODO Phase 5: Create alert in database
+    if (!gameId || typeof gameId !== 'number') {
+      return NextResponse.json(
+        { error: 'gameId is required and must be a number' },
+        { status: 400 }
+      );
+    }
 
-    return NextResponse.json({
-      data: { message: 'Alert creation not yet implemented' },
+    const alertId = upsertPriceAlert(gameId, {
+      targetPrice,
+      notifyOnAllTimeLow,
+      notifyOnThreshold,
     });
+
+    return NextResponse.json({ data: { id: alertId, message: 'Alert saved' } });
   } catch (error) {
     console.error('Failed to create alert:', error);
     return NextResponse.json(
