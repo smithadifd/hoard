@@ -10,6 +10,40 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // shadcn/ui CSS variable colors
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
         // Steam-inspired color palette
         steam: {
           dark: '#1b2838',
@@ -19,11 +53,16 @@ const config: Config = {
           sale: '#4c6b22',
         },
         deal: {
-          great: '#22c55e',   // Green - at/near ATL
-          good: '#84cc16',    // Lime - good discount
-          okay: '#eab308',    // Yellow - moderate
-          poor: '#ef4444',    // Red - bad deal / above avg
+          great: '#22c55e',
+          good: '#84cc16',
+          okay: '#eab308',
+          poor: '#ef4444',
         },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
     },
   },

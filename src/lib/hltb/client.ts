@@ -12,21 +12,22 @@
  */
 
 import type { HLTBResult } from './types';
+import type { HowLongToBeatService as HLTBServiceType } from 'howlongtobeat';
 
 // Lazy-load the howlongtobeat package to handle import failures gracefully
-let HowLongToBeatService: any = null;
+let hltbServiceInstance: HLTBServiceType | null = null;
 
 async function getHLTBService() {
-  if (!HowLongToBeatService) {
+  if (!hltbServiceInstance) {
     try {
-      const module = await import('howlongtobeat');
-      HowLongToBeatService = new module.HowLongToBeatService();
+      const hltbModule = await import('howlongtobeat');
+      hltbServiceInstance = new hltbModule.HowLongToBeatService();
     } catch (error) {
       console.warn('HowLongToBeat package not available:', error);
       return null;
     }
   }
-  return HowLongToBeatService;
+  return hltbServiceInstance;
 }
 
 export class HLTBClient {

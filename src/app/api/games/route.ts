@@ -7,9 +7,9 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get('search');
-    const view = searchParams.get('view'); // library, wishlist, watchlist
-    const sortBy = searchParams.get('sortBy') || 'title';
+    const _search = searchParams.get('search');
+    const _view = searchParams.get('view'); // library, wishlist, watchlist
+    const _sortBy = searchParams.get('sortBy') || 'title';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '24');
 

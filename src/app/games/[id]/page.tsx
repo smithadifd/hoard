@@ -10,15 +10,17 @@
  * - Deal score breakdown
  * - Links to loaded.com, SteamDB, etc.
  */
-export default function GameDetailPage({
+export default async function GameDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
-        <p className="text-lg">Game detail page for ID: {params.id}</p>
+        <p className="text-lg">Game detail page for ID: {id}</p>
         <p className="text-sm mt-1">Coming in Phase 1</p>
       </div>
     </div>

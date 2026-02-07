@@ -23,7 +23,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const _body = await request.json();
 
     // TODO Phase 5: Create alert in database
 

@@ -12,7 +12,7 @@ Self-hosted web application for tracking game deals, managing a Steam library/ba
 
 | Layer | Technology |
 |-------|------------|
-| Framework | Next.js 14 (App Router) / TypeScript |
+| Framework | Next.js 16 (App Router) / TypeScript |
 | Database | SQLite via Drizzle ORM + better-sqlite3 |
 | Styling | Tailwind CSS + shadcn/ui |
 | Price Data | IsThereAnyDeal API v2 |

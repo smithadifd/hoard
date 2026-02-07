@@ -15,9 +15,8 @@ import type {
   ScoringWeights,
   ScoringThresholds,
   DealScore,
-  DEFAULT_WEIGHTS,
-  DEFAULT_THRESHOLDS,
 } from './types';
+import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from './types';
 
 interface ScoringInput {
   currentPrice: number;

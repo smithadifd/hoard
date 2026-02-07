@@ -6,10 +6,11 @@ import { NextResponse } from 'next/server';
  */
 export async function GET(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const gameId = parseInt(params.id);
+    const { id } = await params;
+    const gameId = parseInt(id);
     if (isNaN(gameId)) {
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
@@ -32,15 +33,16 @@ export async function GET(
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const gameId = parseInt(params.id);
+    const { id } = await params;
+    const gameId = parseInt(id);
     if (isNaN(gameId)) {
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
 
-    const body = await request.json();
+    const _body = await request.json();
 
     // TODO: Update userGames record
 

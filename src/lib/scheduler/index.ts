@@ -11,7 +11,7 @@
  */
 
 import cron from 'node-cron';
-import { getConfig } from '../config';
+// TODO: import { getConfig } from '../config'; — will be used for reading cron schedules
 
 type TaskFn = () => Promise<void>;
 
