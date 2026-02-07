@@ -1,12 +1,13 @@
 import Link from 'next/link';
-import { Library, Heart, Eye, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getBacklogStats } from '@/lib/db/queries';
+import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getBacklogStats, getAlertStats } from '@/lib/db/queries';
 
 export default function DashboardPage() {
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
   let hltbCoverage = { withHltb: 0, total: 0 };
   let backlogStats = { unplayedCount: 0, totalOwned: 0 };
+  let alertStats = { activeCount: 0, recentlyTriggered: 0 };
   let lastSyncLabel = 'Never';
 
   try {
@@ -14,6 +15,7 @@ export default function DashboardPage() {
     dealsActive = getDealsCount();
     hltbCoverage = getHltbCoverage();
     backlogStats = getBacklogStats();
+    alertStats = getAlertStats();
     const logs = getRecentSyncLogs(5);
     const lastSync = logs.find((l) => l.status === 'success');
     if (lastSync?.completedAt) {
@@ -54,12 +56,16 @@ export default function DashboardPage() {
           value={stats.wishlistCount > 0 ? stats.wishlistCount.toLocaleString() : '—'}
           subtitle="games tracked"
         />
-        <StatCard
-          icon={<Eye className="h-5 w-5" />}
-          label="Watchlist"
-          value={stats.watchlistCount > 0 ? stats.watchlistCount.toLocaleString() : '—'}
-          subtitle="price alerts active"
-        />
+        <Link href="/watchlist">
+          <StatCard
+            icon={<Bell className="h-5 w-5" />}
+            label="Watchlist"
+            value={alertStats.activeCount > 0 ? alertStats.activeCount.toLocaleString() : stats.watchlistCount > 0 ? stats.watchlistCount.toLocaleString() : '—'}
+            subtitle={alertStats.recentlyTriggered > 0
+              ? `${alertStats.recentlyTriggered} triggered this week`
+              : 'price alerts active'}
+          />
+        </Link>
         <StatCard
           icon={<Gamepad2 className="h-5 w-5" />}
           label="Playtime"
@@ -112,7 +118,7 @@ export default function DashboardPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link
             href="/library"
             className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
@@ -153,6 +159,20 @@ export default function DashboardPage() {
             </div>
             <p className="text-sm text-muted-foreground">
               {backlogStats.unplayedCount} unplayed games to explore
+            </p>
+          </Link>
+          <Link
+            href="/watchlist"
+            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Bell className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
+              <span className="font-medium group-hover:text-steam-blue transition-colors">
+                Manage Watchlist
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {alertStats.activeCount > 0 ? `${alertStats.activeCount} active alerts` : 'Set up price alerts'}
             </p>
           </Link>
         </div>

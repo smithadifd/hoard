@@ -112,7 +112,9 @@ export const priceAlerts = sqliteTable('price_alerts', {
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   lastNotifiedAt: text('last_notified_at'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
-});
+}, (table) => ({
+  userGameIdx: uniqueIndex('alert_user_game_idx').on(table.userId, table.gameId),
+}));
 
 // ===========================================
 // Settings - App configuration (scoring weights, etc.)

@@ -14,6 +14,7 @@ import {
   tags,
   gameTags,
   priceSnapshots,
+  priceAlerts,
   settings,
   syncLog,
 } from './schema';
@@ -991,7 +992,49 @@ export function updateUserGame(
     .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
     .run();
 
-  return result.changes > 0;
+  if (result.changes === 0) return false;
+
+  // Auto-manage price alert when watchlist/threshold changes
+  if (updates.isWatchlisted === false) {
+    // Deactivate alert when unwatchlisted
+    const existing = db
+      .select({ id: priceAlerts.id })
+      .from(priceAlerts)
+      .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
+      .get();
+    if (existing) {
+      db.update(priceAlerts)
+        .set({ isActive: false })
+        .where(eq(priceAlerts.id, existing.id))
+        .run();
+    }
+  } else if (updates.priceThreshold !== undefined) {
+    // Upsert alert with new threshold
+    upsertPriceAlert(gameId, { targetPrice: updates.priceThreshold });
+  } else if (updates.isWatchlisted === true) {
+    // Ensure alert exists when watchlisting (re-activate if deactivated)
+    const existing = db
+      .select({ id: priceAlerts.id })
+      .from(priceAlerts)
+      .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
+      .get();
+    if (existing) {
+      db.update(priceAlerts)
+        .set({ isActive: true })
+        .where(eq(priceAlerts.id, existing.id))
+        .run();
+    } else {
+      // Read current threshold from userGames to seed the alert
+      const ug = db
+        .select({ priceThreshold: userGames.priceThreshold })
+        .from(userGames)
+        .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+        .get();
+      upsertPriceAlert(gameId, { targetPrice: ug?.priceThreshold ?? undefined });
+    }
+  }
+
+  return true;
 }
 
 // ============================================
@@ -1034,5 +1077,335 @@ export function getBacklogStats(): { unplayedCount: number; totalOwned: number }
   return {
     unplayedCount: unplayedRow?.count ?? 0,
     totalOwned: totalRow?.count ?? 0,
+  };
+}
+
+// ============================================
+// Price Alerts
+// ============================================
+
+export interface PriceAlertRow {
+  id: number;
+  gameId: number;
+  targetPrice: number | null;
+  notifyOnAllTimeLow: boolean;
+  notifyOnThreshold: boolean;
+  isActive: boolean;
+  lastNotifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface ActiveAlertRow extends PriceAlertRow {
+  title: string;
+  headerImageUrl: string | null;
+  steamAppId: number;
+  reviewDescription: string | null;
+  hltbMain: number | null;
+  // Latest price snapshot
+  currentPrice: number;
+  regularPrice: number;
+  discountPercent: number;
+  historicalLowPrice: number | null;
+  isHistoricalLow: boolean;
+  store: string;
+  storeUrl: string | null;
+}
+
+export interface AlertWithGame extends PriceAlertRow {
+  title: string;
+  headerImageUrl: string | null;
+  steamAppId: number;
+  currentPrice: number | null;
+  regularPrice: number | null;
+  discountPercent: number | null;
+  historicalLowPrice: number | null;
+}
+
+export function upsertPriceAlert(
+  gameId: number,
+  data: Partial<{
+    targetPrice: number;
+    notifyOnAllTimeLow: boolean;
+    notifyOnThreshold: boolean;
+    isActive: boolean;
+  }>
+): number {
+  const db = getDb();
+  const userId = 'default';
+
+  const result = db
+    .insert(priceAlerts)
+    .values({
+      userId,
+      gameId,
+      targetPrice: data.targetPrice,
+      notifyOnAllTimeLow: data.notifyOnAllTimeLow ?? true,
+      notifyOnThreshold: data.notifyOnThreshold ?? true,
+      isActive: data.isActive ?? true,
+    })
+    .onConflictDoUpdate({
+      target: [priceAlerts.userId, priceAlerts.gameId],
+      set: {
+        ...(data.targetPrice !== undefined && { targetPrice: data.targetPrice }),
+        ...(data.notifyOnAllTimeLow !== undefined && { notifyOnAllTimeLow: data.notifyOnAllTimeLow }),
+        ...(data.notifyOnThreshold !== undefined && { notifyOnThreshold: data.notifyOnThreshold }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+      },
+    })
+    .returning({ id: priceAlerts.id })
+    .get();
+
+  return result.id;
+}
+
+export function getPriceAlertForGame(gameId: number): PriceAlertRow | null {
+  const db = getDb();
+  const userId = 'default';
+
+  const row = db
+    .select({
+      id: priceAlerts.id,
+      gameId: priceAlerts.gameId,
+      targetPrice: priceAlerts.targetPrice,
+      notifyOnAllTimeLow: priceAlerts.notifyOnAllTimeLow,
+      notifyOnThreshold: priceAlerts.notifyOnThreshold,
+      isActive: priceAlerts.isActive,
+      lastNotifiedAt: priceAlerts.lastNotifiedAt,
+      createdAt: priceAlerts.createdAt,
+    })
+    .from(priceAlerts)
+    .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
+    .get();
+
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    gameId: row.gameId,
+    targetPrice: row.targetPrice,
+    notifyOnAllTimeLow: row.notifyOnAllTimeLow ?? true,
+    notifyOnThreshold: row.notifyOnThreshold ?? true,
+    isActive: row.isActive ?? true,
+    lastNotifiedAt: row.lastNotifiedAt,
+    createdAt: row.createdAt,
+  };
+}
+
+export function getActivePriceAlerts(): ActiveAlertRow[] {
+  const db = getDb();
+  const userId = 'default';
+
+  // Raw SQL for the complex join with latest snapshot subquery
+  interface RawAlertRow {
+    alertId: number;
+    gameId: number;
+    targetPrice: number | null;
+    notifyOnAllTimeLow: number;
+    notifyOnThreshold: number;
+    lastNotifiedAt: string | null;
+    createdAt: string;
+    title: string;
+    headerImageUrl: string | null;
+    steamAppId: number;
+    reviewDescription: string | null;
+    hltbMain: number | null;
+    currentPrice: number;
+    regularPrice: number;
+    discountPercent: number;
+    historicalLowPrice: number | null;
+    isHistoricalLow: number;
+    store: string;
+    storeUrl: string | null;
+  }
+
+  const rows = db.all(sql`
+    SELECT
+      pa.id as alertId,
+      pa.game_id as gameId,
+      pa.target_price as targetPrice,
+      pa.notify_on_all_time_low as notifyOnAllTimeLow,
+      pa.notify_on_threshold as notifyOnThreshold,
+      pa.last_notified_at as lastNotifiedAt,
+      pa.created_at as createdAt,
+      g.title,
+      g.header_image_url as headerImageUrl,
+      g.steam_app_id as steamAppId,
+      g.review_description as reviewDescription,
+      g.hltb_main as hltbMain,
+      ps.price_current as currentPrice,
+      ps.price_regular as regularPrice,
+      ps.discount_percent as discountPercent,
+      ps.historical_low_price as historicalLowPrice,
+      ps.is_historical_low as isHistoricalLow,
+      ps.store,
+      ps.url as storeUrl
+    FROM price_alerts pa
+    INNER JOIN games g ON pa.game_id = g.id
+    INNER JOIN user_games ug ON g.id = ug.game_id AND ug.user_id = ${userId}
+    INNER JOIN price_snapshots ps ON g.id = ps.game_id
+      AND ps.snapshot_date = (
+        SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+        WHERE ps2.game_id = g.id
+      )
+    WHERE pa.is_active = 1
+      AND pa.user_id = ${userId}
+      AND ug.is_watchlisted = 1
+  `) as RawAlertRow[];
+
+  return rows.map((r) => ({
+    id: r.alertId,
+    gameId: r.gameId,
+    targetPrice: r.targetPrice,
+    notifyOnAllTimeLow: Boolean(r.notifyOnAllTimeLow),
+    notifyOnThreshold: Boolean(r.notifyOnThreshold),
+    isActive: true as const,
+    lastNotifiedAt: r.lastNotifiedAt,
+    createdAt: r.createdAt,
+    title: r.title,
+    headerImageUrl: r.headerImageUrl,
+    steamAppId: r.steamAppId,
+    reviewDescription: r.reviewDescription,
+    hltbMain: r.hltbMain,
+    currentPrice: r.currentPrice,
+    regularPrice: r.regularPrice,
+    discountPercent: r.discountPercent,
+    historicalLowPrice: r.historicalLowPrice,
+    isHistoricalLow: Boolean(r.isHistoricalLow),
+    store: r.store,
+    storeUrl: r.storeUrl,
+  }));
+}
+
+export function getAllPriceAlertsWithGames(): AlertWithGame[] {
+  const db = getDb();
+  const userId = 'default';
+
+  interface RawRow {
+    id: number;
+    gameId: number;
+    targetPrice: number | null;
+    notifyOnAllTimeLow: number;
+    notifyOnThreshold: number;
+    isActive: number;
+    lastNotifiedAt: string | null;
+    createdAt: string;
+    title: string;
+    headerImageUrl: string | null;
+    steamAppId: number;
+    currentPrice: number | null;
+    regularPrice: number | null;
+    discountPercent: number | null;
+    historicalLowPrice: number | null;
+  }
+
+  const rows = db.all(sql`
+    SELECT
+      pa.id,
+      pa.game_id as gameId,
+      pa.target_price as targetPrice,
+      pa.notify_on_all_time_low as notifyOnAllTimeLow,
+      pa.notify_on_threshold as notifyOnThreshold,
+      pa.is_active as isActive,
+      pa.last_notified_at as lastNotifiedAt,
+      pa.created_at as createdAt,
+      g.title,
+      g.header_image_url as headerImageUrl,
+      g.steam_app_id as steamAppId,
+      ps.price_current as currentPrice,
+      ps.price_regular as regularPrice,
+      ps.discount_percent as discountPercent,
+      ps.historical_low_price as historicalLowPrice
+    FROM price_alerts pa
+    INNER JOIN games g ON pa.game_id = g.id
+    LEFT JOIN price_snapshots ps ON g.id = ps.game_id
+      AND ps.snapshot_date = (
+        SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+        WHERE ps2.game_id = g.id
+      )
+    WHERE pa.user_id = ${userId}
+    ORDER BY pa.is_active DESC, g.title ASC
+  `) as RawRow[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    gameId: r.gameId,
+    targetPrice: r.targetPrice,
+    notifyOnAllTimeLow: Boolean(r.notifyOnAllTimeLow),
+    notifyOnThreshold: Boolean(r.notifyOnThreshold),
+    isActive: Boolean(r.isActive),
+    lastNotifiedAt: r.lastNotifiedAt,
+    createdAt: r.createdAt,
+    title: r.title,
+    headerImageUrl: r.headerImageUrl,
+    steamAppId: r.steamAppId,
+    currentPrice: r.currentPrice,
+    regularPrice: r.regularPrice,
+    discountPercent: r.discountPercent,
+    historicalLowPrice: r.historicalLowPrice,
+  }));
+}
+
+export function updateAlertLastNotified(alertId: number): void {
+  const db = getDb();
+  db.update(priceAlerts)
+    .set({ lastNotifiedAt: new Date().toISOString() })
+    .where(eq(priceAlerts.id, alertId))
+    .run();
+}
+
+export function updatePriceAlert(
+  alertId: number,
+  updates: Partial<{
+    targetPrice: number;
+    notifyOnAllTimeLow: boolean;
+    notifyOnThreshold: boolean;
+    isActive: boolean;
+  }>
+): boolean {
+  const db = getDb();
+  const result = db
+    .update(priceAlerts)
+    .set(updates)
+    .where(eq(priceAlerts.id, alertId))
+    .run();
+  return result.changes > 0;
+}
+
+export function deletePriceAlert(alertId: number): boolean {
+  const db = getDb();
+  const result = db
+    .delete(priceAlerts)
+    .where(eq(priceAlerts.id, alertId))
+    .run();
+  return result.changes > 0;
+}
+
+export function getAlertStats(): { activeCount: number; recentlyTriggered: number } {
+  const db = getDb();
+  const userId = 'default';
+
+  const activeRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(priceAlerts)
+    .where(and(eq(priceAlerts.userId, userId), eq(priceAlerts.isActive, true)))
+    .get();
+
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const triggeredRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(priceAlerts)
+    .where(
+      and(
+        eq(priceAlerts.userId, userId),
+        sql`${priceAlerts.lastNotifiedAt} IS NOT NULL AND ${priceAlerts.lastNotifiedAt} >= ${weekAgo.toISOString()}`
+      )
+    )
+    .get();
+
+  return {
+    activeCount: activeRow?.count ?? 0,
+    recentlyTriggered: triggeredRow?.count ?? 0,
   };
 }

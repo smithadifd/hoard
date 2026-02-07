@@ -1,6 +1,8 @@
-import { getAllSettings, getScoringConfig } from '@/lib/db/queries';
+import { getAllSettings, getScoringConfig, getAlertStats } from '@/lib/db/queries';
+import { getEffectiveConfig } from '@/lib/config';
 import { SettingsForm } from '@/components/settings/SettingsForm';
 import { ScoringConfig } from '@/components/settings/ScoringConfig';
+import { AlertConfig } from '@/components/settings/AlertConfig';
 
 /**
  * Settings Page - Configure API keys, scoring preferences, and trigger syncs.
@@ -9,10 +11,18 @@ import { ScoringConfig } from '@/components/settings/ScoringConfig';
 export default function SettingsPage() {
   let initialSettings: Record<string, string> = {};
   let scoringConfig = getScoringConfig();
+  let alertStats = { activeCount: 0, recentlyTriggered: 0 };
+  let effectiveConfig = { alertThrottleHours: 24, discordWebhookUrl: '' };
 
   try {
     initialSettings = getAllSettings();
     scoringConfig = getScoringConfig();
+    alertStats = getAlertStats();
+    const cfg = getEffectiveConfig();
+    effectiveConfig = {
+      alertThrottleHours: cfg.alertThrottleHours,
+      discordWebhookUrl: cfg.discordWebhookUrl,
+    };
   } catch {
     // DB not initialized yet — render with defaults
   }
@@ -33,7 +43,11 @@ export default function SettingsPage() {
         initialThresholds={scoringConfig.thresholds}
       />
 
-      {/* TODO Phase 5: Alert schedule configuration */}
+      <AlertConfig
+        initialThrottleHours={effectiveConfig.alertThrottleHours}
+        hasWebhookUrl={!!effectiveConfig.discordWebhookUrl}
+        activeAlertCount={alertStats.activeCount}
+      />
     </div>
   );
 }

@@ -142,6 +142,15 @@ export async function syncPrices(onProgress?: ProgressCallback): Promise<SyncRes
     }
 
     completeSyncLog(syncLogId, 'success', processed);
+
+    // Chain alert checking after successful price sync
+    try {
+      const { checkPriceAlerts } = await import('./alerts');
+      await checkPriceAlerts();
+    } catch (alertError) {
+      console.error('[PriceSync] Alert check failed:', alertError);
+    }
+
     return { gamesProcessed: processed, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -42,6 +42,7 @@ export async function PUT(request: NextRequest) {
       'discord_webhook_url',
       'scoring_weights',
       'scoring_thresholds',
+      'alert_throttle_hours',
     ];
 
     for (const [key, value] of Object.entries(entries)) {

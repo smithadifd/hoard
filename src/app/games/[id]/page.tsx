@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink } from 'lucide-react';
-import { getEnrichedGameById } from '@/lib/db/queries';
+import { getEnrichedGameById, getPriceAlertForGame } from '@/lib/db/queries';
 import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
@@ -18,6 +18,8 @@ export default async function GameDetailPage({
 
   const game = getEnrichedGameById(gameId);
   if (!game) notFound();
+
+  const alert = getPriceAlertForGame(gameId);
 
   return (
     <div className="space-y-6">
@@ -223,6 +225,11 @@ export default async function GameDetailPage({
             gameId={game.id}
             interest={game.personalInterest}
             isWatchlisted={game.isWatchlisted}
+            priceThreshold={alert?.targetPrice ?? undefined}
+            notifyOnAllTimeLow={alert?.notifyOnAllTimeLow}
+            notifyOnThreshold={alert?.notifyOnThreshold}
+            currentPrice={game.currentPrice}
+            lastNotifiedAt={alert?.lastNotifiedAt ?? undefined}
           />
 
           {/* External Links */}
