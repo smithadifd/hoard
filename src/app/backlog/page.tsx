@@ -1,32 +1,75 @@
-/**
- * Backlog Page - Find your next game to play.
- *
- * Features:
- * - Filter by duration (HLTB), genre, co-op, etc.
- * - "Pick for me" random selection with filters
- * - "Date night" mode: co-op + short duration
- *
- * Phase 4: Full implementation.
- */
-export default function BacklogPage() {
+import { getEnrichedGames, getAllGenres } from '@/lib/db/queries';
+import { GameGrid } from '@/components/games/GameGrid';
+import { BacklogFilters } from '@/components/backlog/BacklogFilters';
+import { Pagination } from '@/components/ui/Pagination';
+import type { GameFilters } from '@/types';
+
+interface BacklogPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function BacklogPage({ searchParams }: BacklogPageProps) {
+  const params = await searchParams;
+
+  const filters: GameFilters = {
+    view: 'library',
+    search: typeof params.search === 'string' ? params.search : undefined,
+    sortBy: (typeof params.sortBy === 'string' ? params.sortBy : 'title') as GameFilters['sortBy'],
+    sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
+    maxHours: typeof params.maxHours === 'string' ? Number(params.maxHours) : undefined,
+    minHours: typeof params.minHours === 'string' ? Number(params.minHours) : undefined,
+    coop: typeof params.coop === 'string' ? params.coop === 'true' : undefined,
+    onSale: typeof params.onSale === 'string' ? params.onSale === 'true' : undefined,
+    playtimeStatus: typeof params.playtime === 'string'
+      ? (params.playtime as GameFilters['playtimeStatus'])
+      : 'unplayed', // Default to unplayed
+    genres: typeof params.genres === 'string' && params.genres
+      ? params.genres.split(',')
+      : undefined,
+    minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
+  };
+
+  const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
+  const pageSize = 24;
+  const { games, total } = getEnrichedGames(filters, page, pageSize);
+  const availableGenres = getAllGenres();
+
+  const paginationParams: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (key !== 'page' && typeof value === 'string') {
+      paginationParams[key] = value;
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Backlog</h1>
         <p className="text-muted-foreground mt-1">
-          Find your next game — filter by time, genre, and more
+          {total > 0
+            ? `${total} games match your filters`
+            : 'Find your next game to play'}
         </p>
       </div>
 
-      {/* TODO Phase 4: Duration filters (short/medium/long) */}
-      {/* TODO Phase 4: Co-op filter for playing with others */}
-      {/* TODO Phase 4: "Pick for me" random button with active filters */}
-      {/* TODO Phase 4: "Date night" preset (co-op + under 10hrs) */}
+      <BacklogFilters
+        currentFilters={filters}
+        games={games}
+        availableGenres={availableGenres}
+      />
 
-      <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
-        <p className="text-lg">Backlog recommender coming in Phase 4</p>
-        <p className="text-sm mt-1">Sync your library and HLTB data first</p>
-      </div>
+      <GameGrid
+        games={games}
+        emptyMessage="No games match your filters. Try adjusting the filters or sync your library from Settings."
+      />
+
+      <Pagination
+        current={page}
+        total={total}
+        pageSize={pageSize}
+        basePath="/backlog"
+        searchParams={paginationParams}
+      />
     </div>
   );
 }

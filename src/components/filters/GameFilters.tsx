@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Search, SlidersHorizontal, Shuffle, X, ArrowUpNarrowWide, ArrowDownNarrowWide } from 'lucide-react';
 import type { GameFilters as GameFiltersType } from '@/types';
 
@@ -9,26 +9,21 @@ interface GameFiltersProps {
   onFiltersChange: (filters: GameFiltersType) => void;
   onRandomPick?: () => void;
   showRandomPick?: boolean;
+  availableGenres?: string[];
 }
 
-/**
- * GameFilters - Filter and sort controls for game lists.
- *
- * Features:
- * - Text search
- * - Duration range (for backlog browsing)
- * - Genre/tag filters
- * - Co-op filter
- * - Sort options
- * - "Pick for me" random button
- */
 export function GameFilters({
   filters,
   onFiltersChange,
   onRandomPick,
   showRandomPick = false,
+  availableGenres,
 }: GameFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [genreDropdownOpen, setGenreDropdownOpen] = useState(false);
+  const [genreSearch, setGenreSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const genreRef = useRef<HTMLDivElement>(null);
 
   const updateFilter = <K extends keyof GameFiltersType>(
     key: K,
@@ -37,6 +32,40 @@ export function GameFilters({
     onFiltersChange({ ...filters, [key]: value });
   };
 
+  // Close genre dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (genreRef.current && !genreRef.current.contains(e.target as Node)) {
+        setGenreDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleGenre = (genre: string) => {
+    const current = filters.genres || [];
+    const next = current.includes(genre)
+      ? current.filter((g) => g !== genre)
+      : [...current, genre];
+    updateFilter('genres', next.length > 0 ? next : undefined);
+  };
+
+  const filteredGenres = availableGenres?.filter((g) =>
+    g.toLowerCase().includes(genreSearch.toLowerCase())
+  ) ?? [];
+
+  // Count active advanced filters for indicator
+  const advancedFilterCount = [
+    filters.maxHours,
+    filters.minHours,
+    filters.coop !== undefined ? true : undefined,
+    filters.onSale,
+    filters.playtimeStatus,
+    filters.genres?.length ? true : undefined,
+    filters.minReview,
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-3">
       {/* Search + Quick Actions */}
@@ -44,15 +73,19 @@ export function GameFilters({
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
+            ref={searchInputRef}
             type="text"
             placeholder="Search games..."
-            value={filters.search || ''}
+            defaultValue={filters.search || ''}
             onChange={(e) => updateFilter('search', e.target.value)}
             className="w-full pl-10 pr-3 py-2 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {filters.search && (
             <button
-              onClick={() => updateFilter('search', '')}
+              onClick={() => {
+                if (searchInputRef.current) searchInputRef.current.value = '';
+                updateFilter('search', '');
+              }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
@@ -62,13 +95,18 @@ export function GameFilters({
 
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className={`px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
+          className={`relative px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
             showAdvanced
               ? 'bg-secondary text-secondary-foreground border-border'
               : 'border-input text-muted-foreground hover:text-foreground'
           }`}
         >
           <SlidersHorizontal className="h-4 w-4" />
+          {advancedFilterCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 bg-steam-blue text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
+              {advancedFilterCount}
+            </span>
+          )}
         </button>
 
         {showRandomPick && onRandomPick && (
@@ -116,6 +154,36 @@ export function GameFilters({
             </select>
           </div>
 
+          {/* Playtime Status */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Play Status</label>
+            <select
+              value={filters.playtimeStatus || ''}
+              onChange={(e) => updateFilter('playtimeStatus', e.target.value ? e.target.value as GameFiltersType['playtimeStatus'] : undefined)}
+              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+            >
+              <option value="">Any</option>
+              <option value="unplayed">Unplayed</option>
+              <option value="underplayed">Under 1 hour</option>
+            </select>
+          </div>
+
+          {/* Min Review */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Min Review</label>
+            <select
+              value={filters.minReview || ''}
+              onChange={(e) => updateFilter('minReview', e.target.value ? Number(e.target.value) : undefined)}
+              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+            >
+              <option value="">Any</option>
+              <option value="70">70%+</option>
+              <option value="80">80%+</option>
+              <option value="85">85%+</option>
+              <option value="90">90%+</option>
+            </select>
+          </div>
+
           {/* On Sale */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Pricing</label>
@@ -128,6 +196,54 @@ export function GameFilters({
               <option value="yes">On sale</option>
             </select>
           </div>
+
+          {/* Genre Multi-Select */}
+          {availableGenres && availableGenres.length > 0 && (
+            <div className="space-y-1 relative col-span-2" ref={genreRef}>
+              <label className="text-xs font-medium text-muted-foreground">Genres</label>
+              <button
+                onClick={() => setGenreDropdownOpen(!genreDropdownOpen)}
+                className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm text-left truncate"
+              >
+                {filters.genres?.length
+                  ? filters.genres.join(', ')
+                  : 'All genres'}
+              </button>
+              {genreDropdownOpen && (
+                <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-60 overflow-hidden">
+                  <div className="p-2 border-b border-border">
+                    <input
+                      type="text"
+                      placeholder="Search genres..."
+                      value={genreSearch}
+                      onChange={(e) => setGenreSearch(e.target.value)}
+                      className="w-full px-2 py-1 rounded bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="overflow-y-auto max-h-44 p-1">
+                    {filteredGenres.map((genre) => (
+                      <label
+                        key={genre}
+                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-secondary cursor-pointer text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={filters.genres?.includes(genre) ?? false}
+                          onChange={() => toggleGenre(genre)}
+                          className="rounded border-input"
+                        />
+                        {genre}
+                      </label>
+                    ))}
+                    {filteredGenres.length === 0 && (
+                      <div className="px-2 py-1 text-sm text-muted-foreground">No genres found</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sort */}
           <div className="space-y-1">
@@ -159,6 +275,26 @@ export function GameFilters({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Active genre chips */}
+      {filters.genres && filters.genres.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {filters.genres.map((genre) => (
+            <span
+              key={genre}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground text-xs"
+            >
+              {genre}
+              <button
+                onClick={() => toggleGenre(genre)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
         </div>
       )}
     </div>

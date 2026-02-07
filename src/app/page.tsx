@@ -1,17 +1,19 @@
 import Link from 'next/link';
-import { Library, Heart, Eye, Gamepad2, RefreshCw, DollarSign, Clock } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage } from '@/lib/db/queries';
+import { Library, Heart, Eye, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getBacklogStats } from '@/lib/db/queries';
 
 export default function DashboardPage() {
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
   let hltbCoverage = { withHltb: 0, total: 0 };
+  let backlogStats = { unplayedCount: 0, totalOwned: 0 };
   let lastSyncLabel = 'Never';
 
   try {
     stats = getDashboardStats();
     dealsActive = getDealsCount();
     hltbCoverage = getHltbCoverage();
+    backlogStats = getBacklogStats();
     const logs = getRecentSyncLogs(5);
     const lastSync = logs.find((l) => l.status === 'success');
     if (lastSync?.completedAt) {
@@ -79,6 +81,14 @@ export default function DashboardPage() {
             : 'games with duration data'}
         />
         <StatCard
+          icon={<BookOpen className="h-5 w-5" />}
+          label="Backlog"
+          value={backlogStats.unplayedCount > 0 ? backlogStats.unplayedCount.toLocaleString() : '—'}
+          subtitle={backlogStats.totalOwned > 0
+            ? `${Math.round((backlogStats.unplayedCount / backlogStats.totalOwned) * 100)}% of library unplayed`
+            : 'unplayed games'}
+        />
+        <StatCard
           icon={<RefreshCw className="h-5 w-5" />}
           label="Last Synced"
           value={lastSyncLabel}
@@ -102,7 +112,7 @@ export default function DashboardPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             href="/library"
             className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
@@ -129,6 +139,20 @@ export default function DashboardPage() {
             </div>
             <p className="text-sm text-muted-foreground">
               Check your {stats.wishlistCount} wishlisted games
+            </p>
+          </Link>
+          <Link
+            href="/backlog"
+            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
+              <span className="font-medium group-hover:text-steam-blue transition-colors">
+                Browse Backlog
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {backlogStats.unplayedCount} unplayed games to explore
             </p>
           </Link>
         </div>
