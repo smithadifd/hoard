@@ -23,6 +23,26 @@ export interface SteamOwnedGamesResponse {
   };
 }
 
+/**
+ * Response from IWishlistService/GetWishlist/v1.
+ * The old wishlistdata endpoint was deprecated — this is the replacement.
+ * Only returns appid, priority, and date_added per item (no metadata).
+ */
+export interface SteamWishlistResponse {
+  response: {
+    items: SteamWishlistEntry[];
+  };
+}
+
+export interface SteamWishlistEntry {
+  appid: number;
+  priority: number;
+  date_added: number; // Unix timestamp
+}
+
+/**
+ * @deprecated Old wishlistdata endpoint types — kept for reference.
+ */
 export interface SteamWishlistItem {
   name: string;
   capsule: string;

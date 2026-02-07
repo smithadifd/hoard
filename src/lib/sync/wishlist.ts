@@ -1,9 +1,9 @@
 /**
  * Steam Wishlist Sync
  *
- * Fetches wishlisted games from Steam and upserts into the database.
- * The wishlist API returns richer data than the library API:
- * review scores, tags, release dates, and capsule images.
+ * Fetches wishlisted games from Steam via IWishlistService/GetWishlist/v1.
+ * The new API only returns appid, priority, and date_added — no metadata.
+ * For games not already in the DB, we fetch names from Steam appdetails.
  */
 
 import { getEffectiveConfig } from '../config';
@@ -11,7 +11,7 @@ import { createSteamClient } from '../steam/client';
 import {
   upsertGameFromSteam,
   upsertUserGame,
-  upsertTags,
+  getExistingGamesByAppIds,
   createSyncLog,
   completeSyncLog,
 } from '../db/queries';
@@ -21,7 +21,9 @@ export interface SyncResult {
   syncLogId: number;
 }
 
-export async function syncWishlist(): Promise<SyncResult> {
+export type ProgressCallback = (processed: number, total: number) => void;
+
+export async function syncWishlist(onProgress?: ProgressCallback): Promise<SyncResult> {
   const config = getEffectiveConfig();
 
   if (!config.steamApiKey || !config.steamUserId) {
@@ -32,33 +34,72 @@ export async function syncWishlist(): Promise<SyncResult> {
 
   try {
     const client = createSteamClient(config.steamApiKey, config.steamUserId);
-    const wishlistItems = await client.getWishlist();
+    const wishlistEntries = await client.getWishlist();
 
+    if (wishlistEntries.length === 0) {
+      completeSyncLog(syncLogId, 'success', 0);
+      return { gamesProcessed: 0, syncLogId };
+    }
+
+    const appIds = wishlistEntries.map((e) => e.appid);
+    const total = wishlistEntries.length;
+
+    // Check which games already exist in the DB
+    const existing = getExistingGamesByAppIds(appIds);
+
+    // Games already in DB: just mark as wishlisted (fast path)
     let processed = 0;
-    for (const [appIdStr, item] of Object.entries(wishlistItems)) {
-      const steamAppId = parseInt(appIdStr);
-      if (isNaN(steamAppId)) continue;
+    const needDetails: number[] = [];
+
+    for (const entry of wishlistEntries) {
+      const found = existing.get(entry.appid);
+      if (found) {
+        // Game exists — just flag as wishlisted
+        upsertUserGame(found.id, { isWishlisted: true });
+        processed++;
+        onProgress?.(processed, total);
+      } else {
+        needDetails.push(entry.appid);
+      }
+    }
+
+    // New games: fetch name from Steam Store API (rate-limited)
+    for (const appId of needDetails) {
+      const details = await client.getAppDetails(appId);
+      const title = details?.name ?? `App ${appId}`;
 
       const gameId = upsertGameFromSteam({
-        steamAppId,
-        title: item.name,
-        headerImageUrl: item.capsule || undefined,
-        reviewScore: item.reviews_percent || undefined,
-        reviewCount: item.reviews_total ? parseInt(item.reviews_total) : undefined,
-        reviewDescription: item.review_desc || undefined,
-        releaseDate: item.release_string || undefined,
+        steamAppId: appId,
+        title,
+        headerImageUrl: details?.header_image,
+        description: details?.short_description,
+        releaseDate: details?.release_date?.date,
+        developer: details?.developers?.[0],
+        publisher: details?.publishers?.[0],
       });
 
-      upsertUserGame(gameId, {
-        isWishlisted: true,
-      });
+      upsertUserGame(gameId, { isWishlisted: true });
 
-      // Wishlist items come with tags
-      if (item.tags && item.tags.length > 0) {
-        upsertTags(gameId, item.tags, 'tag');
+      // Enrich with review data
+      const reviews = await client.getReviewSummary(appId);
+      if (reviews) {
+        upsertGameFromSteam({
+          steamAppId: appId,
+          title,
+          reviewScore: Math.round(
+            (reviews.total_positive / Math.max(reviews.total_reviews, 1)) * 100
+          ),
+          reviewCount: reviews.total_reviews,
+          reviewDescription: reviews.review_score_desc,
+        });
       }
 
       processed++;
+      onProgress?.(processed, total);
+
+      // Rate limit: Steam Store API allows ~200 requests / 5 min.
+      // We make 2 calls per game (appdetails + reviews), so 3s per game.
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     }
 
     completeSyncLog(syncLogId, 'success', processed);

@@ -13,10 +13,12 @@ import {
   userGames,
   tags,
   gameTags,
+  priceSnapshots,
   settings,
   syncLog,
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
+import { calculateDealScore } from '@/lib/scoring/engine';
 
 // ============================================
 // Settings
@@ -118,6 +120,33 @@ export function upsertGameFromSteam(data: UpsertGameData): number {
     .get();
 
   return result.id;
+}
+
+/**
+ * Look up existing games by Steam App IDs.
+ * Returns a map of steamAppId → { id, title } for games already in the DB.
+ */
+export function getExistingGamesByAppIds(
+  appIds: number[]
+): Map<number, { id: number; title: string }> {
+  const db = getDb();
+  const result = new Map<number, { id: number; title: string }>();
+  if (appIds.length === 0) return result;
+
+  // SQLite has a variable limit, batch in groups of 500
+  for (let i = 0; i < appIds.length; i += 500) {
+    const batch = appIds.slice(i, i + 500);
+    const rows = db
+      .select({ id: games.id, steamAppId: games.steamAppId, title: games.title })
+      .from(games)
+      .where(inArray(games.steamAppId, batch))
+      .all();
+    for (const row of rows) {
+      result.set(row.steamAppId, { id: row.id, title: row.title });
+    }
+  }
+
+  return result;
 }
 
 export interface UpsertUserGameData {
@@ -254,18 +283,29 @@ export function getEnrichedGames(
   }
 
   if (filters.onSale === true) {
-    // Phase 2 — skip for now, no price data yet
+    conditions.push(
+      sql`${games.id} IN (
+        SELECT ps.game_id FROM price_snapshots ps
+        WHERE ps.discount_percent > 0
+        AND ps.snapshot_date = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ps.game_id
+        )
+      )`
+    );
   }
 
   const where = and(...conditions);
 
-  // Sort mapping
+  // Sort mapping — includes subqueries for price/dealScore from latest snapshots
   const sortMap = {
     title: games.title,
     playtime: userGames.playtimeMinutes,
     review: games.reviewScore,
     hltbMain: games.hltbMain,
     releaseDate: games.releaseDate,
+    price: sql`(SELECT ps.price_current FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
+    dealScore: sql`(SELECT ps.deal_score FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
   } as const;
   type SortKey = keyof typeof sortMap;
   const sortKey = (filters.sortBy && filters.sortBy in sortMap ? filters.sortBy : 'title') as SortKey;
@@ -344,32 +384,82 @@ export function getEnrichedGames(
     else bucket.tags.push(t.name);
   }
 
+  // Batch-fetch latest price snapshots
+  const pricesByGame = getLatestPriceSnapshots(gameIds);
+
   // Map to EnrichedGame
-  const enriched: EnrichedGame[] = results.map((r) => ({
-    id: r.id,
-    steamAppId: r.steamAppId,
-    title: r.title,
-    description: r.description ?? undefined,
-    headerImageUrl: r.headerImageUrl ?? undefined,
-    releaseDate: r.releaseDate ?? undefined,
-    developer: r.developer ?? undefined,
-    publisher: r.publisher ?? undefined,
-    reviewScore: r.reviewScore ?? undefined,
-    reviewCount: r.reviewCount ?? undefined,
-    reviewDescription: r.reviewDescription ?? undefined,
-    hltbMain: r.hltbMain ?? undefined,
-    hltbMainExtra: r.hltbMainExtra ?? undefined,
-    hltbCompletionist: r.hltbCompletionist ?? undefined,
-    isOwned: r.isOwned ?? false,
-    isWishlisted: r.isWishlisted ?? false,
-    isWatchlisted: r.isWatchlisted ?? false,
-    playtimeMinutes: r.playtimeMinutes ?? 0,
-    personalInterest: r.personalInterest ?? 3,
-    tags: tagsByGame.get(r.id)?.tags ?? [],
-    genres: tagsByGame.get(r.id)?.genres ?? [],
-    isCoop: r.isCoop ?? false,
-    isMultiplayer: r.isMultiplayer ?? false,
-  }));
+  const enriched: EnrichedGame[] = results.map((r) => {
+    const snapshot = pricesByGame.get(r.id);
+    const base: EnrichedGame = {
+      id: r.id,
+      steamAppId: r.steamAppId,
+      title: r.title,
+      description: r.description ?? undefined,
+      headerImageUrl: r.headerImageUrl ?? undefined,
+      releaseDate: r.releaseDate ?? undefined,
+      developer: r.developer ?? undefined,
+      publisher: r.publisher ?? undefined,
+      reviewScore: r.reviewScore ?? undefined,
+      reviewCount: r.reviewCount ?? undefined,
+      reviewDescription: r.reviewDescription ?? undefined,
+      hltbMain: r.hltbMain ?? undefined,
+      hltbMainExtra: r.hltbMainExtra ?? undefined,
+      hltbCompletionist: r.hltbCompletionist ?? undefined,
+      isOwned: r.isOwned ?? false,
+      isWishlisted: r.isWishlisted ?? false,
+      isWatchlisted: r.isWatchlisted ?? false,
+      playtimeMinutes: r.playtimeMinutes ?? 0,
+      personalInterest: r.personalInterest ?? 3,
+      tags: tagsByGame.get(r.id)?.tags ?? [],
+      genres: tagsByGame.get(r.id)?.genres ?? [],
+      isCoop: r.isCoop ?? false,
+      isMultiplayer: r.isMultiplayer ?? false,
+    };
+
+    if (snapshot) {
+      base.currentPrice = snapshot.priceCurrent;
+      base.regularPrice = snapshot.priceRegular;
+      base.discountPercent = snapshot.discountPercent;
+      base.historicalLow = snapshot.historicalLowPrice ?? undefined;
+      base.isAtHistoricalLow = snapshot.isHistoricalLow;
+      base.bestStore = snapshot.store;
+      base.storeUrl = snapshot.url ?? undefined;
+
+      // Compute deal score if we have price data
+      if (snapshot.dealScore !== null) {
+        base.dealScore = snapshot.dealScore;
+      } else if (snapshot.priceCurrent > 0) {
+        const score = calculateDealScore({
+          currentPrice: snapshot.priceCurrent,
+          regularPrice: snapshot.priceRegular,
+          historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
+          reviewPercent: r.reviewScore,
+          hltbMainHours: r.hltbMain,
+          personalInterest: r.personalInterest ?? 3,
+        });
+        base.dealScore = score.overall;
+        base.dealRating = score.rating;
+        base.dealSummary = score.summary;
+        base.dollarsPerHour = score.dollarsPerHour ?? undefined;
+      }
+
+      // Map stored dealScore to rating if not yet computed
+      if (base.dealScore !== undefined && !base.dealRating) {
+        if (base.dealScore >= 85) base.dealRating = 'excellent';
+        else if (base.dealScore >= 70) base.dealRating = 'great';
+        else if (base.dealScore >= 55) base.dealRating = 'good';
+        else if (base.dealScore >= 40) base.dealRating = 'okay';
+        else base.dealRating = 'poor';
+      }
+
+      // Compute $/hr if not yet set
+      if (base.dollarsPerHour === undefined && r.hltbMain && r.hltbMain > 0 && snapshot.priceCurrent > 0) {
+        base.dollarsPerHour = snapshot.priceCurrent / r.hltbMain;
+      }
+    }
+
+    return base;
+  });
 
   return { games: enriched, total };
 }
@@ -430,7 +520,11 @@ export function getEnrichedGameById(gameId: number): EnrichedGame | null {
     else gameTags_.push(t.name);
   }
 
-  return {
+  // Fetch latest price snapshot
+  const pricesByGame = getLatestPriceSnapshots([gameId]);
+  const snapshot = pricesByGame.get(gameId);
+
+  const game: EnrichedGame = {
     id: row.id,
     steamAppId: row.steamAppId,
     title: row.title,
@@ -455,6 +549,33 @@ export function getEnrichedGameById(gameId: number): EnrichedGame | null {
     isCoop: row.isCoop ?? false,
     isMultiplayer: row.isMultiplayer ?? false,
   };
+
+  if (snapshot) {
+    game.currentPrice = snapshot.priceCurrent;
+    game.regularPrice = snapshot.priceRegular;
+    game.discountPercent = snapshot.discountPercent;
+    game.historicalLow = snapshot.historicalLowPrice ?? undefined;
+    game.isAtHistoricalLow = snapshot.isHistoricalLow;
+    game.bestStore = snapshot.store;
+    game.storeUrl = snapshot.url ?? undefined;
+
+    if (snapshot.priceCurrent > 0) {
+      const score = calculateDealScore({
+        currentPrice: snapshot.priceCurrent,
+        regularPrice: snapshot.priceRegular,
+        historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
+        reviewPercent: row.reviewScore,
+        hltbMainHours: row.hltbMain,
+        personalInterest: row.personalInterest ?? 3,
+      });
+      game.dealScore = score.overall;
+      game.dealRating = score.rating;
+      game.dealSummary = score.summary;
+      game.dollarsPerHour = score.dollarsPerHour ?? undefined;
+    }
+  }
+
+  return game;
 }
 
 // ============================================
@@ -545,6 +666,175 @@ export function getRecentSyncLogs(limit: number = 20) {
     .orderBy(desc(syncLog.startedAt))
     .limit(limit)
     .all();
+}
+
+// ============================================
+// Price Queries
+// ============================================
+
+export interface PriceSnapshotRow {
+  id: number;
+  gameId: number;
+  store: string;
+  priceCurrent: number;
+  priceRegular: number;
+  discountPercent: number;
+  currency: string;
+  url: string | null;
+  isHistoricalLow: boolean;
+  historicalLowPrice: number | null;
+  dealScore: number | null;
+  snapshotDate: string;
+}
+
+export function getGamesForPriceSync(): Array<{ id: number; steamAppId: number; itadGameId: string | null }> {
+  const db = getDb();
+  const userId = 'default';
+
+  return db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      itadGameId: games.itadGameId,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        sql`(${userGames.isWishlisted} = 1 OR ${userGames.isWatchlisted} = 1)`
+      )
+    )
+    .all();
+}
+
+export function bulkUpdateGameItadIds(updates: Array<{ steamAppId: number; itadGameId: string }>): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  for (const { steamAppId, itadGameId } of updates) {
+    db.update(games)
+      .set({ itadGameId, updatedAt: now })
+      .where(eq(games.steamAppId, steamAppId))
+      .run();
+  }
+}
+
+export function insertPriceSnapshot(data: {
+  gameId: number;
+  store: string;
+  priceCurrent: number;
+  priceRegular: number;
+  discountPercent: number;
+  currency?: string;
+  url?: string;
+  isHistoricalLow: boolean;
+  historicalLowPrice?: number;
+  dealScore?: number;
+}): void {
+  const db = getDb();
+  const now = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+  db.insert(priceSnapshots)
+    .values({
+      gameId: data.gameId,
+      store: data.store,
+      priceCurrent: data.priceCurrent,
+      priceRegular: data.priceRegular,
+      discountPercent: data.discountPercent,
+      currency: data.currency ?? 'USD',
+      url: data.url,
+      isHistoricalLow: data.isHistoricalLow,
+      historicalLowPrice: data.historicalLowPrice,
+      dealScore: data.dealScore,
+      snapshotDate: now,
+    })
+    .run();
+}
+
+export function getLatestPriceSnapshots(gameIds: number[]): Map<number, PriceSnapshotRow> {
+  if (gameIds.length === 0) return new Map();
+
+  const db = getDb();
+
+  // Use Drizzle's subquery approach: get latest snapshot_date per game, then filter
+  const rows = db
+    .select()
+    .from(priceSnapshots)
+    .where(
+      and(
+        inArray(priceSnapshots.gameId, gameIds),
+        sql`${priceSnapshots.snapshotDate} = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ${priceSnapshots.gameId}
+        )`
+      )
+    )
+    .all();
+
+  const result = new Map<number, PriceSnapshotRow>();
+  for (const row of rows) {
+    result.set(row.gameId, {
+      id: row.id,
+      gameId: row.gameId,
+      store: row.store,
+      priceCurrent: row.priceCurrent,
+      priceRegular: row.priceRegular,
+      discountPercent: row.discountPercent ?? 0,
+      currency: row.currency ?? 'USD',
+      url: row.url,
+      isHistoricalLow: row.isHistoricalLow ?? false,
+      historicalLowPrice: row.historicalLowPrice,
+      dealScore: row.dealScore,
+      snapshotDate: row.snapshotDate,
+    });
+  }
+  return result;
+}
+
+export function getPriceHistory(gameId: number, limit: number = 30): PriceSnapshotRow[] {
+  const db = getDb();
+
+  const rows = db
+    .select()
+    .from(priceSnapshots)
+    .where(eq(priceSnapshots.gameId, gameId))
+    .orderBy(desc(priceSnapshots.snapshotDate))
+    .limit(limit)
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    gameId: row.gameId,
+    store: row.store,
+    priceCurrent: row.priceCurrent,
+    priceRegular: row.priceRegular,
+    discountPercent: row.discountPercent ?? 0,
+    currency: row.currency ?? 'USD',
+    url: row.url,
+    isHistoricalLow: row.isHistoricalLow ?? false,
+    historicalLowPrice: row.historicalLowPrice,
+    dealScore: row.dealScore,
+    snapshotDate: row.snapshotDate,
+  }));
+}
+
+export function getDealsCount(): number {
+  const db = getDb();
+  const row = db
+    .select({ count: sql<number>`count(DISTINCT ${priceSnapshots.gameId})` })
+    .from(priceSnapshots)
+    .where(
+      and(
+        sql`${priceSnapshots.discountPercent} > 0`,
+        sql`${priceSnapshots.snapshotDate} = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ${priceSnapshots.gameId}
+        )`
+      )
+    )
+    .get();
+  return row?.count ?? 0;
 }
 
 // ============================================

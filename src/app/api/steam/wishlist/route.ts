@@ -5,21 +5,39 @@ import { getEnrichedGames } from '@/lib/db/queries';
 /**
  * POST /api/steam/wishlist
  * Triggers a sync of the user's Steam wishlist.
+ * Streams progress via SSE (text/event-stream).
  */
 export async function POST() {
-  try {
-    const result = await syncWishlist();
-    return NextResponse.json({
-      data: {
-        message: 'Wishlist sync completed',
-        gamesProcessed: result.gamesProcessed,
-      },
-    });
-  } catch (error) {
-    console.error('Wishlist sync failed:', error);
-    const message = error instanceof Error ? error.message : 'Wishlist sync failed';
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+
+      try {
+        const result = await syncWishlist((processed, total) => {
+          send('progress', { processed, total });
+        });
+        send('done', { gamesProcessed: result.gamesProcessed });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Wishlist sync failed';
+        console.error('Wishlist sync failed:', error);
+        send('error', { error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 }
 
 /**
