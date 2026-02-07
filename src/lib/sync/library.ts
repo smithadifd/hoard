@@ -20,7 +20,9 @@ export interface SyncResult {
   syncLogId: number;
 }
 
-export async function syncLibrary(): Promise<SyncResult> {
+export type ProgressCallback = (processed: number, total: number) => void;
+
+export async function syncLibrary(onProgress?: ProgressCallback): Promise<SyncResult> {
   const config = getEffectiveConfig();
 
   if (!config.steamApiKey || !config.steamUserId) {
@@ -33,6 +35,7 @@ export async function syncLibrary(): Promise<SyncResult> {
     const client = createSteamClient(config.steamApiKey, config.steamUserId);
     const response = await client.getOwnedGames();
 
+    const total = response.games.length;
     let processed = 0;
     for (const steamGame of response.games) {
       const gameId = upsertGameFromSteam({
@@ -52,6 +55,7 @@ export async function syncLibrary(): Promise<SyncResult> {
       });
 
       processed++;
+      onProgress?.(processed, total);
     }
 
     completeSyncLog(syncLogId, 'success', processed);

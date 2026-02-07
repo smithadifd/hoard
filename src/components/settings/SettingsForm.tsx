@@ -1,10 +1,65 @@
 'use client';
 
-import { useState } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign } from 'lucide-react';
 
 interface SettingsFormProps {
   initialSettings: Record<string, string>;
+}
+
+/**
+ * Read an SSE stream from a fetch Response, calling handlers for each event type.
+ */
+async function readSyncStream(
+  response: Response,
+  handlers: {
+    onProgress: (processed: number, total: number) => void;
+    onDone: (gamesProcessed: number) => void;
+    onError: (message: string) => void;
+  }
+) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse complete SSE messages from buffer
+    const messages = buffer.split('\n\n');
+    buffer = messages.pop() ?? ''; // Keep incomplete message in buffer
+
+    for (const msg of messages) {
+      if (!msg.trim()) continue;
+
+      let event = 'message';
+      let data = '';
+      for (const line of msg.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7);
+        else if (line.startsWith('data: ')) data = line.slice(6);
+      }
+
+      if (!data) continue;
+
+      try {
+        const parsed = JSON.parse(data);
+        if (event === 'progress') {
+          handlers.onProgress(parsed.processed, parsed.total);
+        } else if (event === 'done') {
+          handlers.onDone(parsed.gamesProcessed);
+        } else if (event === 'error') {
+          handlers.onError(parsed.error);
+        }
+      } catch {
+        // Ignore malformed JSON
+      }
+    }
+  }
 }
 
 export function SettingsForm({ initialSettings }: SettingsFormProps) {
@@ -19,6 +74,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   const [syncStatus, setSyncStatus] = useState<Record<string, 'idle' | 'syncing' | 'success' | 'error'>>({
     library: 'idle',
     wishlist: 'idle',
+    prices: 'idle',
   });
   const [syncMessage, setSyncMessage] = useState<Record<string, string>>({});
 
@@ -45,18 +101,45 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     }
   };
 
-  const handleSync = async (type: 'library' | 'wishlist') => {
+  const handleStreamSync = useCallback(async (type: string, url: string, fetchOptions?: RequestInit) => {
     setSyncStatus((prev) => ({ ...prev, [type]: 'syncing' }));
     setSyncMessage((prev) => ({ ...prev, [type]: '' }));
+
     try {
-      const res = await fetch(`/api/steam/${type}`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Sync failed');
-      setSyncStatus((prev) => ({ ...prev, [type]: 'success' }));
-      setSyncMessage((prev) => ({
-        ...prev,
-        [type]: `Synced ${data.data?.gamesProcessed ?? 0} games`,
-      }));
+      const res = await fetch(url, { method: 'POST', ...fetchOptions });
+
+      // If the response is not a stream (e.g. JSON error), handle it
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('text/event-stream')) {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Sync failed');
+        setSyncStatus((prev) => ({ ...prev, [type]: 'success' }));
+        setSyncMessage((prev) => ({
+          ...prev,
+          [type]: `Synced ${data.data?.gamesProcessed ?? 0} games`,
+        }));
+        return;
+      }
+
+      await readSyncStream(res, {
+        onProgress: (processed, total) => {
+          setSyncMessage((prev) => ({
+            ...prev,
+            [type]: `Syncing ${processed}/${total} games...`,
+          }));
+        },
+        onDone: (gamesProcessed) => {
+          setSyncStatus((prev) => ({ ...prev, [type]: 'success' }));
+          setSyncMessage((prev) => ({
+            ...prev,
+            [type]: `Synced ${gamesProcessed} games`,
+          }));
+        },
+        onError: (message) => {
+          setSyncStatus((prev) => ({ ...prev, [type]: 'error' }));
+          setSyncMessage((prev) => ({ ...prev, [type]: message }));
+        },
+      });
     } catch (err) {
       setSyncStatus((prev) => ({ ...prev, [type]: 'error' }));
       setSyncMessage((prev) => ({
@@ -64,9 +147,10 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
         [type]: err instanceof Error ? err.message : 'Sync failed',
       }));
     }
-  };
+  }, []);
 
   const hasSteamKeys = settings.steam_api_key && settings.steam_user_id;
+  const hasItadKey = !!settings.itad_api_key;
 
   return (
     <div className="space-y-8">
@@ -87,9 +171,9 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             type="password"
           />
           <FormField
-            label="Steam User ID"
-            placeholder="Your Steam64 ID (e.g., 76561198...)"
-            helpText="Find yours at steamid.io"
+            label="Steam User ID (Steam64 format)"
+            placeholder="17-digit ID (e.g., 76561198012345678)"
+            helpText="Must be your 17-digit Steam64 ID — not your vanity name. Find it at steamid.io"
             value={settings.steam_user_id}
             onChange={(v) => updateSetting('steam_user_id', v)}
           />
@@ -150,7 +234,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             icon={<Library className="h-4 w-4" />}
             status={syncStatus.library}
             message={syncMessage.library}
-            onClick={() => handleSync('library')}
+            onClick={() => handleStreamSync('library', '/api/steam/library')}
             disabled={!hasSteamKeys}
             primary
           />
@@ -159,10 +243,26 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             icon={<Heart className="h-4 w-4" />}
             status={syncStatus.wishlist}
             message={syncMessage.wishlist}
-            onClick={() => handleSync('wishlist')}
+            onClick={() => handleStreamSync('wishlist', '/api/steam/wishlist')}
             disabled={!hasSteamKeys}
           />
+          <SyncButton
+            label="Sync Prices"
+            icon={<DollarSign className="h-4 w-4" />}
+            status={syncStatus.prices}
+            message={syncMessage.prices}
+            onClick={() => handleStreamSync('prices', '/api/sync', {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'prices' }),
+            })}
+            disabled={!hasItadKey}
+          />
         </div>
+        {!hasItadKey && hasSteamKeys && (
+          <p className="text-sm text-yellow-500">
+            Save your ITAD API Key above to sync prices.
+          </p>
+        )}
       </section>
     </div>
   );

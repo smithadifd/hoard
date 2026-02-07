@@ -5,21 +5,39 @@ import { getEnrichedGames } from '@/lib/db/queries';
 /**
  * POST /api/steam/library
  * Triggers a sync of the user's Steam library.
+ * Streams progress via SSE (text/event-stream).
  */
 export async function POST() {
-  try {
-    const result = await syncLibrary();
-    return NextResponse.json({
-      data: {
-        message: 'Library sync completed',
-        gamesProcessed: result.gamesProcessed,
-      },
-    });
-  } catch (error) {
-    console.error('Library sync failed:', error);
-    const message = error instanceof Error ? error.message : 'Library sync failed';
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+
+      try {
+        const result = await syncLibrary((processed, total) => {
+          send('progress', { processed, total });
+        });
+        send('done', { gamesProcessed: result.gamesProcessed });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Library sync failed';
+        console.error('Library sync failed:', error);
+        send('error', { error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 }
 
 /**
