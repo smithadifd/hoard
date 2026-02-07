@@ -18,6 +18,14 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
     sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
     maxHours: typeof params.maxHours === 'string' ? Number(params.maxHours) : undefined,
     coop: typeof params.coop === 'string' ? params.coop === 'true' : undefined,
+    onSale: typeof params.onSale === 'string' ? params.onSale === 'true' : undefined,
+    playtimeStatus: typeof params.playtime === 'string'
+      ? (params.playtime as GameFilters['playtimeStatus'])
+      : undefined,
+    genres: typeof params.genres === 'string' && params.genres
+      ? params.genres.split(',')
+      : undefined,
+    minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
   };
 
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;

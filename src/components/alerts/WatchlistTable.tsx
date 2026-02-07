@@ -70,13 +70,13 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
         <Bell className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
         <h3 className="text-sm font-medium mb-1">No price alerts</h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Add games to your watchlist and set price thresholds to get notified.
+          Add games to your watchlist from the wishlist page to get price alerts.
         </p>
         <Link
-          href="/library"
+          href="/wishlist"
           className="inline-flex items-center px-3 py-1.5 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors"
         >
-          Browse Library
+          Browse Wishlist
         </Link>
       </div>
     );

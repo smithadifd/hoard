@@ -12,17 +12,14 @@ export default function SettingsPage() {
   let initialSettings: Record<string, string> = {};
   let scoringConfig = getScoringConfig();
   let alertStats = { activeCount: 0, recentlyTriggered: 0 };
-  let effectiveConfig = { alertThrottleHours: 24, discordWebhookUrl: '' };
+  let alertThrottleHours = 24;
 
   try {
     initialSettings = getAllSettings();
     scoringConfig = getScoringConfig();
     alertStats = getAlertStats();
     const cfg = getEffectiveConfig();
-    effectiveConfig = {
-      alertThrottleHours: cfg.alertThrottleHours,
-      discordWebhookUrl: cfg.discordWebhookUrl,
-    };
+    alertThrottleHours = cfg.alertThrottleHours;
   } catch {
     // DB not initialized yet — render with defaults
   }
@@ -44,8 +41,7 @@ export default function SettingsPage() {
       />
 
       <AlertConfig
-        initialThrottleHours={effectiveConfig.alertThrottleHours}
-        hasWebhookUrl={!!effectiveConfig.discordWebhookUrl}
+        initialThrottleHours={alertThrottleHours}
         activeAlertCount={alertStats.activeCount}
       />
     </div>

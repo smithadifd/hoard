@@ -10,6 +10,7 @@ interface GameFiltersProps {
   onRandomPick?: () => void;
   showRandomPick?: boolean;
   availableGenres?: string[];
+  hidePricing?: boolean;
 }
 
 export function GameFilters({
@@ -18,6 +19,7 @@ export function GameFilters({
   onRandomPick,
   showRandomPick = false,
   availableGenres,
+  hidePricing = false,
 }: GameFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [genreDropdownOpen, setGenreDropdownOpen] = useState(false);
@@ -185,17 +187,19 @@ export function GameFilters({
           </div>
 
           {/* On Sale */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Pricing</label>
-            <select
-              value={filters.onSale === undefined ? '' : filters.onSale ? 'yes' : 'no'}
-              onChange={(e) => updateFilter('onSale', e.target.value === '' ? undefined : e.target.value === 'yes')}
-              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
-            >
-              <option value="">Any</option>
-              <option value="yes">On sale</option>
-            </select>
-          </div>
+          {!hidePricing && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Pricing</label>
+              <select
+                value={filters.onSale === undefined ? '' : filters.onSale ? 'yes' : 'no'}
+                onChange={(e) => updateFilter('onSale', e.target.value === '' ? undefined : e.target.value === 'yes')}
+                className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+              >
+                <option value="">Any</option>
+                <option value="yes">On sale</option>
+              </select>
+            </div>
+          )}
 
           {/* Genre Multi-Select */}
           {availableGenres && availableGenres.length > 0 && (
@@ -275,6 +279,33 @@ export function GameFilters({
               </button>
             </div>
           </div>
+
+          {/* Clear Filters */}
+          {advancedFilterCount > 0 && (
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  if (searchInputRef.current) searchInputRef.current.value = '';
+                  onFiltersChange({
+                    ...filters,
+                    search: undefined,
+                    maxHours: undefined,
+                    minHours: undefined,
+                    coop: undefined,
+                    onSale: undefined,
+                    playtimeStatus: undefined,
+                    genres: undefined,
+                    minReview: undefined,
+                    sortBy: 'title',
+                    sortOrder: 'asc',
+                  });
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground border border-input hover:border-border transition-colors"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
         </div>
       )}
 

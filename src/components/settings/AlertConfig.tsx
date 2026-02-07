@@ -5,13 +5,11 @@ import { Bell, Send, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface AlertConfigProps {
   initialThrottleHours: number;
-  hasWebhookUrl: boolean;
   activeAlertCount: number;
 }
 
 export function AlertConfig({
   initialThrottleHours,
-  hasWebhookUrl,
   activeAlertCount,
 }: AlertConfigProps) {
   const [throttleHours, setThrottleHours] = useState(initialThrottleHours.toString());
@@ -125,7 +123,7 @@ export function AlertConfig({
         <div className="flex items-center gap-3">
           <button
             onClick={handleTestWebhook}
-            disabled={testing || !hasWebhookUrl}
+            disabled={testing}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors disabled:opacity-50"
           >
             {testing ? (
@@ -145,11 +143,6 @@ export function AlertConfig({
             </span>
           )}
         </div>
-        {!hasWebhookUrl && (
-          <p className="text-xs text-yellow-500">
-            Configure your Discord Webhook URL above to enable notifications.
-          </p>
-        )}
       </div>
     </section>
   );
