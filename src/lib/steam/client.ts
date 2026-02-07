@@ -11,7 +11,8 @@
 
 import type {
   SteamOwnedGamesResponse,
-  SteamWishlistItem,
+  SteamWishlistResponse,
+  SteamWishlistEntry,
   SteamAppDetails,
   SteamReviewSummary,
 } from './types';
@@ -41,45 +42,52 @@ export class SteamClient {
 
     const response = await fetch(url.toString());
     if (!response.ok) {
+      if (response.status === 400) {
+        throw new Error(
+          'Steam API returned 400 Bad Request. Check that your Steam User ID is a 17-digit Steam64 ID ' +
+          '(e.g., 76561198012345678) and your API key is valid at steamcommunity.com/dev/apikey'
+        );
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          'Steam API key is invalid or unauthorized. Verify your key at steamcommunity.com/dev/apikey'
+        );
+      }
       throw new Error(`Steam API error: ${response.status} ${response.statusText}`);
     }
 
     const data: SteamOwnedGamesResponse = await response.json();
+    if (!data.response?.games) {
+      throw new Error(
+        'Steam returned an empty library. Make sure your Steam profile visibility is set to Public ' +
+        '(Steam > Profile > Edit Profile > Privacy Settings > Game details: Public)'
+      );
+    }
     return data.response;
   }
 
   /**
-   * Fetch the user's wishlist.
-   * Note: Wishlist must be public or this will fail.
+   * Fetch the user's wishlist via IWishlistService/GetWishlist/v1.
+   * Returns only appid, priority, and date_added per item.
+   * Wishlist must be public or this will return empty.
    */
-  async getWishlist(): Promise<Record<string, SteamWishlistItem>> {
-    const items: Record<string, SteamWishlistItem> = {};
-    let page = 0;
+  async getWishlist(): Promise<SteamWishlistEntry[]> {
+    const url = new URL(`${STEAM_API_BASE}/IWishlistService/GetWishlist/v1/`);
+    url.searchParams.set('steamid', this.userId);
+    url.searchParams.set('format', 'json');
 
-    while (true) {
-      const url = `https://store.steampowered.com/wishlist/profiles/${this.userId}/wishlistdata/?p=${page}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Steam Wishlist error: ${response.status}`);
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      if (response.status === 400) {
+        throw new Error(
+          'Steam Wishlist API returned 400 Bad Request. Check that your Steam User ID is a 17-digit Steam64 ID.'
+        );
       }
-
-      const data = await response.json();
-
-      // Empty response means no more pages
-      if (!data || Object.keys(data).length === 0) break;
-
-      Object.assign(items, data);
-      page++;
-
-      // Safety limit
-      if (page > 20) break;
-
-      // Be polite to Steam's servers
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      throw new Error(`Steam Wishlist error: ${response.status} ${response.statusText}`);
     }
 
-    return items;
+    const data: SteamWishlistResponse = await response.json();
+    return data.response?.items ?? [];
   }
 
   /**
@@ -88,16 +96,21 @@ export class SteamClient {
    */
   async getAppDetails(appId: number): Promise<SteamAppDetails['data'] | null> {
     const url = `${STEAM_STORE_API}/appdetails?appids=${appId}`;
-    const response = await fetch(url);
 
-    if (!response.ok) return null;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
 
-    const data = await response.json();
-    const appData = data[appId.toString()];
+      const data = await response.json();
+      const appData = data[appId.toString()];
 
-    if (!appData?.success) return null;
+      if (!appData?.success) return null;
 
-    return appData.data;
+      return appData.data;
+    } catch {
+      // JSON parse failure (rate-limited HTML response) or network error
+      return null;
+    }
   }
 
   /**
@@ -105,14 +118,19 @@ export class SteamClient {
    */
   async getReviewSummary(appId: number): Promise<SteamReviewSummary['query_summary'] | null> {
     const url = `${STEAM_STORE_API}/appreviews/${appId}?json=1&purchase_type=all&num_per_page=0`;
-    const response = await fetch(url);
 
-    if (!response.ok) return null;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
 
-    const data: SteamReviewSummary = await response.json();
-    if (!data.success) return null;
+      const data: SteamReviewSummary = await response.json();
+      if (!data.success) return null;
 
-    return data.query_summary;
+      return data.query_summary;
+    } catch {
+      // JSON parse failure (rate-limited HTML response) or network error
+      return null;
+    }
   }
 
   /**
