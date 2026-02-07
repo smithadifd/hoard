@@ -1,15 +1,17 @@
 import Link from 'next/link';
-import { Library, Heart, Eye, Gamepad2, RefreshCw, DollarSign } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount } from '@/lib/db/queries';
+import { Library, Heart, Eye, Gamepad2, RefreshCw, DollarSign, Clock } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage } from '@/lib/db/queries';
 
 export default function DashboardPage() {
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
+  let hltbCoverage = { withHltb: 0, total: 0 };
   let lastSyncLabel = 'Never';
 
   try {
     stats = getDashboardStats();
     dealsActive = getDealsCount();
+    hltbCoverage = getHltbCoverage();
     const logs = getRecentSyncLogs(5);
     const lastSync = logs.find((l) => l.status === 'success');
     if (lastSync?.completedAt) {
@@ -67,6 +69,14 @@ export default function DashboardPage() {
           label="Deals Active"
           value={dealsActive > 0 ? dealsActive.toLocaleString() : '—'}
           subtitle="games on sale"
+        />
+        <StatCard
+          icon={<Clock className="h-5 w-5" />}
+          label="HLTB Coverage"
+          value={hltbCoverage.total > 0 ? `${hltbCoverage.withHltb}/${hltbCoverage.total}` : '—'}
+          subtitle={hltbCoverage.total > 0
+            ? `${Math.round((hltbCoverage.withHltb / hltbCoverage.total) * 100)}% with duration data`
+            : 'games with duration data'}
         />
         <StatCard
           icon={<RefreshCw className="h-5 w-5" />}

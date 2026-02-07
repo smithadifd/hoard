@@ -25,6 +25,7 @@ export interface AppConfig {
   // Cron schedules
   cronPriceCheck: string;
   cronLibrarySync: string;
+  cronHltbSync: string;
 }
 
 let config: AppConfig | null = null;
@@ -40,6 +41,7 @@ export function getConfig(): AppConfig {
       appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
       cronPriceCheck: process.env.CRON_PRICE_CHECK || '0 */12 * * *',
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
+      cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0',
     };
   }
   return config;

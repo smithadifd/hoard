@@ -40,6 +40,8 @@ export async function PUT(request: NextRequest) {
       'steam_user_id',
       'itad_api_key',
       'discord_webhook_url',
+      'scoring_weights',
+      'scoring_thresholds',
     ];
 
     for (const [key, value] of Object.entries(entries)) {

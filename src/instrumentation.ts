@@ -12,6 +12,7 @@ export async function register() {
     const { getEffectiveConfig } = await import('@/lib/config');
     const { syncPrices } = await import('@/lib/sync/prices');
     const { syncLibrary } = await import('@/lib/sync/library');
+    const { syncHltb } = await import('@/lib/sync/hltb');
 
     const config = getEffectiveConfig();
 
@@ -28,6 +29,14 @@ export async function register() {
         await syncLibrary();
       } catch (error) {
         console.error('[Scheduler] Library sync failed:', error);
+      }
+    });
+
+    registerTask('hltb-sync', config.cronHltbSync, async () => {
+      try {
+        await syncHltb();
+      } catch (error) {
+        console.error('[Scheduler] HLTB sync failed:', error);
       }
     });
 
