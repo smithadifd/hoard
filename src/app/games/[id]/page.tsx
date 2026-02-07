@@ -1,9 +1,11 @@
 import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowLeft, Star, Clock, Gamepad2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink } from 'lucide-react';
 import { getEnrichedGameById } from '@/lib/db/queries';
 import { GameUserControls } from '@/components/games/GameUserControls';
+import { PriceBadge } from '@/components/prices/PriceBadge';
+import { DealIndicator } from '@/components/prices/DealIndicator';
 
 export default async function GameDetailPage({
   params,
@@ -102,6 +104,53 @@ export default async function GameDetailPage({
             )}
           </div>
 
+          {/* Price Section */}
+          {game.currentPrice !== undefined && (
+            <section className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <h2 className="text-sm font-semibold">Pricing</h2>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                  <PriceBadge
+                    currentPrice={game.currentPrice}
+                    regularPrice={game.regularPrice}
+                    discountPercent={game.discountPercent}
+                    historicalLow={game.historicalLow}
+                  />
+                  {game.dealRating && (
+                    <DealIndicator
+                      rating={game.dealRating}
+                      score={game.dealScore}
+                    />
+                  )}
+                </div>
+                <div className="text-right text-sm">
+                  {game.bestStore && (
+                    <div className="text-muted-foreground">
+                      Best at <span className="text-foreground font-medium">{game.bestStore}</span>
+                    </div>
+                  )}
+                  {game.dollarsPerHour !== undefined && (
+                    <div className="flex items-center gap-1 text-muted-foreground justify-end">
+                      <DollarSign className="h-3 w-3" />
+                      <span>{game.dollarsPerHour.toFixed(2)}/hr</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {game.dealSummary && (
+                <p className="text-xs text-muted-foreground">{game.dealSummary}</p>
+              )}
+              {game.historicalLow !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  Historical low: ${game.historicalLow.toFixed(2)}
+                  {game.isAtHistoricalLow && (
+                    <span className="ml-1 text-deal-great font-bold">Currently at ATL!</span>
+                  )}
+                </p>
+              )}
+            </section>
+          )}
+
           {/* Description */}
           {game.description && (
             <section className="rounded-lg border border-border bg-card p-4">
@@ -190,6 +239,16 @@ export default async function GameDetailPage({
             <ExternalLinkItem
               href={`https://www.protondb.com/app/${game.steamAppId}`}
               label="ProtonDB"
+            />
+            {game.storeUrl && (
+              <ExternalLinkItem
+                href={game.storeUrl}
+                label="IsThereAnyDeal"
+              />
+            )}
+            <ExternalLinkItem
+              href={`https://www.eneba.com/store?text=${encodeURIComponent(game.title)}`}
+              label="Eneba (grey market)"
             />
           </div>
         </div>

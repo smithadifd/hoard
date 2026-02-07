@@ -1,13 +1,15 @@
 import Link from 'next/link';
-import { Library, Heart, Eye, Clock, Gamepad2, RefreshCw } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs } from '@/lib/db/queries';
+import { Library, Heart, Eye, Gamepad2, RefreshCw, DollarSign } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount } from '@/lib/db/queries';
 
 export default function DashboardPage() {
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
+  let dealsActive = 0;
   let lastSyncLabel = 'Never';
 
   try {
     stats = getDashboardStats();
+    dealsActive = getDealsCount();
     const logs = getRecentSyncLogs(5);
     const lastSync = logs.find((l) => l.status === 'success');
     if (lastSync?.completedAt) {
@@ -61,10 +63,10 @@ export default function DashboardPage() {
           subtitle="total hours played"
         />
         <StatCard
-          icon={<Clock className="h-5 w-5" />}
-          label="Backlog"
-          value="—"
-          subtitle="hours unplayed"
+          icon={<DollarSign className="h-5 w-5" />}
+          label="Deals Active"
+          value={dealsActive > 0 ? dealsActive.toLocaleString() : '—'}
+          subtitle="games on sale"
         />
         <StatCard
           icon={<RefreshCw className="h-5 w-5" />}

@@ -94,6 +94,7 @@ export const priceSnapshots = sqliteTable('price_snapshots', {
   url: text('url'), // Direct link to store page
   isHistoricalLow: integer('is_historical_low', { mode: 'boolean' }).default(false),
   historicalLowPrice: real('historical_low_price'), // ATL from ITAD
+  dealScore: integer('deal_score'), // Computed deal score (0-100) for SQL sorting
   snapshotDate: text('snapshot_date').notNull(), // ISO date
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
