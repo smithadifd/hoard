@@ -1,35 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncLibrary } from '@/lib/sync/library';
 import { syncWishlist } from '@/lib/sync/wishlist';
+import { syncPrices } from '@/lib/sync/prices';
 import { getRecentSyncLogs } from '@/lib/db/queries';
+
+/**
+ * Helper: wrap a sync function with SSE progress streaming.
+ */
+function streamSync(
+  syncFn: (onProgress: (processed: number, total: number) => void) => Promise<{ gamesProcessed: number }>,
+  label: string
+) {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+
+      try {
+        const result = await syncFn((processed, total) => {
+          send('progress', { processed, total });
+        });
+        send('done', { gamesProcessed: result.gamesProcessed });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `${label} sync failed`;
+        console.error(`${label} sync failed:`, error);
+        send('error', { error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
+}
 
 /**
  * POST /api/sync
  * Trigger a manual sync operation.
  * Body: { type: 'library' | 'wishlist' | 'prices' | 'hltb' }
+ * Returns SSE stream with progress events.
  */
 export async function POST(request: NextRequest) {
   try {
     const { type } = await request.json();
 
     switch (type) {
-      case 'library': {
-        const result = await syncLibrary();
-        return NextResponse.json({
-          data: { message: `Library sync completed`, gamesProcessed: result.gamesProcessed },
-        });
-      }
-      case 'wishlist': {
-        const result = await syncWishlist();
-        return NextResponse.json({
-          data: { message: `Wishlist sync completed`, gamesProcessed: result.gamesProcessed },
-        });
-      }
+      case 'library':
+        return streamSync(syncLibrary, 'Library');
+      case 'wishlist':
+        return streamSync(syncWishlist, 'Wishlist');
       case 'prices':
-        // Phase 2
-        return NextResponse.json({
-          data: { message: 'Price sync not yet implemented (Phase 2)' },
-        });
+        return streamSync(syncPrices, 'Price');
       case 'hltb':
         // Phase 3
         return NextResponse.json({
