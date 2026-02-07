@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # Hoard App (Development)
+  # ===========================================
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: hoard_app
+    environment:
+      - DATABASE_URL=/app/data/hoard.db
+      - STEAM_API_KEY=${STEAM_API_KEY:-}
+      - STEAM_USER_ID=${STEAM_USER_ID:-}
+      - ITAD_API_KEY=${ITAD_API_KEY:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - CRON_PRICE_CHECK=${CRON_PRICE_CHECK:-0 */12 * * *}
+      - CRON_LIBRARY_SYNC=${CRON_LIBRARY_SYNC:-0 3 * * *}
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/.next
+      - hoard_data:/app/data
+    ports:
+      - "3000:3000"
+    command: npm run dev
+    restart: unless-stopped
+
+volumes:
+  hoard_data:
+
+networks:
+  default:
+    name: hoard_network

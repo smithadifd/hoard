@@ -1,0 +1,92 @@
+# Production Docker Compose for Hoard
+# Designed for deployment on Synology NAS with Traefik reverse proxy
+#
+# Usage:
+#   1. Copy .env.example to .env.production
+#   2. Edit .env.production with your production values
+#   3. docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# Requirements:
+#   - Docker and Docker Compose
+#   - Domain name pointed to your server (for Let's Encrypt)
+#   - Ports 80 and 443 available (or shared Traefik instance)
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # Reverse Proxy (Traefik)
+  # ===========================================
+  traefik:
+    image: traefik:v2.11
+    container_name: hoard_traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--api.dashboard=false"
+      - "--log.level=WARN"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - hoard_network
+    restart: unless-stopped
+
+  # ===========================================
+  # Hoard App (Production)
+  # ===========================================
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: hoard_app
+    environment:
+      - DATABASE_URL=/app/data/hoard.db
+      - STEAM_API_KEY=${STEAM_API_KEY}
+      - STEAM_USER_ID=${STEAM_USER_ID}
+      - ITAD_API_KEY=${ITAD_API_KEY}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - NEXT_PUBLIC_APP_URL=https://${DOMAIN}
+      - CRON_PRICE_CHECK=${CRON_PRICE_CHECK:-0 */12 * * *}
+      - CRON_LIBRARY_SYNC=${CRON_LIBRARY_SYNC:-0 3 * * *}
+    volumes:
+      - hoard_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hoard.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.hoard.entrypoints=websecure"
+      - "traefik.http.routers.hoard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hoard.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.hoard-ratelimit.ratelimit.average=100"
+      - "traefik.http.middlewares.hoard-ratelimit.ratelimit.burst=50"
+      - "traefik.http.routers.hoard.middlewares=hoard-ratelimit"
+    networks:
+      - hoard_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+volumes:
+  hoard_data:
+    name: hoard_data
+  traefik_letsencrypt:
+    name: hoard_traefik_letsencrypt
+
+networks:
+  hoard_network:
+    name: hoard_network
