@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Eye, EyeOff, Star, Loader2, Bell, BellOff } from 'lucide-react';
+import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check } from 'lucide-react';
 
 interface GameUserControlsProps {
   gameId: number;
@@ -32,6 +32,7 @@ export function GameUserControls({
   const [saving, setSaving] = useState(false);
   const [notifyAtl, setNotifyAtl] = useState(initialAtl);
   const [notifyThreshold, setNotifyThreshold] = useState(initialThresholdNotify);
+  const [thresholdSaved, setThresholdSaved] = useState(false);
   const thresholdRef = useRef<HTMLInputElement>(null);
 
   const save = async (updates: Record<string, unknown>) => {
@@ -81,10 +82,15 @@ export function GameUserControls({
     }
   };
 
-  const handleThresholdBlur = () => {
+  const handleThresholdSave = () => {
     const value = thresholdRef.current?.value;
     const numValue = value ? parseFloat(value) : undefined;
-    save({ priceThreshold: numValue ?? 0 });
+    if (numValue === undefined || isNaN(numValue)) return;
+    setThresholdSaved(false);
+    save({ priceThreshold: numValue }).then(() => {
+      setThresholdSaved(true);
+      setTimeout(() => setThresholdSaved(false), 2000);
+    });
   };
 
   const handleAtlToggle = () => {
@@ -165,10 +171,19 @@ export function GameUserControls({
                 step="0.01"
                 min="0"
                 defaultValue={initialThreshold ?? ''}
-                onBlur={handleThresholdBlur}
                 placeholder="e.g. 9.99"
                 className="flex-1 px-2 py-1.5 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
+              <button
+                onClick={handleThresholdSave}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-md bg-steam-blue text-white text-xs font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
+              >
+                Save
+              </button>
+              {thresholdSaved && (
+                <Check className="h-4 w-4 text-deal-great" />
+              )}
             </div>
             {currentPrice !== undefined && (
               <p className="text-xs text-muted-foreground">

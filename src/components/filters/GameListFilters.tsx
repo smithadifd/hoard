@@ -23,6 +23,9 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
       if (newFilters.maxHours) params.set('maxHours', String(newFilters.maxHours));
       if (newFilters.coop !== undefined) params.set('coop', String(newFilters.coop));
       if (newFilters.onSale !== undefined) params.set('onSale', String(newFilters.onSale));
+      if (newFilters.playtimeStatus) params.set('playtime', newFilters.playtimeStatus);
+      if (newFilters.genres?.length) params.set('genres', newFilters.genres.join(','));
+      if (newFilters.minReview) params.set('minReview', String(newFilters.minReview));
 
       const qs = params.toString();
       router.push(`${pathname}${qs ? '?' + qs : ''}`);

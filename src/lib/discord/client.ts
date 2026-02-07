@@ -5,7 +5,7 @@
  * Used for price alerts when a watched game hits a target price.
  */
 
-import { getConfig } from '../config';
+import { getEffectiveConfig } from '../config';
 
 interface DiscordEmbed {
   title: string;
@@ -27,24 +27,26 @@ interface DiscordEmbed {
 }
 
 export class DiscordClient {
-  private webhookUrl: string;
-
-  constructor() {
-    const config = getConfig();
-    this.webhookUrl = config.discordWebhookUrl;
+  /**
+   * Get the webhook URL fresh from config (DB settings override env vars).
+   * Read at send-time so changes in Settings take effect immediately.
+   */
+  private getWebhookUrl(): string {
+    return getEffectiveConfig().discordWebhookUrl;
   }
 
   /**
    * Send a raw webhook message.
    */
   async send(content: string, embeds?: DiscordEmbed[]): Promise<boolean> {
-    if (!this.webhookUrl) {
+    const webhookUrl = this.getWebhookUrl();
+    if (!webhookUrl) {
       console.warn('Discord webhook URL not configured, skipping notification');
       return false;
     }
 
     try {
-      const response = await fetch(this.webhookUrl, {
+      const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

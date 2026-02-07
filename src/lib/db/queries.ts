@@ -1146,10 +1146,11 @@ export function upsertPriceAlert(
     .onConflictDoUpdate({
       target: [priceAlerts.userId, priceAlerts.gameId],
       set: {
+        // Always set isActive to avoid Drizzle "No values to set" error on empty set
+        isActive: data.isActive ?? true,
         ...(data.targetPrice !== undefined && { targetPrice: data.targetPrice }),
         ...(data.notifyOnAllTimeLow !== undefined && { notifyOnAllTimeLow: data.notifyOnAllTimeLow }),
         ...(data.notifyOnThreshold !== undefined && { notifyOnThreshold: data.notifyOnThreshold }),
-        ...(data.isActive !== undefined && { isActive: data.isActive }),
       },
     })
     .returning({ id: priceAlerts.id })

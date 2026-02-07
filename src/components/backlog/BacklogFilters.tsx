@@ -86,6 +86,7 @@ export function BacklogFilters({ currentFilters, games, availableGenres }: Backl
         onRandomPick={handleRandomPick}
         showRandomPick={true}
         availableGenres={availableGenres}
+        hidePricing={true}
       />
       <RandomPickModal
         picked={pickedGame}
