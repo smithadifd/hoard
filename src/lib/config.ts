@@ -3,6 +3,8 @@
  * Provides type-safe access to all config values.
  */
 
+import { getAllSettings } from './db/queries';
+
 export interface AppConfig {
   // Database
   databaseUrl: string;
@@ -55,4 +57,27 @@ export function validateConfig(): { valid: boolean; missing: string[] } {
   if (!cfg.steamUserId) missing.push('STEAM_USER_ID');
 
   return { valid: missing.length === 0, missing };
+}
+
+/**
+ * Get effective config by merging DB settings over environment variables.
+ * DB settings take priority, then env vars, then defaults.
+ */
+export function getEffectiveConfig(): AppConfig {
+  const envConfig = getConfig();
+
+  let dbSettings: Record<string, string> = {};
+  try {
+    dbSettings = getAllSettings();
+  } catch {
+    // DB may not be initialized yet — fall back to env config
+  }
+
+  return {
+    ...envConfig,
+    steamApiKey: dbSettings['steam_api_key'] || envConfig.steamApiKey,
+    steamUserId: dbSettings['steam_user_id'] || envConfig.steamUserId,
+    itadApiKey: dbSettings['itad_api_key'] || envConfig.itadApiKey,
+    discordWebhookUrl: dbSettings['discord_webhook_url'] || envConfig.discordWebhookUrl,
+  };
 }

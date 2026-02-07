@@ -9,7 +9,6 @@
  * Docs: https://developer.valvesoftware.com/wiki/Steam_Web_API
  */
 
-import { getConfig } from '../config';
 import type {
   SteamOwnedGamesResponse,
   SteamWishlistItem,
@@ -24,10 +23,9 @@ export class SteamClient {
   private apiKey: string;
   private userId: string;
 
-  constructor() {
-    const config = getConfig();
-    this.apiKey = config.steamApiKey;
-    this.userId = config.steamUserId;
+  constructor(apiKey: string, userId: string) {
+    this.apiKey = apiKey;
+    this.userId = userId;
   }
 
   /**
@@ -141,12 +139,10 @@ export class SteamClient {
   }
 }
 
-// Singleton instance
-let steamClient: SteamClient | null = null;
-
-export function getSteamClient(): SteamClient {
-  if (!steamClient) {
-    steamClient = new SteamClient();
-  }
-  return steamClient;
+/**
+ * Create a SteamClient with the given credentials.
+ * Use getEffectiveConfig() to get credentials from DB or env.
+ */
+export function createSteamClient(apiKey: string, userId: string): SteamClient {
+  return new SteamClient(apiKey, userId);
 }

@@ -1,28 +1,24 @@
 import { NextResponse } from 'next/server';
+import { syncLibrary } from '@/lib/sync/library';
+import { getEnrichedGames } from '@/lib/db/queries';
 
 /**
  * POST /api/steam/library
  * Triggers a sync of the user's Steam library.
- *
- * Phase 1 implementation.
  */
 export async function POST() {
   try {
-    // TODO: Implement library sync
-    // 1. Fetch owned games from Steam API
-    // 2. Upsert games into database
-    // 3. Update playtime data
-    // 4. Log sync operation
-
+    const result = await syncLibrary();
     return NextResponse.json({
-      data: { message: 'Library sync not yet implemented' },
+      data: {
+        message: 'Library sync completed',
+        gamesProcessed: result.gamesProcessed,
+      },
     });
   } catch (error) {
     console.error('Library sync failed:', error);
-    return NextResponse.json(
-      { error: 'Library sync failed' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Library sync failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -32,9 +28,11 @@ export async function POST() {
  */
 export async function GET() {
   try {
-    // TODO: Query games from database where isOwned = true
-
-    return NextResponse.json({ data: [] });
+    const { games, total } = getEnrichedGames({ view: 'library' });
+    return NextResponse.json({
+      data: games,
+      meta: { total },
+    });
   } catch (error) {
     console.error('Failed to fetch library:', error);
     return NextResponse.json(

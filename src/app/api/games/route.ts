@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getEnrichedGames } from '@/lib/db/queries';
+import type { GameFilters } from '@/types';
 
 /**
  * GET /api/games
@@ -7,17 +9,31 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const _search = searchParams.get('search');
-    const _view = searchParams.get('view'); // library, wishlist, watchlist
-    const _sortBy = searchParams.get('sortBy') || 'title';
+
+    const filters: GameFilters = {
+      search: searchParams.get('search') || undefined,
+      view: (searchParams.get('view') as GameFilters['view']) || undefined,
+      owned: searchParams.has('owned') ? searchParams.get('owned') === 'true' : undefined,
+      played: searchParams.has('played') ? searchParams.get('played') === 'true' : undefined,
+      maxHours: searchParams.has('maxHours') ? Number(searchParams.get('maxHours')) : undefined,
+      minHours: searchParams.has('minHours') ? Number(searchParams.get('minHours')) : undefined,
+      coop: searchParams.has('coop') ? searchParams.get('coop') === 'true' : undefined,
+      multiplayer: searchParams.has('multiplayer') ? searchParams.get('multiplayer') === 'true' : undefined,
+      minReview: searchParams.has('minReview') ? Number(searchParams.get('minReview')) : undefined,
+      maxPrice: searchParams.has('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined,
+      onSale: searchParams.has('onSale') ? searchParams.get('onSale') === 'true' : undefined,
+      sortBy: (searchParams.get('sortBy') as GameFilters['sortBy']) || 'title',
+      sortOrder: (searchParams.get('sortOrder') as GameFilters['sortOrder']) || 'asc',
+    };
+
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '24');
 
-    // TODO: Query database with filters
+    const result = getEnrichedGames(filters, page, pageSize);
 
     return NextResponse.json({
-      data: [],
-      meta: { total: 0, page, pageSize },
+      data: result.games,
+      meta: { total: result.total, page, pageSize },
     });
   } catch (error) {
     console.error('Failed to fetch games:', error);

@@ -1,28 +1,213 @@
-/**
- * Game Detail Page - Comprehensive view of a single game.
- *
- * Shows:
- * - Game info (title, description, images)
- * - Steam reviews
- * - Current prices across stores (ITAD)
- * - Price history / historical low
- * - HLTB play time estimates
- * - Deal score breakdown
- * - Links to loaded.com, SteamDB, etc.
- */
+import { notFound } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
+import { ArrowLeft, Star, Clock, Gamepad2, ExternalLink } from 'lucide-react';
+import { getEnrichedGameById } from '@/lib/db/queries';
+import { GameUserControls } from '@/components/games/GameUserControls';
+
 export default async function GameDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const gameId = parseInt(id);
+  if (isNaN(gameId)) notFound();
+
+  const game = getEnrichedGameById(gameId);
+  if (!game) notFound();
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
-        <p className="text-lg">Game detail page for ID: {id}</p>
-        <p className="text-sm mt-1">Coming in Phase 1</p>
+      {/* Back Link */}
+      <Link
+        href="/library"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Library
+      </Link>
+
+      {/* Header Image */}
+      {game.headerImageUrl && (
+        <div className="relative aspect-[460/215] max-w-2xl rounded-lg overflow-hidden bg-secondary">
+          <Image
+            src={game.headerImageUrl}
+            alt={game.title}
+            fill
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, 672px"
+            priority
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Title & Meta */}
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">{game.title}</h1>
+            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+              {game.developer && <span>{game.developer}</span>}
+              {game.developer && game.releaseDate && <span>&middot;</span>}
+              {game.releaseDate && <span>{game.releaseDate}</span>}
+            </div>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="flex flex-wrap gap-4">
+            {game.reviewScore !== undefined && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
+                <Star className="h-4 w-4 text-yellow-500" />
+                <div>
+                  <div className="text-sm font-medium">
+                    {game.reviewDescription || `${game.reviewScore}%`}
+                  </div>
+                  {game.reviewCount !== undefined && (
+                    <div className="text-xs text-muted-foreground">
+                      {game.reviewCount.toLocaleString()} reviews
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {game.isOwned && game.playtimeMinutes > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
+                <Gamepad2 className="h-4 w-4 text-steam-blue" />
+                <div>
+                  <div className="text-sm font-medium">
+                    {Math.round(game.playtimeMinutes / 60)} hours played
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    in your library
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {game.hltbMain !== undefined && game.hltbMain > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <div className="text-sm font-medium">{game.hltbMain}h main</div>
+                  {game.hltbMainExtra !== undefined && game.hltbMainExtra > 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      {game.hltbMainExtra}h completionist
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Description */}
+          {game.description && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold mb-2">About</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {game.description}
+              </p>
+            </section>
+          )}
+
+          {/* Tags & Genres */}
+          {(game.genres.length > 0 || game.tags.length > 0) && (
+            <div className="space-y-2">
+              {game.genres.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {game.genres.map((g) => (
+                    <span
+                      key={g}
+                      className="px-2 py-1 rounded-md bg-steam-blue/10 text-steam-blue text-xs font-medium"
+                    >
+                      {g}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {game.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {game.tags.slice(0, 15).map((t) => (
+                    <span
+                      key={t}
+                      className="px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Status Badges */}
+          <div className="flex flex-wrap gap-2">
+            {game.isOwned && (
+              <span className="px-2 py-1 rounded-md bg-steam-green/10 text-steam-green text-xs font-medium">
+                Owned
+              </span>
+            )}
+            {game.isWishlisted && (
+              <span className="px-2 py-1 rounded-md bg-pink-500/10 text-pink-500 text-xs font-medium">
+                Wishlisted
+              </span>
+            )}
+            {game.isCoop && (
+              <span className="px-2 py-1 rounded-md bg-purple-500/10 text-purple-400 text-xs font-medium">
+                Co-op
+              </span>
+            )}
+            {game.isMultiplayer && (
+              <span className="px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 text-xs font-medium">
+                Multiplayer
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          {/* User Controls */}
+          <GameUserControls
+            gameId={game.id}
+            interest={game.personalInterest}
+            isWatchlisted={game.isWatchlisted}
+          />
+
+          {/* External Links */}
+          <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+            <h3 className="text-sm font-semibold mb-2">Links</h3>
+            <ExternalLinkItem
+              href={`https://store.steampowered.com/app/${game.steamAppId}`}
+              label="Steam Store"
+            />
+            <ExternalLinkItem
+              href={`https://steamdb.info/app/${game.steamAppId}/`}
+              label="SteamDB"
+            />
+            <ExternalLinkItem
+              href={`https://www.protondb.com/app/${game.steamAppId}`}
+              label="ProtonDB"
+            />
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+function ExternalLinkItem({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+    >
+      {label}
+      <ExternalLink className="h-3 w-3" />
+    </a>
   );
 }

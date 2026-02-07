@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { syncLibrary } from '@/lib/sync/library';
+import { syncWishlist } from '@/lib/sync/wishlist';
+import { getRecentSyncLogs } from '@/lib/db/queries';
 
 /**
  * POST /api/sync
@@ -10,45 +13,49 @@ export async function POST(request: NextRequest) {
     const { type } = await request.json();
 
     switch (type) {
-      case 'library':
-        // TODO: Trigger library sync
-        break;
-      case 'wishlist':
-        // TODO: Trigger wishlist sync
-        break;
+      case 'library': {
+        const result = await syncLibrary();
+        return NextResponse.json({
+          data: { message: `Library sync completed`, gamesProcessed: result.gamesProcessed },
+        });
+      }
+      case 'wishlist': {
+        const result = await syncWishlist();
+        return NextResponse.json({
+          data: { message: `Wishlist sync completed`, gamesProcessed: result.gamesProcessed },
+        });
+      }
       case 'prices':
-        // TODO: Trigger price check
-        break;
+        // Phase 2
+        return NextResponse.json({
+          data: { message: 'Price sync not yet implemented (Phase 2)' },
+        });
       case 'hltb':
-        // TODO: Trigger HLTB backfill
-        break;
+        // Phase 3
+        return NextResponse.json({
+          data: { message: 'HLTB backfill not yet implemented (Phase 3)' },
+        });
       default:
         return NextResponse.json(
           { error: `Unknown sync type: ${type}` },
           { status: 400 }
         );
     }
-
-    return NextResponse.json({
-      data: { message: `${type} sync triggered` },
-    });
   } catch (error) {
     console.error('Sync failed:', error);
-    return NextResponse.json(
-      { error: 'Sync failed' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Sync failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 /**
  * GET /api/sync
- * Get status of sync operations.
+ * Get status of recent sync operations.
  */
 export async function GET() {
   try {
-    // TODO: Query syncLog table for recent operations
-    return NextResponse.json({ data: [] });
+    const logs = getRecentSyncLogs(20);
+    return NextResponse.json({ data: logs });
   } catch (error) {
     console.error('Failed to fetch sync status:', error);
     return NextResponse.json(
