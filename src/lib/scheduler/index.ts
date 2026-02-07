@@ -10,7 +10,7 @@
  * Lightweight enough for NAS deployment.
  */
 
-import cron from 'node-cron';
+import cron, { type ScheduledTask as CronTask } from 'node-cron';
 // TODO: import { getConfig } from '../config'; — will be used for reading cron schedules
 
 type TaskFn = () => Promise<void>;
@@ -18,7 +18,7 @@ type TaskFn = () => Promise<void>;
 interface ScheduledTask {
   name: string;
   schedule: string;
-  task: cron.ScheduledTask;
+  task: CronTask;
   lastRun?: Date;
   isRunning: boolean;
 }
@@ -35,7 +35,7 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
     return;
   }
 
-  const task = cron.schedule(schedule, async () => {
+  const task = cron.createTask(schedule, async () => {
     const taskInfo = tasks.get(name);
     if (!taskInfo || taskInfo.isRunning) {
       console.log(`Task "${name}" already running, skipping this execution`);
@@ -54,8 +54,6 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
     } finally {
       taskInfo.isRunning = false;
     }
-  }, {
-    scheduled: false, // Don't start until explicitly started
   });
 
   tasks.set(name, {
@@ -121,6 +119,6 @@ export async function runTaskNow(name: string): Promise<boolean> {
   }
 
   // Trigger the task manually
-  taskInfo.task.now();
+  await taskInfo.task.execute();
   return true;
 }
