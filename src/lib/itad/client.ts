@@ -8,27 +8,32 @@
  * Rate limits: Heuristic-based, no hard limit published
  */
 
-import { getConfig } from '../config';
+import { getEffectiveConfig } from '../config';
 import type {
   ITADDeal,
   ITADGameLookup,
-  ITADOverview,
+  ITADOverviewResponse,
+  ITADOverviewPrice,
+  ITADPricesV3Game,
   ITADSearchResult,
 } from './types';
 
 const ITAD_API_BASE = 'https://api.isthereanydeal.com';
+const BATCH_SIZE = 200;
 
 export class ITADClient {
-  private apiKey: string;
-
-  constructor() {
-    const config = getConfig();
-    this.apiKey = config.itadApiKey;
+  /**
+   * Read the API key lazily so it always reflects the latest value
+   * from the DB settings table, even if the user changes it mid-session.
+   */
+  private getApiKey(): string {
+    const config = getEffectiveConfig();
+    return config.itadApiKey;
   }
 
   private async request<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
     const url = new URL(`${ITAD_API_BASE}${endpoint}`);
-    url.searchParams.set('key', this.apiKey);
+    url.searchParams.set('key', this.getApiKey());
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
     }
@@ -41,18 +46,79 @@ export class ITADClient {
     return response.json();
   }
 
+  private async postRequest<T>(
+    endpoint: string,
+    body: unknown,
+    params: Record<string, string> = {}
+  ): Promise<T> {
+    const url = new URL(`${ITAD_API_BASE}${endpoint}`);
+    url.searchParams.set('key', this.getApiKey());
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`ITAD API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
   /**
    * Look up an ITAD game ID by Steam App ID.
    */
   async lookupBySteamAppId(appId: number): Promise<ITADGameLookup | null> {
     try {
-      const data = await this.request<ITADGameLookup[]>('/games/lookup/v1', {
-        appid: `app/${appId}`,
+      const data = await this.request<ITADGameLookup>('/games/lookup/v1', {
+        appid: appId.toString(),
       });
-      return data?.[0] ?? null;
+      return data?.found ? data : null;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Batch lookup: resolve multiple Steam App IDs to ITAD game IDs.
+   * Uses individual GET requests (ITAD lookup/v1 is GET-only, no batch).
+   * Returns a Map of steamAppId → ITAD game ID (string).
+   */
+  async lookupBySteamAppIds(
+    appIds: number[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<Map<number, string>> {
+    const results = new Map<number, string>();
+    if (appIds.length === 0) return results;
+
+    for (let i = 0; i < appIds.length; i++) {
+      const appId = appIds[i];
+
+      try {
+        const data = await this.request<ITADGameLookup>('/games/lookup/v1', {
+          appid: appId.toString(),
+        });
+
+        if (data?.found && data.game?.id) {
+          results.set(appId, data.game.id);
+        }
+      } catch {
+        // Individual lookup failed — skip this game
+      }
+
+      onProgress?.(i + 1, appIds.length);
+
+      // Rate limit: ~200ms between requests
+      if (i < appIds.length - 1) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -68,13 +134,37 @@ export class ITADClient {
   /**
    * Get current best prices and historical lows for games.
    * Accepts ITAD game IDs (not Steam App IDs).
+   * Processes in batches of 200.
+   *
+   * Response from ITAD is: { prices: [...], bundles: [...] }
+   * We unwrap and return just the prices array.
    */
-  async getOverview(gameIds: string[]): Promise<ITADOverview[]> {
+  async getOverview(gameIds: string[]): Promise<ITADOverviewPrice[]> {
     if (gameIds.length === 0) return [];
 
-    return this.request<ITADOverview[]>('/games/overview/v2', {
-      ids: gameIds.join(','),
-    });
+    const allResults: ITADOverviewPrice[] = [];
+
+    for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
+      const batch = gameIds.slice(i, i + BATCH_SIZE);
+
+      try {
+        const data = await this.postRequest<ITADOverviewResponse>(
+          '/games/overview/v2',
+          batch
+        );
+        if (data?.prices && Array.isArray(data.prices)) {
+          allResults.push(...data.prices);
+        }
+      } catch (error) {
+        console.error(`ITAD overview batch failed at ${i}:`, error);
+      }
+
+      if (i + BATCH_SIZE < gameIds.length) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    return allResults;
   }
 
   /**
@@ -96,48 +186,66 @@ export class ITADClient {
   }
 
   /**
-   * Get current prices for a specific game across all stores.
+   * Get current prices across all stores for specific games.
+   * Used for game detail page price comparison.
+   * Processes in batches of 200.
    */
-  async getPrices(gameId: string, country: string = 'US'): Promise<ITADDeal[]> {
-    return this.request<ITADDeal[]>('/games/prices/v2', {
-      ids: gameId,
-      country,
-    });
+  async getPricesV3(gameIds: string[], country: string = 'US'): Promise<ITADPricesV3Game[]> {
+    if (gameIds.length === 0) return [];
+
+    const allResults: ITADPricesV3Game[] = [];
+
+    for (let i = 0; i < gameIds.length; i += BATCH_SIZE) {
+      const batch = gameIds.slice(i, i + BATCH_SIZE);
+
+      try {
+        const data = await this.postRequest<ITADPricesV3Game[]>(
+          '/games/prices/v3',
+          batch,
+          { country }
+        );
+        if (Array.isArray(data)) {
+          allResults.push(...data);
+        }
+      } catch (error) {
+        console.error(`ITAD prices batch failed at ${i}:`, error);
+      }
+
+      if (i + BATCH_SIZE < gameIds.length) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    return allResults;
   }
 
   /**
    * Batch lookup: Steam App IDs → ITAD game IDs → prices/historical lows.
-   * Convenience method that chains lookups.
+   * Uses batch endpoints for efficiency.
    */
-  async getPricesBySteamAppIds(appIds: number[]): Promise<Map<number, ITADOverview>> {
-    const results = new Map<number, ITADOverview>();
+  async getPricesBySteamAppIds(appIds: number[]): Promise<Map<number, ITADOverviewPrice>> {
+    const results = new Map<number, ITADOverviewPrice>();
+    if (appIds.length === 0) return results;
 
-    // Step 1: Lookup ITAD game IDs
-    const lookups = await Promise.all(
-      appIds.map(async (appId) => ({
-        appId,
-        lookup: await this.lookupBySteamAppId(appId),
-      }))
-    );
+    // Step 1: Batch lookup ITAD game IDs
+    const idMap = await this.lookupBySteamAppIds(appIds);
 
-    const idMap = new Map<string, number>(); // ITAD ID → Steam App ID
+    // Build reverse map: ITAD ID → Steam App ID
+    const reverseMap = new Map<string, number>();
     const itadIds: string[] = [];
-
-    for (const { appId, lookup } of lookups) {
-      if (lookup?.found) {
-        idMap.set(lookup.game.id, appId);
-        itadIds.push(lookup.game.id);
-      }
+    for (const [steamAppId, itadId] of idMap) {
+      reverseMap.set(itadId, steamAppId);
+      itadIds.push(itadId);
     }
 
     if (itadIds.length === 0) return results;
 
-    // Step 2: Get overview (prices + historical lows)
+    // Step 2: Batch get overview (prices + historical lows)
     const overviews = await this.getOverview(itadIds);
 
     for (const overview of overviews) {
-      const steamAppId = idMap.get(overview.id);
-      if (steamAppId) {
+      const steamAppId = reverseMap.get(overview.id);
+      if (steamAppId !== undefined) {
         results.set(steamAppId, overview);
       }
     }

@@ -79,6 +79,7 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       url TEXT,
       is_historical_low INTEGER DEFAULT 0,
       historical_low_price REAL,
+      deal_score INTEGER,
       snapshot_date TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -112,6 +113,13 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       completed_at TEXT
     );
   `);
+
+  // Schema migrations for existing databases
+  try {
+    sqlite.exec(`ALTER TABLE price_snapshots ADD COLUMN deal_score INTEGER`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }
 
 function createDb() {

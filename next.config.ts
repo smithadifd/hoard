@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'shared.akamai.steamstatic.com',
+        pathname: '/store_item_assets/**',
+      },
+      {
+        protocol: 'https',
         hostname: 'steamcdn-a.akamaihd.net',
         pathname: '/**',
       },
