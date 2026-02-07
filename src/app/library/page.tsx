@@ -1,27 +1,60 @@
-/**
- * Library Page - Browse owned games with filters and sorting.
- *
- * Phase 1: Display games from Steam library with playtime.
- * Phase 3: Add HLTB duration, value scoring.
- * Phase 4: Add backlog recommendations, random pick.
- */
-export default function LibraryPage() {
+import { getEnrichedGames } from '@/lib/db/queries';
+import { GameGrid } from '@/components/games/GameGrid';
+import { GameListFilters } from '@/components/filters/GameListFilters';
+import { Pagination } from '@/components/ui/Pagination';
+import type { GameFilters } from '@/types';
+
+interface LibraryPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function LibraryPage({ searchParams }: LibraryPageProps) {
+  const params = await searchParams;
+
+  const filters: GameFilters = {
+    view: 'library',
+    search: typeof params.search === 'string' ? params.search : undefined,
+    sortBy: (typeof params.sortBy === 'string' ? params.sortBy : 'title') as GameFilters['sortBy'],
+    sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
+    maxHours: typeof params.maxHours === 'string' ? Number(params.maxHours) : undefined,
+    coop: typeof params.coop === 'string' ? params.coop === 'true' : undefined,
+  };
+
+  const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
+  const pageSize = 24;
+  const { games, total } = getEnrichedGames(filters, page, pageSize);
+
+  // Build searchParams for pagination links (excluding page)
+  const paginationParams: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (key !== 'page' && typeof value === 'string') {
+      paginationParams[key] = value;
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Library</h1>
         <p className="text-muted-foreground mt-1">
-          Your owned games — filter, sort, and find your next play
+          {total > 0 ? `${total} owned games` : 'Your owned games — filter, sort, and find your next play'}
         </p>
       </div>
 
-      {/* TODO Phase 1: GameFilters component */}
-      {/* TODO Phase 1: GameGrid component showing owned games */}
+      <GameListFilters currentFilters={filters} />
 
-      <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
-        <p className="text-lg">Library view coming in Phase 1</p>
-        <p className="text-sm mt-1">Sync your Steam library from Settings to get started</p>
-      </div>
+      <GameGrid
+        games={games}
+        emptyMessage="No games found. Sync your Steam library from Settings to get started."
+      />
+
+      <Pagination
+        current={page}
+        total={total}
+        pageSize={pageSize}
+        basePath="/library"
+        searchParams={paginationParams}
+      />
     </div>
   );
 }

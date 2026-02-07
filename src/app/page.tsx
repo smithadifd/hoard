@@ -1,11 +1,29 @@
-import { Library, Heart, Eye, TrendingDown, Clock, Gamepad2 } from 'lucide-react';
+import Link from 'next/link';
+import { Library, Heart, Eye, Clock, Gamepad2, RefreshCw } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs } from '@/lib/db/queries';
 
-/**
- * Dashboard - Main landing page showing overview stats and quick actions.
- * Phase 1: Basic stats from Steam library.
- * Phase 2+: Deal alerts, price drops, recommendations.
- */
 export default function DashboardPage() {
+  let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
+  let lastSyncLabel = 'Never';
+
+  try {
+    stats = getDashboardStats();
+    const logs = getRecentSyncLogs(5);
+    const lastSync = logs.find((l) => l.status === 'success');
+    if (lastSync?.completedAt) {
+      lastSyncLabel = new Date(lastSync.completedAt).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    }
+  } catch {
+    // DB not initialized yet
+  }
+
+  const hasData = stats.libraryCount > 0 || stats.wishlistCount > 0;
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -21,55 +39,88 @@ export default function DashboardPage() {
         <StatCard
           icon={<Library className="h-5 w-5" />}
           label="Library"
-          value="—"
+          value={stats.libraryCount > 0 ? stats.libraryCount.toLocaleString() : '—'}
           subtitle="games owned"
         />
         <StatCard
           icon={<Heart className="h-5 w-5" />}
           label="Wishlist"
-          value="—"
+          value={stats.wishlistCount > 0 ? stats.wishlistCount.toLocaleString() : '—'}
           subtitle="games tracked"
         />
         <StatCard
           icon={<Eye className="h-5 w-5" />}
           label="Watchlist"
-          value="—"
+          value={stats.watchlistCount > 0 ? stats.watchlistCount.toLocaleString() : '—'}
           subtitle="price alerts active"
         />
         <StatCard
-          icon={<TrendingDown className="h-5 w-5" />}
-          label="Deals"
-          value="—"
-          subtitle="at or near ATL"
+          icon={<Gamepad2 className="h-5 w-5" />}
+          label="Playtime"
+          value={stats.totalPlaytimeHours > 0 ? `${stats.totalPlaytimeHours.toLocaleString()}h` : '—'}
+          subtitle="total hours played"
         />
         <StatCard
           icon={<Clock className="h-5 w-5" />}
           label="Backlog"
           value="—"
-          subtitle="hours of unplayed games"
+          subtitle="hours unplayed"
         />
         <StatCard
-          icon={<Gamepad2 className="h-5 w-5" />}
+          icon={<RefreshCw className="h-5 w-5" />}
           label="Last Synced"
-          value="—"
-          subtitle="waiting for setup"
+          value={lastSyncLabel}
+          subtitle={hasData ? 'sync up to date' : 'waiting for setup'}
         />
       </div>
 
-      {/* Setup Prompt */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold mb-2">Welcome to Hoard</h2>
-        <p className="text-muted-foreground mb-4">
-          Get started by adding your Steam API key and Steam User ID in Settings,
-          then sync your library.
-        </p>
-        <a
-          href="/settings"
-          className="inline-flex items-center px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors"
-        >
-          Go to Settings
-        </a>
-      </div>
+      {/* Setup Prompt or Quick Links */}
+      {!hasData ? (
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-lg font-semibold mb-2">Welcome to Hoard</h2>
+          <p className="text-muted-foreground mb-4">
+            Get started by adding your Steam API key and Steam User ID in Settings,
+            then sync your library.
+          </p>
+          <Link
+            href="/settings"
+            className="inline-flex items-center px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors"
+          >
+            Go to Settings
+          </Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Link
+            href="/library"
+            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Library className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
+              <span className="font-medium group-hover:text-steam-blue transition-colors">
+                Browse Library
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              View your {stats.libraryCount} owned games
+            </p>
+          </Link>
+          <Link
+            href="/wishlist"
+            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Heart className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
+              <span className="font-medium group-hover:text-steam-blue transition-colors">
+                Browse Wishlist
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Check your {stats.wishlistCount} wishlisted games
+            </p>
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

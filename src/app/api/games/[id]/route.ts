@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getEnrichedGameById, updateUserGame } from '@/lib/db/queries';
 
 /**
  * GET /api/games/:id
@@ -15,9 +16,12 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
 
-    // TODO: Fetch game from database with all related data
+    const game = getEnrichedGameById(gameId);
+    if (!game) {
+      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+    }
 
-    return NextResponse.json({ data: null });
+    return NextResponse.json({ data: game });
   } catch (error) {
     console.error('Failed to fetch game:', error);
     return NextResponse.json(
@@ -42,9 +46,24 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
 
-    const _body = await request.json();
+    const body = await request.json();
+    const allowedFields = ['personalInterest', 'notes', 'isWatchlisted', 'isIgnored', 'priceThreshold'] as const;
+    const updates: Record<string, unknown> = {};
 
-    // TODO: Update userGames record
+    for (const field of allowedFields) {
+      if (field in body) {
+        updates[field] = body[field];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    const updated = updateUserGame(gameId, updates as Parameters<typeof updateUserGame>[1]);
+    if (!updated) {
+      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+    }
 
     return NextResponse.json({ data: { message: 'Updated' } });
   } catch (error) {
