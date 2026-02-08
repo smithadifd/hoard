@@ -172,7 +172,7 @@ main() {
     info "Deployment successful!"
     local nas_host
     nas_host=$(ssh -G "$REMOTE" | awk '/^hostname / {print $2}')
-    info "App available at: http://${nas_host}:${APP_PORT}"
+    info "App available at: https://hoard.home (direct: http://${nas_host}:${APP_PORT})"
     echo ""
 }
 

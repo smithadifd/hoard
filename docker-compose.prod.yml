@@ -11,6 +11,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      args:
+        - NEXT_PUBLIC_APP_URL=${APP_URL:-https://hoard.home}
     container_name: hoard_app
     environment:
       - DATABASE_URL=/app/data/hoard.db
@@ -18,7 +20,7 @@ services:
       - STEAM_USER_ID=${STEAM_USER_ID}
       - ITAD_API_KEY=${ITAD_API_KEY:-}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
-      - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3001}
+      - NEXT_PUBLIC_APP_URL=${APP_URL:-https://hoard.home}
       - CRON_PRICE_CHECK=${CRON_PRICE_CHECK:-0 */12 * * *}
       - CRON_LIBRARY_SYNC=${CRON_LIBRARY_SYNC:-0 3 * * *}
     volumes:

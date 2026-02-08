@@ -17,6 +17,9 @@ COPY . .
 # Create data directory for SQLite
 RUN mkdir -p /app/data
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* vars are inlined at build time — must be set before build
+ARG NEXT_PUBLIC_APP_URL=https://hoard.home
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 RUN npm run build
 
 # --- Runner ---

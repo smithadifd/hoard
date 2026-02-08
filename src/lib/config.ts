@@ -41,7 +41,7 @@ export function getConfig(): AppConfig {
       steamUserId: process.env.STEAM_USER_ID || '',
       itadApiKey: process.env.ITAD_API_KEY || '',
       discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || '',
-      appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+      appUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://hoard.home',
       cronPriceCheck: process.env.CRON_PRICE_CHECK || '0 */12 * * *',
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
       cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0',
