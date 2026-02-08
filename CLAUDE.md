@@ -20,7 +20,7 @@ Self-hosted web application for tracking game deals, managing a Steam library/ba
 | Library Data | Steam Web API |
 | Notifications | Discord Webhooks |
 | Scheduling | node-cron (in-process) |
-| Deployment | Docker Compose (Synology NAS + Traefik) |
+| Deployment | Docker Compose (Synology NAS + Caddy reverse proxy) |
 
 ---
 
@@ -36,7 +36,7 @@ hoard/
 ├── tailwind.config.ts
 ├── drizzle.config.ts
 ├── docker-compose.yml           # Development
-├── docker-compose.prod.yml      # Production (Synology + Traefik)
+├── docker-compose.prod.yml      # Production (Synology + Caddy)
 ├── docker/
 │   └── Dockerfile               # Multi-stage production build
 ├── drizzle/                     # Generated migrations
