@@ -90,8 +90,8 @@ export function GameCard({ game }: GameCardProps) {
 
         {/* Price Row */}
         {game.currentPrice !== undefined && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-y-1 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0 flex-wrap gap-y-1">
               {game.discountPercent && game.discountPercent > 0 ? (
                 <>
                   <span className="bg-steam-sale text-white text-xs font-bold px-1.5 py-0.5 rounded">

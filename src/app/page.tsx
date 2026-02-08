@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen } from 'lucide-react';
 import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getBacklogStats, getAlertStats } from '@/lib/db/queries';
 
+export const dynamic = 'force-dynamic';
+
 export default function DashboardPage() {
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;

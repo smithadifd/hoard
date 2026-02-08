@@ -36,3 +36,8 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/* Safe area padding for mobile bottom bar (notched devices) */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

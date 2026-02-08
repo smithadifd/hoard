@@ -118,11 +118,11 @@ export function GameUserControls({
             <button
               key={value}
               onClick={() => handleInterestChange(value)}
-              className={`p-1 transition-colors ${
+              className={`p-2 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center ${
                 value <= interest ? 'text-yellow-500' : 'text-muted-foreground/30'
               } hover:text-yellow-400`}
             >
-              <Star className="h-5 w-5 fill-current" />
+              <Star className="h-6 w-6 fill-current" />
             </button>
           ))}
         </div>
@@ -163,27 +163,31 @@ export function GameUserControls({
             <label className="text-xs text-muted-foreground">
               Notify when price drops below
             </label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">$</span>
-              <input
-                ref={thresholdRef}
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={initialThreshold ?? ''}
-                placeholder="e.g. 9.99"
-                className="flex-1 px-2 py-1.5 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-              <button
-                onClick={handleThresholdSave}
-                disabled={saving}
-                className="px-3 py-1.5 rounded-md bg-steam-blue text-white text-xs font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
-              >
-                Save
-              </button>
-              {thresholdSaved && (
-                <Check className="h-4 w-4 text-deal-great" />
-              )}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex items-center gap-2 flex-1">
+                <span className="text-sm text-muted-foreground">$</span>
+                <input
+                  ref={thresholdRef}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={initialThreshold ?? ''}
+                  placeholder="e.g. 9.99"
+                  className="flex-1 px-2 py-2.5 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleThresholdSave}
+                  disabled={saving}
+                  className="px-3 py-2.5 rounded-md bg-steam-blue text-white text-xs font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+                >
+                  Save
+                </button>
+                {thresholdSaved && (
+                  <Check className="h-4 w-4 text-deal-great" />
+                )}
+              </div>
             </div>
             {currentPrice !== undefined && (
               <p className="text-xs text-muted-foreground">
@@ -194,23 +198,23 @@ export function GameUserControls({
 
           {/* Notification Toggles */}
           <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
               <input
                 type="checkbox"
                 checked={notifyAtl}
                 onChange={handleAtlToggle}
                 className="rounded border-input"
               />
-              <span className="text-xs text-muted-foreground">Alert at all-time low</span>
+              <span className="text-sm text-muted-foreground">Alert at all-time low</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
               <input
                 type="checkbox"
                 checked={notifyThreshold}
                 onChange={handleThresholdNotifyToggle}
                 className="rounded border-input"
               />
-              <span className="text-xs text-muted-foreground">Alert at price threshold</span>
+              <span className="text-sm text-muted-foreground">Alert at price threshold</span>
             </label>
           </div>
 

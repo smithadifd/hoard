@@ -1,10 +1,17 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock } from 'lucide-react';
+import { useState, useCallback, useRef } from 'react';
+import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock, X } from 'lucide-react';
 
 interface SettingsFormProps {
   initialSettings: Record<string, string>;
+}
+
+interface SyncProgress {
+  processed: number;
+  total: number;
+  gameName?: string;
+  status?: string;
 }
 
 /**
@@ -13,8 +20,8 @@ interface SettingsFormProps {
 async function readSyncStream(
   response: Response,
   handlers: {
-    onProgress: (processed: number, total: number) => void;
-    onDone: (gamesProcessed: number) => void;
+    onProgress: (data: SyncProgress) => void;
+    onDone: (gamesProcessed: number, cancelled?: boolean, message?: string) => void;
     onError: (message: string) => void;
   }
 ) {
@@ -49,9 +56,14 @@ async function readSyncStream(
       try {
         const parsed = JSON.parse(data);
         if (event === 'progress') {
-          handlers.onProgress(parsed.processed, parsed.total);
+          handlers.onProgress({
+            processed: parsed.processed,
+            total: parsed.total,
+            gameName: parsed.gameName,
+            status: parsed.status,
+          });
         } else if (event === 'done') {
-          handlers.onDone(parsed.gamesProcessed);
+          handlers.onDone(parsed.gamesProcessed, parsed.cancelled, parsed.message);
         } else if (event === 'error') {
           handlers.onError(parsed.error);
         }
@@ -78,6 +90,8 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     hltb: 'idle',
   });
   const [syncMessage, setSyncMessage] = useState<Record<string, string>>({});
+  const [syncDetail, setSyncDetail] = useState<Record<string, string>>({});
+  const abortControllers = useRef<Record<string, AbortController>>({});
 
   const updateSetting = (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -102,12 +116,28 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     }
   };
 
+  const handleCancel = useCallback((type: string) => {
+    const controller = abortControllers.current[type];
+    if (controller) {
+      controller.abort();
+      delete abortControllers.current[type];
+    }
+  }, []);
+
   const handleStreamSync = useCallback(async (type: string, url: string, fetchOptions?: RequestInit) => {
     setSyncStatus((prev) => ({ ...prev, [type]: 'syncing' }));
-    setSyncMessage((prev) => ({ ...prev, [type]: '' }));
+    setSyncMessage((prev) => ({ ...prev, [type]: 'Starting...' }));
+    setSyncDetail((prev) => ({ ...prev, [type]: '' }));
+
+    const controller = new AbortController();
+    abortControllers.current[type] = controller;
 
     try {
-      const res = await fetch(url, { method: 'POST', ...fetchOptions });
+      const res = await fetch(url, {
+        method: 'POST',
+        ...fetchOptions,
+        signal: controller.signal,
+      });
 
       // If the response is not a stream (e.g. JSON error), handle it
       const contentType = res.headers.get('content-type') ?? '';
@@ -119,34 +149,57 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
           ...prev,
           [type]: `Synced ${data.data?.gamesProcessed ?? 0} games`,
         }));
+        setSyncDetail((prev) => ({ ...prev, [type]: '' }));
         return;
       }
 
       await readSyncStream(res, {
-        onProgress: (processed, total) => {
+        onProgress: ({ processed, total, gameName, status }) => {
           setSyncMessage((prev) => ({
             ...prev,
-            [type]: `Syncing ${processed}/${total} games...`,
+            [type]: `${processed}/${total} games`,
           }));
+          if (gameName) {
+            const statusIcon = status === 'matched' ? '\u2713' : status === 'skipped' ? '\u2013' : '';
+            setSyncDetail((prev) => ({
+              ...prev,
+              [type]: statusIcon ? `${statusIcon} ${gameName}` : gameName,
+            }));
+          }
         },
-        onDone: (gamesProcessed) => {
+        onDone: (gamesProcessed, cancelled, message) => {
           setSyncStatus((prev) => ({ ...prev, [type]: 'success' }));
           setSyncMessage((prev) => ({
             ...prev,
-            [type]: `Synced ${gamesProcessed} games`,
+            [type]: message
+              ? message
+              : cancelled
+                ? `Cancelled \u2014 ${gamesProcessed} games synced`
+                : `Synced ${gamesProcessed} games`,
           }));
+          setSyncDetail((prev) => ({ ...prev, [type]: '' }));
         },
         onError: (message) => {
           setSyncStatus((prev) => ({ ...prev, [type]: 'error' }));
           setSyncMessage((prev) => ({ ...prev, [type]: message }));
+          setSyncDetail((prev) => ({ ...prev, [type]: '' }));
         },
       });
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setSyncStatus((prev) => ({ ...prev, [type]: 'success' }));
+        setSyncMessage((prev) => ({ ...prev, [type]: 'Cancelled' }));
+        setSyncDetail((prev) => ({ ...prev, [type]: '' }));
+        return;
+      }
       setSyncStatus((prev) => ({ ...prev, [type]: 'error' }));
       setSyncMessage((prev) => ({
         ...prev,
         [type]: err instanceof Error ? err.message : 'Sync failed',
       }));
+      setSyncDetail((prev) => ({ ...prev, [type]: '' }));
+    } finally {
+      delete abortControllers.current[type];
     }
   }, []);
 
@@ -229,13 +282,15 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             Save your Steam API Key and User ID above before syncing.
           </p>
         )}
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <SyncButton
             label="Sync Library"
             icon={<Library className="h-4 w-4" />}
             status={syncStatus.library}
             message={syncMessage.library}
+            detail={syncDetail.library}
             onClick={() => handleStreamSync('library', '/api/steam/library')}
+            onCancel={() => handleCancel('library')}
             disabled={!hasSteamKeys}
             primary
           />
@@ -244,7 +299,9 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             icon={<Heart className="h-4 w-4" />}
             status={syncStatus.wishlist}
             message={syncMessage.wishlist}
+            detail={syncDetail.wishlist}
             onClick={() => handleStreamSync('wishlist', '/api/steam/wishlist')}
+            onCancel={() => handleCancel('wishlist')}
             disabled={!hasSteamKeys}
           />
           <SyncButton
@@ -252,10 +309,12 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             icon={<DollarSign className="h-4 w-4" />}
             status={syncStatus.prices}
             message={syncMessage.prices}
+            detail={syncDetail.prices}
             onClick={() => handleStreamSync('prices', '/api/sync', {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ type: 'prices' }),
             })}
+            onCancel={() => handleCancel('prices')}
             disabled={!hasItadKey}
           />
           <SyncButton
@@ -263,10 +322,12 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             icon={<Clock className="h-4 w-4" />}
             status={syncStatus.hltb}
             message={syncMessage.hltb}
+            detail={syncDetail.hltb}
             onClick={() => handleStreamSync('hltb', '/api/sync', {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ type: 'hltb' }),
             })}
+            onCancel={() => handleCancel('hltb')}
             disabled={!hasSteamKeys}
           />
         </div>
@@ -317,7 +378,9 @@ function SyncButton({
   icon,
   status,
   message,
+  detail,
   onClick,
+  onCancel,
   disabled,
   primary,
 }: {
@@ -325,36 +388,58 @@ function SyncButton({
   icon: React.ReactNode;
   status: 'idle' | 'syncing' | 'success' | 'error';
   message?: string;
+  detail?: string;
   onClick: () => void;
+  onCancel: () => void;
   disabled?: boolean;
   primary?: boolean;
 }) {
+  const isSyncing = status === 'syncing';
   const baseClasses = primary
     ? 'bg-steam-blue text-white hover:bg-steam-blue/90'
     : 'bg-secondary text-secondary-foreground hover:bg-secondary/80';
 
   return (
-    <div className="flex flex-col gap-1">
-      <button
-        onClick={onClick}
-        disabled={disabled || status === 'syncing'}
-        className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${baseClasses}`}
-      >
-        {status === 'syncing' ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          icon
-        )}
-        {label}
-      </button>
-      {message && (
-        <span
-          className={`text-xs ${
-            status === 'success' ? 'text-deal-great' : status === 'error' ? 'text-destructive' : 'text-muted-foreground'
-          }`}
+    <div className="rounded-md border border-border bg-background p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onClick}
+          disabled={disabled || isSyncing}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${baseClasses}`}
         >
-          {message}
-        </span>
+          {isSyncing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            icon
+          )}
+          {label}
+        </button>
+        {isSyncing && (
+          <button
+            onClick={onCancel}
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            title="Cancel sync"
+          >
+            <X className="h-3 w-3" />
+            Cancel
+          </button>
+        )}
+      </div>
+      {message && (
+        <div className="space-y-0.5">
+          <span
+            className={`text-xs font-medium ${
+              status === 'success' ? 'text-deal-great' : status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+            }`}
+          >
+            {message}
+          </span>
+          {detail && isSyncing && (
+            <p className="text-xs text-muted-foreground truncate" title={detail}>
+              {detail}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
