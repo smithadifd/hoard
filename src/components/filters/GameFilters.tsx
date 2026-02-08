@@ -97,7 +97,7 @@ export function GameFilters({
 
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className={`relative px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
+          className={`relative px-3 py-2 rounded-md border text-sm font-medium transition-colors min-h-[44px] flex items-center justify-center ${
             showAdvanced
               ? 'bg-secondary text-secondary-foreground border-border'
               : 'border-input text-muted-foreground hover:text-foreground'
@@ -114,7 +114,7 @@ export function GameFilters({
         {showRandomPick && onRandomPick && (
           <button
             onClick={onRandomPick}
-            className="px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors flex items-center gap-2"
+            className="px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors flex items-center gap-2 min-h-[44px]"
           >
             <Shuffle className="h-4 w-4" />
             Pick for me
@@ -124,14 +124,14 @@ export function GameFilters({
 
       {/* Advanced Filters (collapsible) */}
       {showAdvanced && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-lg border border-border bg-card">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-lg border border-border bg-card">
           {/* Duration */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Max Duration</label>
             <select
               value={filters.maxHours || ''}
               onChange={(e) => updateFilter('maxHours', e.target.value ? Number(e.target.value) : undefined)}
-              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+              className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
             >
               <option value="">Any</option>
               <option value="5">Under 5 hours</option>
@@ -148,7 +148,7 @@ export function GameFilters({
             <select
               value={filters.coop === undefined ? '' : filters.coop ? 'yes' : 'no'}
               onChange={(e) => updateFilter('coop', e.target.value === '' ? undefined : e.target.value === 'yes')}
-              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+              className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
             >
               <option value="">Any</option>
               <option value="yes">Co-op only</option>
@@ -162,7 +162,7 @@ export function GameFilters({
             <select
               value={filters.playtimeStatus || ''}
               onChange={(e) => updateFilter('playtimeStatus', e.target.value ? e.target.value as GameFiltersType['playtimeStatus'] : undefined)}
-              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+              className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
             >
               <option value="">Any</option>
               <option value="unplayed">Unplayed</option>
@@ -176,7 +176,7 @@ export function GameFilters({
             <select
               value={filters.minReview || ''}
               onChange={(e) => updateFilter('minReview', e.target.value ? Number(e.target.value) : undefined)}
-              className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+              className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
             >
               <option value="">Any</option>
               <option value="70">70%+</option>
@@ -193,7 +193,7 @@ export function GameFilters({
               <select
                 value={filters.onSale === undefined ? '' : filters.onSale ? 'yes' : 'no'}
                 onChange={(e) => updateFilter('onSale', e.target.value === '' ? undefined : e.target.value === 'yes')}
-                className="w-full px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+                className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
               >
                 <option value="">Any</option>
                 <option value="yes">On sale</option>
@@ -229,7 +229,7 @@ export function GameFilters({
                     {filteredGenres.map((genre) => (
                       <label
                         key={genre}
-                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-secondary cursor-pointer text-sm"
+                        className="flex items-center gap-2 px-3 py-2 rounded hover:bg-secondary cursor-pointer text-sm"
                       >
                         <input
                           type="checkbox"
@@ -256,7 +256,7 @@ export function GameFilters({
               <select
                 value={filters.sortBy || 'title'}
                 onChange={(e) => updateFilter('sortBy', e.target.value as GameFiltersType['sortBy'])}
-                className="min-w-0 flex-1 px-2 py-1.5 rounded-md bg-background border border-input text-sm"
+                className="min-w-0 flex-1 px-2 py-2.5 rounded-md bg-background border border-input text-sm"
               >
                 <option value="title">Title</option>
                 <option value="dealScore">Deal Score</option>
@@ -268,7 +268,7 @@ export function GameFilters({
               </select>
               <button
                 onClick={() => updateFilter('sortOrder', filters.sortOrder === 'desc' ? 'asc' : 'desc')}
-                className="shrink-0 px-2 py-1.5 rounded-md border border-input bg-background text-muted-foreground hover:text-foreground transition-colors"
+                className="shrink-0 px-3 py-2.5 rounded-md border border-input bg-background text-muted-foreground hover:text-foreground transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
                 title={filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'}
               >
                 {filters.sortOrder === 'desc' ? (
@@ -300,7 +300,7 @@ export function GameFilters({
                     sortOrder: 'asc',
                   });
                 }}
-                className="px-3 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground border border-input hover:border-border transition-colors"
+                className="px-3 py-2.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground border border-input hover:border-border transition-colors min-h-[44px]"
               >
                 Clear filters
               </button>

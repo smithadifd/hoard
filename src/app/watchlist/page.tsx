@@ -3,6 +3,8 @@ import { Bell, ArrowLeft } from 'lucide-react';
 import { getAllPriceAlertsWithGames, getAlertStats } from '@/lib/db/queries';
 import { WatchlistTable } from '@/components/alerts/WatchlistTable';
 
+export const dynamic = 'force-dynamic';
+
 export default function WatchlistPage() {
   let alerts: ReturnType<typeof getAllPriceAlertsWithGames> = [];
   let stats = { activeCount: 0, recentlyTriggered: 0 };

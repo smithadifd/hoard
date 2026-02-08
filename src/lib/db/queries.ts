@@ -754,7 +754,7 @@ export interface PriceSnapshotRow {
   snapshotDate: string;
 }
 
-export function getGamesForPriceSync(): Array<{ id: number; steamAppId: number; itadGameId: string | null }> {
+export function getGamesForPriceSync(): Array<{ id: number; steamAppId: number; title: string; itadGameId: string | null }> {
   const db = getDb();
   const userId = 'default';
 
@@ -762,6 +762,7 @@ export function getGamesForPriceSync(): Array<{ id: number; steamAppId: number; 
     .select({
       id: games.id,
       steamAppId: games.steamAppId,
+      title: games.title,
       itadGameId: games.itadGameId,
     })
     .from(games)
@@ -1318,11 +1319,12 @@ export function getAllPriceAlertsWithGames(): AlertWithGame[] {
       ps.historical_low_price as historicalLowPrice
     FROM price_alerts pa
     INNER JOIN games g ON pa.game_id = g.id
-    LEFT JOIN price_snapshots ps ON g.id = ps.game_id
-      AND ps.snapshot_date = (
-        SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
-        WHERE ps2.game_id = g.id
-      )
+    LEFT JOIN price_snapshots ps ON ps.id = (
+      SELECT ps2.id FROM price_snapshots ps2
+      WHERE ps2.game_id = g.id
+      ORDER BY ps2.snapshot_date DESC, ps2.price_current ASC
+      LIMIT 1
+    )
     WHERE pa.user_id = ${userId}
     ORDER BY pa.is_active DESC, g.title ASC
   `) as RawRow[];

@@ -37,9 +37,9 @@ export function DealIndicator({ rating, score, compact = false }: DealIndicatorP
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold text-white ${config.bg}`}
+      title={score !== undefined ? `Deal Score: ${score}/100 — based on price vs ATL, reviews, $/hr, and interest` : config.label}
     >
-      {score !== undefined && <span>{score}</span>}
-      <span>{config.label.split(' ')[0]}</span>
+      <span>{config.label}</span>
     </span>
   );
 }

@@ -4,6 +4,8 @@ import { SettingsForm } from '@/components/settings/SettingsForm';
 import { ScoringConfig } from '@/components/settings/ScoringConfig';
 import { AlertConfig } from '@/components/settings/AlertConfig';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Settings Page - Configure API keys, scoring preferences, and trigger syncs.
  * Server Component loads current settings, passes to client forms.

@@ -5,26 +5,49 @@ import { syncPrices } from '@/lib/sync/prices';
 import { syncHltb } from '@/lib/sync/hltb';
 import { getRecentSyncLogs } from '@/lib/db/queries';
 
+type ProgressContext = {
+  gameName?: string;
+  status?: string;
+};
+
+type SyncFn = (
+  onProgress: (processed: number, total: number, context?: ProgressContext) => void,
+  signal?: AbortSignal
+) => Promise<{ gamesProcessed: number; message?: string }>;
+
 /**
  * Helper: wrap a sync function with SSE progress streaming.
+ * Supports cancellation via AbortController when the client disconnects.
  */
-function streamSync(
-  syncFn: (onProgress: (processed: number, total: number) => void) => Promise<{ gamesProcessed: number }>,
-  label: string
-) {
+function streamSync(syncFn: SyncFn, label: string, request: NextRequest) {
   const encoder = new TextEncoder();
+  const abortController = new AbortController();
+
+  // Abort the sync if the client disconnects
+  request.signal.addEventListener('abort', () => {
+    abortController.abort();
+  });
 
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // Controller already closed (client disconnected)
+        }
       };
 
       try {
-        const result = await syncFn((processed, total) => {
-          send('progress', { processed, total });
-        });
-        send('done', { gamesProcessed: result.gamesProcessed });
+        const result = await syncFn((processed, total, context) => {
+          send('progress', { processed, total, ...context });
+        }, abortController.signal);
+
+        if (abortController.signal.aborted) {
+          send('done', { gamesProcessed: result.gamesProcessed, cancelled: true });
+        } else {
+          send('done', { gamesProcessed: result.gamesProcessed, message: result.message });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : `${label} sync failed`;
         console.error(`${label} sync failed:`, error);
@@ -32,6 +55,9 @@ function streamSync(
       } finally {
         controller.close();
       }
+    },
+    cancel() {
+      abortController.abort();
     },
   });
 
@@ -56,13 +82,13 @@ export async function POST(request: NextRequest) {
 
     switch (type) {
       case 'library':
-        return streamSync(syncLibrary, 'Library');
+        return streamSync(syncLibrary, 'Library', request);
       case 'wishlist':
-        return streamSync(syncWishlist, 'Wishlist');
+        return streamSync(syncWishlist, 'Wishlist', request);
       case 'prices':
-        return streamSync(syncPrices, 'Price');
+        return streamSync(syncPrices, 'Price', request);
       case 'hltb':
-        return streamSync(syncHltb, 'HLTB');
+        return streamSync(syncHltb, 'HLTB', request);
       default:
         return NextResponse.json(
           { error: `Unknown sync type: ${type}` },

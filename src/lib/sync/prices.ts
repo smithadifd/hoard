@@ -22,9 +22,14 @@ export interface SyncResult {
   syncLogId: number;
 }
 
-export type ProgressCallback = (processed: number, total: number) => void;
+export type ProgressContext = {
+  gameName?: string;
+  status?: 'matched' | 'skipped' | 'error' | 'processing';
+};
 
-export async function syncPrices(onProgress?: ProgressCallback): Promise<SyncResult> {
+export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+
+export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
   const config = getEffectiveConfig();
 
   if (!config.itadApiKey) {
@@ -89,6 +94,11 @@ export async function syncPrices(onProgress?: ProgressCallback): Promise<SyncRes
     const total = overviews.length;
     let processed = 0;
     for (const overview of overviews) {
+      if (signal?.aborted) {
+        console.log(`[PriceSync] Cancelled after ${processed} games`);
+        break;
+      }
+
       const game = itadToGame.get(overview.id);
       if (!game) continue;
 
@@ -138,7 +148,7 @@ export async function syncPrices(onProgress?: ProgressCallback): Promise<SyncRes
       });
 
       processed++;
-      onProgress?.(processed, total);
+      onProgress?.(processed, total, { gameName: game.title });
     }
 
     completeSyncLog(syncLogId, 'success', processed);

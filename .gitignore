@@ -46,6 +46,10 @@ next-env.d.ts
 # personal claude code config
 CLAUDE.local.md
 
+# Serwist (generated service worker files)
+public/sw*
+public/swe-worker*
+
 # IDE
 .idea/
 .vscode/

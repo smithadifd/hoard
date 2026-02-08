@@ -20,9 +20,14 @@ export interface SyncResult {
   syncLogId: number;
 }
 
-export type ProgressCallback = (processed: number, total: number) => void;
+export type ProgressContext = {
+  gameName?: string;
+  status?: 'matched' | 'skipped' | 'error' | 'processing';
+};
 
-export async function syncLibrary(onProgress?: ProgressCallback): Promise<SyncResult> {
+export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+
+export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
   const config = getEffectiveConfig();
 
   if (!config.steamApiKey || !config.steamUserId) {
@@ -38,6 +43,11 @@ export async function syncLibrary(onProgress?: ProgressCallback): Promise<SyncRe
     const total = response.games.length;
     let processed = 0;
     for (const steamGame of response.games) {
+      if (signal?.aborted) {
+        console.log(`[LibrarySync] Cancelled after ${processed} games`);
+        break;
+      }
+
       const gameId = upsertGameFromSteam({
         steamAppId: steamGame.appid,
         title: steamGame.name,
@@ -55,7 +65,7 @@ export async function syncLibrary(onProgress?: ProgressCallback): Promise<SyncRe
       });
 
       processed++;
-      onProgress?.(processed, total);
+      onProgress?.(processed, total, { gameName: steamGame.name });
     }
 
     completeSyncLog(syncLogId, 'success', processed);

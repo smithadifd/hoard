@@ -21,9 +21,14 @@ export interface SyncResult {
   syncLogId: number;
 }
 
-export type ProgressCallback = (processed: number, total: number) => void;
+export type ProgressContext = {
+  gameName?: string;
+  status?: 'matched' | 'skipped' | 'error' | 'processing';
+};
 
-export async function syncWishlist(onProgress?: ProgressCallback): Promise<SyncResult> {
+export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+
+export async function syncWishlist(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
   const config = getEffectiveConfig();
 
   if (!config.steamApiKey || !config.steamUserId) {
@@ -52,12 +57,16 @@ export async function syncWishlist(onProgress?: ProgressCallback): Promise<SyncR
     const needDetails: number[] = [];
 
     for (const entry of wishlistEntries) {
+      if (signal?.aborted) {
+        console.log(`[WishlistSync] Cancelled after ${processed} games`);
+        break;
+      }
       const found = existing.get(entry.appid);
       if (found) {
         // Game exists — just flag as wishlisted
         upsertUserGame(found.id, { isWishlisted: true });
         processed++;
-        onProgress?.(processed, total);
+        onProgress?.(processed, total, { gameName: found.title });
       } else {
         needDetails.push(entry.appid);
       }
@@ -65,6 +74,11 @@ export async function syncWishlist(onProgress?: ProgressCallback): Promise<SyncR
 
     // New games: fetch name from Steam Store API (rate-limited)
     for (const appId of needDetails) {
+      if (signal?.aborted) {
+        console.log(`[WishlistSync] Cancelled after ${processed} games`);
+        break;
+      }
+
       const details = await client.getAppDetails(appId);
       const title = details?.name ?? `App ${appId}`;
 
@@ -95,7 +109,7 @@ export async function syncWishlist(onProgress?: ProgressCallback): Promise<SyncR
       }
 
       processed++;
-      onProgress?.(processed, total);
+      onProgress?.(processed, total, { gameName: title });
 
       // Rate limit: Steam Store API allows ~200 requests / 5 min.
       // We make 2 calls per game (appdetails + reviews), so 3s per game.

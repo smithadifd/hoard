@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { syncWishlist } from '@/lib/sync/wishlist';
 import { getEnrichedGames } from '@/lib/db/queries';
 
@@ -7,20 +7,29 @@ import { getEnrichedGames } from '@/lib/db/queries';
  * Triggers a sync of the user's Steam wishlist.
  * Streams progress via SSE (text/event-stream).
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
+  const abortController = new AbortController();
+
+  request.signal.addEventListener('abort', () => {
+    abortController.abort();
+  });
 
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // Controller already closed
+        }
       };
 
       try {
-        const result = await syncWishlist((processed, total) => {
-          send('progress', { processed, total });
-        });
-        send('done', { gamesProcessed: result.gamesProcessed });
+        const result = await syncWishlist((processed, total, context) => {
+          send('progress', { processed, total, ...context });
+        }, abortController.signal);
+        send('done', { gamesProcessed: result.gamesProcessed, cancelled: abortController.signal.aborted });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Wishlist sync failed';
         console.error('Wishlist sync failed:', error);
@@ -28,6 +37,9 @@ export async function POST() {
       } finally {
         controller.close();
       }
+    },
+    cancel() {
+      abortController.abort();
     },
   });
 
