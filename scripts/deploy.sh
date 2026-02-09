@@ -122,8 +122,9 @@ echo ""
 echo "--- Building Docker image ---"
 docker-compose -f "$COMPOSE_FILE" --env-file .env.production build
 
-# Ensure backup directory exists (Docker v20 doesn't auto-create bind mounts)
+# Ensure backup directory exists and is writable by container (UID 1001)
 mkdir -p "${BACKUP_PATH:-./backups}"
+chmod 777 "${BACKUP_PATH:-./backups}"
 
 echo ""
 echo "--- Starting containers ---"
