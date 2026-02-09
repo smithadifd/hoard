@@ -122,6 +122,9 @@ echo ""
 echo "--- Building Docker image ---"
 docker-compose -f "$COMPOSE_FILE" --env-file .env.production build
 
+# Ensure backup directory exists (Docker v20 doesn't auto-create bind mounts)
+mkdir -p "${BACKUP_PATH:-./backups}"
+
 echo ""
 echo "--- Starting containers ---"
 docker-compose -f "$COMPOSE_FILE" --env-file .env.production up -d
