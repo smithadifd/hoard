@@ -6,6 +6,8 @@ import { BacklogFilters } from '@/components/backlog/BacklogFilters';
 import { Pagination } from '@/components/ui/Pagination';
 import type { GameFilters } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 interface BacklogPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
