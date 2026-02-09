@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updatePriceAlert, deletePriceAlert } from '@/lib/db/queries';
+import { alertIdSchema, alertUpdateSchema, formatZodError } from '@/lib/validations';
 
 /**
  * PATCH /api/alerts/:id
@@ -11,21 +12,21 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const alertId = parseInt(id);
-    if (isNaN(alertId)) {
+    const idResult = alertIdSchema.safeParse({ id });
+    if (!idResult.success) {
       return NextResponse.json({ error: 'Invalid alert ID' }, { status: 400 });
     }
 
     const body = await request.json();
-    const { targetPrice, notifyOnAllTimeLow, notifyOnThreshold, isActive } = body;
+    const parsed = alertUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: formatZodError(parsed.error) },
+        { status: 400 }
+      );
+    }
 
-    const updated = updatePriceAlert(alertId, {
-      ...(targetPrice !== undefined && { targetPrice }),
-      ...(notifyOnAllTimeLow !== undefined && { notifyOnAllTimeLow }),
-      ...(notifyOnThreshold !== undefined && { notifyOnThreshold }),
-      ...(isActive !== undefined && { isActive }),
-    });
-
+    const updated = updatePriceAlert(idResult.data.id, parsed.data);
     if (!updated) {
       return NextResponse.json({ error: 'Alert not found' }, { status: 404 });
     }
@@ -50,12 +51,12 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const alertId = parseInt(id);
-    if (isNaN(alertId)) {
+    const idResult = alertIdSchema.safeParse({ id });
+    if (!idResult.success) {
       return NextResponse.json({ error: 'Invalid alert ID' }, { status: 400 });
     }
 
-    const deleted = deletePriceAlert(alertId);
+    const deleted = deletePriceAlert(idResult.data.id);
     if (!deleted) {
       return NextResponse.json({ error: 'Alert not found' }, { status: 404 });
     }

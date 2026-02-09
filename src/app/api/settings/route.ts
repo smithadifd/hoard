@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllSettings, setSetting } from '@/lib/db/queries';
+import { settingsUpdateSchema, formatZodError } from '@/lib/validations';
 
 /**
  * GET /api/settings
@@ -26,27 +27,15 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const entries: Record<string, string> = body.settings;
-
-    if (!entries || typeof entries !== 'object') {
+    const parsed = settingsUpdateSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Expected { settings: { key: value } }' },
+        { error: formatZodError(parsed.error) },
         { status: 400 }
       );
     }
 
-    const allowedKeys = [
-      'steam_api_key',
-      'steam_user_id',
-      'itad_api_key',
-      'discord_webhook_url',
-      'scoring_weights',
-      'scoring_thresholds',
-      'alert_throttle_hours',
-    ];
-
-    for (const [key, value] of Object.entries(entries)) {
-      if (!allowedKeys.includes(key)) continue;
+    for (const [key, value] of Object.entries(parsed.data.settings)) {
       setSetting(key, value);
     }
 
