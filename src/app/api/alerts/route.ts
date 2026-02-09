@@ -4,6 +4,7 @@ import {
   upsertPriceAlert,
 } from '@/lib/db/queries';
 import { alertUpsertSchema, formatZodError } from '@/lib/validations';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * GET /api/alerts
@@ -11,11 +12,18 @@ import { alertUpsertSchema, formatZodError } from '@/lib/validations';
  * Optional query: ?active=true to filter active-only.
  */
 export async function GET(request: NextRequest) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const activeOnly = searchParams.get('active') === 'true';
 
-    let alerts = getAllPriceAlertsWithGames();
+    let alerts = getAllPriceAlertsWithGames(userId);
     if (activeOnly) {
       alerts = alerts.filter((a) => a.isActive);
     }
@@ -36,6 +44,13 @@ export async function GET(request: NextRequest) {
  * Body: { gameId, targetPrice?, notifyOnAllTimeLow?, notifyOnThreshold? }
  */
 export async function POST(request: NextRequest) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const parsed = alertUpsertSchema.safeParse(body);
@@ -47,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { gameId, ...alertOptions } = parsed.data;
-    const alertId = upsertPriceAlert(gameId, alertOptions);
+    const alertId = upsertPriceAlert(gameId, alertOptions, userId);
 
     return NextResponse.json({ data: { id: alertId, message: 'Alert saved' } });
   } catch (error) {

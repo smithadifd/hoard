@@ -14,6 +14,7 @@ import {
   getExistingGamesByAppIds,
   createSyncLog,
   completeSyncLog,
+  getFirstUserId,
 } from '../db/queries';
 
 export interface SyncResult {
@@ -28,8 +29,9 @@ export type ProgressContext = {
 
 export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
 
-export async function syncWishlist(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
+export async function syncWishlist(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const config = getEffectiveConfig();
+  const effectiveUserId = userId ?? getFirstUserId();
 
   if (!config.steamApiKey || !config.steamUserId) {
     throw new Error('Steam API Key and User ID are required. Configure them in Settings.');
@@ -64,7 +66,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
       const found = existing.get(entry.appid);
       if (found) {
         // Game exists — just flag as wishlisted
-        upsertUserGame(found.id, { isWishlisted: true });
+        upsertUserGame(found.id, { isWishlisted: true }, effectiveUserId);
         processed++;
         onProgress?.(processed, total, { gameName: found.title });
       } else {
@@ -92,7 +94,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
         publisher: details?.publishers?.[0],
       });
 
-      upsertUserGame(gameId, { isWishlisted: true });
+      upsertUserGame(gameId, { isWishlisted: true }, effectiveUserId);
 
       // Enrich with review data
       const reviews = await client.getReviewSummary(appId);

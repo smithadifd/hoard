@@ -112,6 +112,53 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT
     );
+
+    -- Better Auth tables (snake_case columns, integer timestamps)
+    CREATE TABLE IF NOT EXISTS user (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      email_verified INTEGER NOT NULL DEFAULT 0,
+      image TEXT,
+      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+    );
+
+    CREATE TABLE IF NOT EXISTS session (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+    );
+
+    CREATE TABLE IF NOT EXISTS account (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      account_id TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      access_token TEXT,
+      refresh_token TEXT,
+      access_token_expires_at INTEGER,
+      refresh_token_expires_at INTEGER,
+      scope TEXT,
+      id_token TEXT,
+      password TEXT,
+      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+    );
+
+    CREATE TABLE IF NOT EXISTS verification (
+      id TEXT PRIMARY KEY,
+      identifier TEXT NOT NULL,
+      value TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+    );
   `);
 
   // Schema migrations for existing databases
@@ -119,6 +166,75 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
     sqlite.exec(`ALTER TABLE price_snapshots ADD COLUMN deal_score INTEGER`);
   } catch {
     // Column already exists — safe to ignore
+  }
+
+  // Migrate auth tables from camelCase to snake_case columns
+  // Better Auth requires snake_case column names in SQLite
+  try {
+    const row = sqlite.prepare(
+      `SELECT name FROM pragma_table_info('user') WHERE name = 'emailVerified'`
+    ).get() as { name: string } | undefined;
+    if (row) {
+      // Old camelCase schema detected — drop and recreate
+      sqlite.exec(`
+        DROP TABLE IF EXISTS verification;
+        DROP TABLE IF EXISTS account;
+        DROP TABLE IF EXISTS session;
+        DROP TABLE IF EXISTS user;
+      `);
+      // Re-run the CREATE TABLE IF NOT EXISTS statements above
+      // by calling ensureSchema again (the tables will be created fresh)
+      // Actually, we just need to re-exec the auth table DDL since the main
+      // ensureSchema already ran CREATE TABLE IF NOT EXISTS for all tables.
+      // The auth tables were skipped because they existed with old columns.
+      // After dropping them, we need to re-create them.
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS user (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          email_verified INTEGER NOT NULL DEFAULT 0,
+          image TEXT,
+          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+        );
+        CREATE TABLE IF NOT EXISTS session (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+          token TEXT NOT NULL UNIQUE,
+          expires_at INTEGER NOT NULL,
+          ip_address TEXT,
+          user_agent TEXT,
+          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+        );
+        CREATE TABLE IF NOT EXISTS account (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+          account_id TEXT NOT NULL,
+          provider_id TEXT NOT NULL,
+          access_token TEXT,
+          refresh_token TEXT,
+          access_token_expires_at INTEGER,
+          refresh_token_expires_at INTEGER,
+          scope TEXT,
+          id_token TEXT,
+          password TEXT,
+          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+        );
+        CREATE TABLE IF NOT EXISTS verification (
+          id TEXT PRIMARY KEY,
+          identifier TEXT NOT NULL,
+          value TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+        );
+      `);
+    }
+  } catch {
+    // Migration already applied or tables don't exist yet
   }
 }
 

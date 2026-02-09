@@ -149,7 +149,7 @@ describe('upsertGameFromSteam', () => {
 
   it('generates header image URL if not provided', () => {
     const id = upsertGameFromSteam({ steamAppId: 440, title: 'TF2' });
-    const game = getEnrichedGameById(id);
+    const game = getEnrichedGameById(id, 'default');
     expect(game?.headerImageUrl).toContain('440');
   });
 });
@@ -179,19 +179,19 @@ describe('getExistingGamesByAppIds', () => {
 describe('upsertUserGame', () => {
   it('creates a user_game record', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
-    upsertUserGame(gameId, { isOwned: true, playtimeMinutes: 120 });
+    upsertUserGame(gameId, { isOwned: true, playtimeMinutes: 120 }, 'default');
 
-    const enriched = getEnrichedGameById(gameId);
+    const enriched = getEnrichedGameById(gameId, 'default');
     expect(enriched?.isOwned).toBe(true);
     expect(enriched?.playtimeMinutes).toBe(120);
   });
 
   it('updates existing record on conflict', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
-    upsertUserGame(gameId, { isOwned: true, playtimeMinutes: 100 });
-    upsertUserGame(gameId, { playtimeMinutes: 200 });
+    upsertUserGame(gameId, { isOwned: true, playtimeMinutes: 100 }, 'default');
+    upsertUserGame(gameId, { playtimeMinutes: 200 }, 'default');
 
-    const enriched = getEnrichedGameById(gameId);
+    const enriched = getEnrichedGameById(gameId, 'default');
     expect(enriched?.playtimeMinutes).toBe(200);
   });
 });
@@ -201,12 +201,12 @@ describe('updateUserGame', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
     seedUserGame(testDb, gameId, { isOwned: true });
 
-    const result = updateUserGame(gameId, { personalInterest: 5 });
+    const result = updateUserGame(gameId, { personalInterest: 5 }, 'default');
     expect(result).toBe(true);
   });
 
   it('returns false for non-existent game', () => {
-    const result = updateUserGame(99999, { personalInterest: 5 });
+    const result = updateUserGame(99999, { personalInterest: 5 }, 'default');
     expect(result).toBe(false);
   });
 
@@ -214,8 +214,8 @@ describe('updateUserGame', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
     seedUserGame(testDb, gameId, { isOwned: true });
 
-    updateUserGame(gameId, { isWatchlisted: true });
-    const alert = getPriceAlertForGame(gameId);
+    updateUserGame(gameId, { isWatchlisted: true }, 'default');
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert).not.toBeNull();
     expect(alert?.isActive).toBe(true);
   });
@@ -225,8 +225,8 @@ describe('updateUserGame', () => {
     seedUserGame(testDb, gameId, { isOwned: true, isWatchlisted: true });
     seedPriceAlert(testDb, gameId);
 
-    updateUserGame(gameId, { isWatchlisted: false });
-    const alert = getPriceAlertForGame(gameId);
+    updateUserGame(gameId, { isWatchlisted: false }, 'default');
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert?.isActive).toBe(false);
   });
 
@@ -234,8 +234,8 @@ describe('updateUserGame', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
     seedUserGame(testDb, gameId, { isOwned: true, isWatchlisted: true });
 
-    updateUserGame(gameId, { priceThreshold: 9.99 });
-    const alert = getPriceAlertForGame(gameId);
+    updateUserGame(gameId, { priceThreshold: 9.99 }, 'default');
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert).not.toBeNull();
     expect(alert?.targetPrice).toBe(9.99);
   });
@@ -251,7 +251,7 @@ describe('upsertTags', () => {
     seedUserGame(testDb, gameId, { isOwned: true });
     upsertTags(gameId, ['Action', 'FPS'], 'genre');
 
-    const game = getEnrichedGameById(gameId);
+    const game = getEnrichedGameById(gameId, 'default');
     expect(game?.genres).toContain('Action');
     expect(game?.genres).toContain('FPS');
   });
@@ -274,50 +274,50 @@ describe('getEnrichedGames', () => {
   });
 
   it('returns all games with no filters', () => {
-    const result = getEnrichedGames({});
+    const result = getEnrichedGames({}, undefined, undefined, 'default');
     expect(result.games).toHaveLength(3);
     expect(result.total).toBe(3);
   });
 
   it('filters by search term', () => {
-    const result = getEnrichedGames({ search: 'Alpha' });
+    const result = getEnrichedGames({ search: 'Alpha' }, undefined, undefined, 'default');
     expect(result.games).toHaveLength(1);
     expect(result.games[0].title).toBe('Alpha Game');
   });
 
   it('filters by owned view', () => {
-    const result = getEnrichedGames({ view: 'library' });
+    const result = getEnrichedGames({ view: 'library' }, undefined, undefined, 'default');
     expect(result.games).toHaveLength(2);
   });
 
   it('filters by wishlist view', () => {
-    const result = getEnrichedGames({ view: 'wishlist' });
+    const result = getEnrichedGames({ view: 'wishlist' }, undefined, undefined, 'default');
     expect(result.games).toHaveLength(2);
   });
 
   it('paginates correctly', () => {
-    const page1 = getEnrichedGames({}, 1, 2);
+    const page1 = getEnrichedGames({}, 1, 2, 'default');
     expect(page1.games).toHaveLength(2);
     expect(page1.total).toBe(3);
 
-    const page2 = getEnrichedGames({}, 2, 2);
+    const page2 = getEnrichedGames({}, 2, 2, 'default');
     expect(page2.games).toHaveLength(1);
     expect(page2.total).toBe(3);
   });
 
   it('sorts by title ascending by default', () => {
-    const result = getEnrichedGames({});
+    const result = getEnrichedGames({}, undefined, undefined, 'default');
     expect(result.games[0].title).toBe('Alpha Game');
     expect(result.games[2].title).toBe('Charlie Game');
   });
 
   it('sorts by title descending', () => {
-    const result = getEnrichedGames({ sortBy: 'title', sortOrder: 'desc' });
+    const result = getEnrichedGames({ sortBy: 'title', sortOrder: 'desc' }, undefined, undefined, 'default');
     expect(result.games[0].title).toBe('Charlie Game');
   });
 
   it('sorts by review score', () => {
-    const result = getEnrichedGames({ sortBy: 'review', sortOrder: 'desc' });
+    const result = getEnrichedGames({ sortBy: 'review', sortOrder: 'desc' }, undefined, undefined, 'default');
     expect(result.games[0].reviewScore).toBe(90);
   });
 });
@@ -326,13 +326,13 @@ describe('getEnrichedGameById', () => {
   it('returns game for valid ID', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
     seedUserGame(testDb, gameId, { isOwned: true });
-    const game = getEnrichedGameById(gameId);
+    const game = getEnrichedGameById(gameId, 'default');
     expect(game).not.toBeNull();
     expect(game?.title).toBe('TF2');
   });
 
   it('returns null for non-existent ID', () => {
-    const game = getEnrichedGameById(99999);
+    const game = getEnrichedGameById(99999, 'default');
     expect(game).toBeNull();
   });
 
@@ -345,7 +345,7 @@ describe('getEnrichedGameById', () => {
       discountPercent: 50,
     });
 
-    const game = getEnrichedGameById(gameId);
+    const game = getEnrichedGameById(gameId, 'default');
     expect(game?.currentPrice).toBe(9.99);
     expect(game?.regularPrice).toBe(19.99);
     expect(game?.discountPercent).toBe(50);
@@ -366,7 +366,7 @@ describe('getDashboardStats', () => {
     seedUserGame(testDb, g2, { isOwned: true, isWishlisted: true, playtimeMinutes: 60 });
     seedUserGame(testDb, g3, { isWishlisted: true, isWatchlisted: true });
 
-    const stats = getDashboardStats();
+    const stats = getDashboardStats('default');
     expect(stats.libraryCount).toBe(2);
     expect(stats.wishlistCount).toBe(2);
     expect(stats.watchlistCount).toBe(1);
@@ -459,52 +459,52 @@ describe('price alerts', () => {
   });
 
   it('upsertPriceAlert creates new alert', () => {
-    const alertId = upsertPriceAlert(gameId, { targetPrice: 9.99 });
+    const alertId = upsertPriceAlert(gameId, { targetPrice: 9.99 }, 'default');
     expect(alertId).toBeGreaterThan(0);
   });
 
   it('upsertPriceAlert updates existing alert (unique constraint)', () => {
-    const id1 = upsertPriceAlert(gameId, { targetPrice: 9.99 });
-    const id2 = upsertPriceAlert(gameId, { targetPrice: 4.99 });
+    const id1 = upsertPriceAlert(gameId, { targetPrice: 9.99 }, 'default');
+    const id2 = upsertPriceAlert(gameId, { targetPrice: 4.99 }, 'default');
     expect(id2).toBe(id1);
 
-    const alert = getPriceAlertForGame(gameId);
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert?.targetPrice).toBe(4.99);
   });
 
   it('getPriceAlertForGame returns alert', () => {
-    upsertPriceAlert(gameId, { targetPrice: 15.00, notifyOnAllTimeLow: false });
-    const alert = getPriceAlertForGame(gameId);
+    upsertPriceAlert(gameId, { targetPrice: 15.00, notifyOnAllTimeLow: false }, 'default');
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert).not.toBeNull();
     expect(alert?.targetPrice).toBe(15.00);
     expect(alert?.notifyOnAllTimeLow).toBe(false);
   });
 
   it('getPriceAlertForGame returns null when no alert exists', () => {
-    const alert = getPriceAlertForGame(gameId);
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert).toBeNull();
   });
 
   it('getActivePriceAlerts returns active alerts with price data', () => {
-    upsertPriceAlert(gameId, { targetPrice: 10.00 });
+    upsertPriceAlert(gameId, { targetPrice: 10.00 }, 'default');
     seedPriceSnapshot(testDb, gameId, {
       priceCurrent: 9.99,
       priceRegular: 19.99,
       discountPercent: 50,
     });
 
-    const alerts = getActivePriceAlerts();
+    const alerts = getActivePriceAlerts('default');
     expect(alerts).toHaveLength(1);
     expect(alerts[0].title).toBe('TF2');
     expect(alerts[0].currentPrice).toBe(9.99);
   });
 
   it('updatePriceAlert updates alert settings', () => {
-    const alertId = upsertPriceAlert(gameId, { targetPrice: 10 });
+    const alertId = upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
     const updated = updatePriceAlert(alertId, { isActive: false });
     expect(updated).toBe(true);
 
-    const alert = getPriceAlertForGame(gameId);
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert?.isActive).toBe(false);
   });
 
@@ -514,11 +514,11 @@ describe('price alerts', () => {
   });
 
   it('deletePriceAlert removes alert', () => {
-    const alertId = upsertPriceAlert(gameId, { targetPrice: 10 });
+    const alertId = upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
     const deleted = deletePriceAlert(alertId);
     expect(deleted).toBe(true);
 
-    const alert = getPriceAlertForGame(gameId);
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert).toBeNull();
   });
 
@@ -528,29 +528,29 @@ describe('price alerts', () => {
   });
 
   it('updateAlertLastNotified sets timestamp', () => {
-    const alertId = upsertPriceAlert(gameId, { targetPrice: 10 });
+    const alertId = upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
     updateAlertLastNotified(alertId);
 
-    const alert = getPriceAlertForGame(gameId);
+    const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert?.lastNotifiedAt).not.toBeNull();
   });
 
   it('getAllPriceAlertsWithGames returns all alerts with game data', () => {
-    upsertPriceAlert(gameId, { targetPrice: 10 });
-    const alerts = getAllPriceAlertsWithGames();
+    upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
+    const alerts = getAllPriceAlertsWithGames('default');
     expect(alerts).toHaveLength(1);
     expect(alerts[0].title).toBe('TF2');
   });
 
   it('getAlertStats returns correct counts', () => {
-    upsertPriceAlert(gameId, { targetPrice: 10 });
+    upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
 
     const g2 = seedGame(testDb, { steamAppId: 570, title: 'Dota 2' });
     seedUserGame(testDb, g2, { isOwned: true, isWatchlisted: true });
-    const alertId2 = upsertPriceAlert(g2, { targetPrice: 5 });
+    const alertId2 = upsertPriceAlert(g2, { targetPrice: 5 }, 'default');
     updatePriceAlert(alertId2, { isActive: false });
 
-    const stats = getAlertStats();
+    const stats = getAlertStats('default');
     expect(stats.activeCount).toBe(1);
   });
 });
@@ -578,7 +578,7 @@ describe('genres and backlog', () => {
     seedUserGame(testDb, g2, { isOwned: true, playtimeMinutes: 120 });
     seedUserGame(testDb, g3, { isOwned: true, playtimeMinutes: 0 });
 
-    const stats = getBacklogStats();
+    const stats = getBacklogStats('default');
     expect(stats.totalOwned).toBe(3);
     expect(stats.unplayedCount).toBe(2);
   });

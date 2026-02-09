@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, PATCH } from './route';
 
+// Mock auth helper
+vi.mock('@/lib/auth-helpers', () => ({
+  requireUserIdFromRequest: vi.fn().mockResolvedValue('test-user-id'),
+}));
+
 // Mock the queries module
 vi.mock('@/lib/db/queries', () => ({
   getEnrichedGameById: vi.fn(),
@@ -68,7 +73,7 @@ describe('PATCH /api/games/:id', () => {
 
     expect(res.status).toBe(200);
     expect(body.data.message).toBe('Updated');
-    expect(mockUpdateGame).toHaveBeenCalledWith(1, { personalInterest: 4 });
+    expect(mockUpdateGame).toHaveBeenCalledWith(1, { personalInterest: 4 }, 'test-user-id');
   });
 
   it('returns 400 for invalid ID', async () => {

@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { getEnrichedGames } from '@/lib/db/queries';
+import { getSession } from '@/lib/auth-helpers';
 import { GameGrid } from '@/components/games/GameGrid';
 import { GameListFilters } from '@/components/filters/GameListFilters';
 import { Pagination } from '@/components/ui/Pagination';
@@ -9,6 +11,9 @@ interface WishlistPageProps {
 }
 
 export default async function WishlistPage({ searchParams }: WishlistPageProps) {
+  const session = await getSession();
+  if (!session) redirect('/login');
+
   const params = await searchParams;
 
   const filters: GameFilters = {
@@ -30,7 +35,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
 
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
-  const { games, total } = getEnrichedGames(filters, page, pageSize);
+  const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
 
   const paginationParams: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {

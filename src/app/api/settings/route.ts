@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllSettings, setSetting } from '@/lib/db/queries';
 import { settingsUpdateSchema, formatZodError } from '@/lib/validations';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * GET /api/settings
  * Returns all settings as a flat object.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const settings = getAllSettings();
     return NextResponse.json({ data: settings });
@@ -25,6 +32,12 @@ export async function GET() {
  * Body: { settings: { key: value, ... } }
  */
 export async function PUT(request: NextRequest) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const parsed = settingsUpdateSchema.safeParse(body);

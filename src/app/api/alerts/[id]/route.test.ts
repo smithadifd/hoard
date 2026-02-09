@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { PATCH, DELETE } from './route';
 
+// Mock auth helper
+vi.mock('@/lib/auth-helpers', () => ({
+  requireUserIdFromRequest: vi.fn().mockResolvedValue('test-user-id'),
+}));
+
 vi.mock('@/lib/db/queries', () => ({
   updatePriceAlert: vi.fn(),
   deletePriceAlert: vi.fn(),

@@ -120,6 +120,52 @@ const SCHEMA_SQL = `
     started_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS user (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    image TEXT,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+
+  CREATE TABLE IF NOT EXISTS session (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at INTEGER NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+
+  CREATE TABLE IF NOT EXISTS account (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    id_token TEXT,
+    access_token_expires_at INTEGER,
+    refresh_token_expires_at INTEGER,
+    scope TEXT,
+    password TEXT,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+
+  CREATE TABLE IF NOT EXISTS verification (
+    id TEXT PRIMARY KEY,
+    identifier TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
 `;
 
 export type TestDb = ReturnType<typeof drizzle>;
@@ -178,7 +224,7 @@ export function seedUserGame(
   const result = db
     .insert(schema.userGames)
     .values({
-      userId: 'default',
+      userId: overrides.userId ?? 'default',
       gameId,
       isOwned: overrides.isOwned ?? false,
       isWishlisted: overrides.isWishlisted ?? false,
@@ -233,7 +279,7 @@ export function seedPriceAlert(
   const result = db
     .insert(schema.priceAlerts)
     .values({
-      userId: 'default',
+      userId: overrides.userId ?? 'default',
       gameId,
       targetPrice: overrides.targetPrice,
       notifyOnAllTimeLow: overrides.notifyOnAllTimeLow ?? true,
@@ -254,4 +300,22 @@ export function seedSetting(db: TestDb, key: string, value: string): void {
     .values({ key, value })
     .onConflictDoUpdate({ target: schema.settings.key, set: { value } })
     .run();
+}
+
+/**
+ * Seed a user into the test database. Returns the user ID.
+ */
+export function seedUser(
+  db: TestDb,
+  overrides: { id?: string; name?: string; email?: string } = {}
+): string {
+  const id = overrides.id ?? 'test-user-id';
+  db.insert(schema.user)
+    .values({
+      id,
+      name: overrides.name ?? 'Test User',
+      email: overrides.email ?? 'test@example.com',
+    })
+    .run();
+  return id;
 }

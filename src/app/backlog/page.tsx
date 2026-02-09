@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { getEnrichedGames, getAllGenres } from '@/lib/db/queries';
+import { getSession } from '@/lib/auth-helpers';
 import { GameGrid } from '@/components/games/GameGrid';
 import { BacklogFilters } from '@/components/backlog/BacklogFilters';
 import { Pagination } from '@/components/ui/Pagination';
@@ -9,6 +11,9 @@ interface BacklogPageProps {
 }
 
 export default async function BacklogPage({ searchParams }: BacklogPageProps) {
+  const session = await getSession();
+  if (!session) redirect('/login');
+
   const params = await searchParams;
 
   const filters: GameFilters = {
@@ -31,7 +36,7 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
 
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
-  const { games, total } = getEnrichedGames(filters, page, pageSize);
+  const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
   const availableGenres = getAllGenres();
 
   const paginationParams: Record<string, string> = {};

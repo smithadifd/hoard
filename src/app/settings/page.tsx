@@ -1,5 +1,7 @@
+import { redirect } from 'next/navigation';
 import { getAllSettings, getScoringConfig, getAlertStats } from '@/lib/db/queries';
 import { getEffectiveConfig } from '@/lib/config';
+import { getSession } from '@/lib/auth-helpers';
 import { SettingsForm } from '@/components/settings/SettingsForm';
 import { ScoringConfig } from '@/components/settings/ScoringConfig';
 import { AlertConfig } from '@/components/settings/AlertConfig';
@@ -11,7 +13,9 @@ export const dynamic = 'force-dynamic';
  * Settings Page - Configure API keys, scoring preferences, and trigger syncs.
  * Server Component loads current settings, passes to client forms.
  */
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const session = await getSession();
+  if (!session) redirect('/login');
   let initialSettings: Record<string, string> = {};
   let scoringConfig = getScoringConfig();
   let alertStats = { activeCount: 0, recentlyTriggered: 0 };
@@ -20,7 +24,7 @@ export default function SettingsPage() {
   try {
     initialSettings = getAllSettings();
     scoringConfig = getScoringConfig();
-    alertStats = getAlertStats();
+    alertStats = getAlertStats(session.user.id);
     const cfg = getEffectiveConfig();
     alertThrottleHours = cfg.alertThrottleHours;
   } catch {

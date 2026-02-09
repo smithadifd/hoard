@@ -1,15 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getPriceHistory } from '@/lib/db/queries';
 import { gameIdSchema } from '@/lib/validations';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * GET /api/games/:id/prices
  * Returns price history for a specific game.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const { id } = await params;
     const idResult = gameIdSchema.safeParse({ id });

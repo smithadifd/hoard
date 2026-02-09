@@ -6,6 +6,7 @@ import { syncHltb } from '@/lib/sync/hltb';
 import { syncReviews } from '@/lib/sync/reviews';
 import { getRecentSyncLogs } from '@/lib/db/queries';
 import { syncTriggerSchema, formatZodError } from '@/lib/validations';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 type ProgressContext = {
   gameName?: string;
@@ -14,14 +15,15 @@ type ProgressContext = {
 
 type SyncFn = (
   onProgress: (processed: number, total: number, context?: ProgressContext) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  userId?: string
 ) => Promise<{ gamesProcessed: number; message?: string }>;
 
 /**
  * Helper: wrap a sync function with SSE progress streaming.
  * Supports cancellation via AbortController when the client disconnects.
  */
-function streamSync(syncFn: SyncFn, label: string, request: NextRequest) {
+function streamSync(syncFn: SyncFn, label: string, request: NextRequest, userId: string) {
   const encoder = new TextEncoder();
   const abortController = new AbortController();
 
@@ -43,7 +45,7 @@ function streamSync(syncFn: SyncFn, label: string, request: NextRequest) {
       try {
         const result = await syncFn((processed, total, context) => {
           send('progress', { processed, total, ...context });
-        }, abortController.signal);
+        }, abortController.signal, userId);
 
         if (abortController.signal.aborted) {
           send('done', { gamesProcessed: result.gamesProcessed, cancelled: true });
@@ -79,6 +81,13 @@ function streamSync(syncFn: SyncFn, label: string, request: NextRequest) {
  * Returns SSE stream with progress events.
  */
 export async function POST(request: NextRequest) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const parsed = syncTriggerSchema.safeParse(body);
@@ -91,15 +100,15 @@ export async function POST(request: NextRequest) {
 
     switch (parsed.data.type) {
       case 'library':
-        return streamSync(syncLibrary, 'Library', request);
+        return streamSync(syncLibrary, 'Library', request, userId);
       case 'wishlist':
-        return streamSync(syncWishlist, 'Wishlist', request);
+        return streamSync(syncWishlist, 'Wishlist', request, userId);
       case 'prices':
-        return streamSync(syncPrices, 'Price', request);
+        return streamSync(syncPrices, 'Price', request, userId);
       case 'hltb':
-        return streamSync(syncHltb, 'HLTB', request);
+        return streamSync(syncHltb, 'HLTB', request, userId);
       case 'reviews':
-        return streamSync(syncReviews, 'Review', request);
+        return streamSync(syncReviews, 'Review', request, userId);
     }
   } catch (error) {
     console.error('Sync failed:', error);
@@ -114,7 +123,13 @@ export async function POST(request: NextRequest) {
  * GET /api/sync
  * Get status of recent sync operations.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const logs = getRecentSyncLogs(20);
     return NextResponse.json({ data: logs });

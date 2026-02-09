@@ -11,7 +11,9 @@ import {
   ListChecks,
   Settings,
   TrendingDown,
+  LogOut,
 } from 'lucide-react';
+import { authClient } from '@/lib/auth-client';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -63,10 +65,22 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-border flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             Hoard v0.1.0
           </p>
+          <button
+            onClick={() => authClient.signOut({
+              fetchOptions: {
+                onSuccess: () => { window.location.href = '/login'; },
+              },
+            })}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title="Sign out"
+          >
+            <LogOut className="h-3 w-3" />
+            Sign Out
+          </button>
         </div>
       </aside>
 

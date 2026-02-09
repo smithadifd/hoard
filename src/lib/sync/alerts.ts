@@ -13,15 +13,17 @@ import {
   updateAlertLastNotified,
   createSyncLog,
   completeSyncLog,
+  getFirstUserId,
 } from '../db/queries';
 import type { ProgressCallback, SyncResult } from './prices';
 
-export async function checkPriceAlerts(onProgress?: ProgressCallback): Promise<SyncResult> {
+export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: string): Promise<SyncResult> {
   const syncLogId = createSyncLog('alert_check');
 
   try {
     const config = getEffectiveConfig();
-    const activeAlerts = getActivePriceAlerts();
+    const effectiveUserId = userId ?? getFirstUserId();
+    const activeAlerts = getActivePriceAlerts(effectiveUserId);
     const discord = getDiscordClient();
     const now = new Date();
     let notifiedCount = 0;

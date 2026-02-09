@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getEffectiveConfig } from '@/lib/config';
 import { getDiscordClient } from '@/lib/discord/client';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * POST /api/alerts/test
  * Send a test Discord notification to verify webhook configuration.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const config = getEffectiveConfig();
 

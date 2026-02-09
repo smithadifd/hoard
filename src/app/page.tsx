@@ -1,10 +1,14 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen, Star } from 'lucide-react';
 import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getReviewCoverage, getBacklogStats, getAlertStats } from '@/lib/db/queries';
+import { getSession } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await getSession();
+  if (!session) redirect('/login');
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
   let hltbCoverage = { withHltb: 0, total: 0 };
@@ -14,12 +18,12 @@ export default function DashboardPage() {
   let lastSyncLabel = 'Never';
 
   try {
-    stats = getDashboardStats();
+    stats = getDashboardStats(session.user.id);
     dealsActive = getDealsCount();
     hltbCoverage = getHltbCoverage();
     reviewCoverage = getReviewCoverage();
-    backlogStats = getBacklogStats();
-    alertStats = getAlertStats();
+    backlogStats = getBacklogStats(session.user.id);
+    alertStats = getAlertStats(session.user.id);
     const logs = getRecentSyncLogs(5);
     const lastSync = logs.find((l) => l.status === 'success');
     if (lastSync?.completedAt) {

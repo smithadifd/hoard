@@ -13,6 +13,7 @@ import {
   upsertUserGame,
   createSyncLog,
   completeSyncLog,
+  getFirstUserId,
 } from '../db/queries';
 
 export interface SyncResult {
@@ -27,8 +28,9 @@ export type ProgressContext = {
 
 export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
 
-export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
+export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const config = getEffectiveConfig();
+  const effectiveUserId = userId ?? getFirstUserId();
 
   if (!config.steamApiKey || !config.steamUserId) {
     throw new Error('Steam API Key and User ID are required. Configure them in Settings.');
@@ -62,7 +64,7 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
           steamGame.rtime_last_played > 0
             ? new Date(steamGame.rtime_last_played * 1000).toISOString()
             : undefined,
-      });
+      }, effectiveUserId);
 
       processed++;
       onProgress?.(processed, total, { gameName: steamGame.name });

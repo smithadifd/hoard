@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { getGamesForTriage } from '@/lib/db/queries';
+import { getSession } from '@/lib/auth-helpers';
 import { TriageList } from '@/components/games/TriageList';
 
 export const dynamic = 'force-dynamic';
@@ -8,9 +10,12 @@ export default async function TriagePage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
+  const session = await getSession();
+  if (!session) redirect('/login');
+
   const { view: rawView } = await searchParams;
   const view = rawView === 'library' || rawView === 'wishlist' ? rawView : undefined;
-  const games = getGamesForTriage(view);
+  const games = getGamesForTriage(view, session.user.id);
 
   const mode = view === 'library' ? 'rating' as const : 'interest' as const;
 

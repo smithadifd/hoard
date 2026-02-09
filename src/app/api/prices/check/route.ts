@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * POST /api/prices/check
  * Triggers a price check for watched/wishlisted games via ITAD.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     // TODO Phase 2: Implement price checking
     // 1. Get all watchlisted/wishlisted game ITAD IDs
