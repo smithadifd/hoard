@@ -823,8 +823,9 @@ export function getGamesForReviewSync(): Array<{ id: number; steamAppId: number;
     .from(games)
     .where(
       or(
-        isNull(games.reviewScore),
+        // Never checked
         isNull(games.reviewLastUpdated),
+        // Checked but stale (>30 days) — time to refresh
         lt(games.reviewLastUpdated, staleThreshold.toISOString())
       )
     )
