@@ -1,9 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSessionCookie } from 'better-auth/cookies';
 
 /**
- * Rate limiting proxy using in-memory token bucket algorithm.
- * Single-user app on trusted LAN — no need for Redis/distributed state.
+ * Authentication + rate limiting proxy.
+ *
+ * - Checks for session cookie on all non-public routes
+ * - Rate-limits mutating API requests via token bucket
  */
+
+// --- Public paths that bypass auth ---
+const PUBLIC_PATHS = ['/login', '/setup', '/api/auth', '/api/setup'];
+
+const STATIC_PREFIXES = [
+  '/_next',
+  '/favicon.ico',
+  '/manifest.json',
+  '/apple-touch-icon',
+  '/sw.js',
+  '/serwist',
+  '/icons',
+];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
+    || STATIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p));
+}
+
+// --- Rate limiting (token bucket) ---
 
 type RateLimitTier = { tokensPerMinute: number; burst: number };
 
@@ -50,7 +73,6 @@ function checkRateLimit(key: string, tier: RateLimitTier): { allowed: boolean; r
     buckets.set(key, bucket);
   }
 
-  // Refill tokens based on elapsed time
   const elapsed = now - bucket.lastRefill;
   const refill = (elapsed / 60_000) * tier.tokensPerMinute;
   bucket.tokens = Math.min(tier.burst, bucket.tokens + refill);
@@ -65,20 +87,17 @@ function checkRateLimit(key: string, tier: RateLimitTier): { allowed: boolean; r
   return { allowed: false, retryAfter };
 }
 
-export function proxy(request: NextRequest) {
+function applyRateLimit(request: NextRequest): NextResponse | null {
   cleanup();
 
-  // Only rate-limit mutating methods — GET requests are read-only DB queries
-  if (request.method === 'GET') {
-    return NextResponse.next();
-  }
+  // Only rate-limit mutating methods
+  if (request.method === 'GET') return null;
 
   const pathname = request.nextUrl.pathname;
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip')
     || 'unknown';
 
-  // Group by first 4 path segments (e.g., /api/alerts/test stays distinct from /api/alerts/123)
   const routeKey = pathname.split('/').slice(0, 4).join('/');
   const key = `${ip}:${routeKey}`;
   const tier = getTier(pathname);
@@ -88,16 +107,59 @@ export function proxy(request: NextRequest) {
   if (!allowed) {
     return NextResponse.json(
       { error: 'Too many requests. Please try again later.' },
-      {
-        status: 429,
-        headers: { 'Retry-After': String(retryAfter) },
-      }
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     );
+  }
+
+  return null;
+}
+
+// --- Main proxy function ---
+
+export function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // Skip auth + rate limiting for static assets
+  if (STATIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  // Public paths: skip auth but still apply rate limiting to API routes
+  if (isPublicPath(pathname)) {
+    if (pathname.startsWith('/api/')) {
+      const rateLimitResponse = applyRateLimit(request);
+      if (rateLimitResponse) return rateLimitResponse;
+    }
+    return NextResponse.next();
+  }
+
+  // Auth check: verify session cookie exists
+  const sessionCookie = getSessionCookie(request);
+  if (!sessionCookie) {
+    // API routes: return 401
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    // Page routes: redirect to login
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Rate limiting for authenticated API requests
+  if (pathname.startsWith('/api/')) {
+    const rateLimitResponse = applyRateLimit(request);
+    if (rateLimitResponse) return rateLimitResponse;
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  matcher: [
+    '/((?!_next/static|_next/image|.*\\.(?:ico|png|jpg|jpeg|svg|webp|woff2?|ttf|eot)$).*)',
+  ],
 };

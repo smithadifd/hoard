@@ -1,15 +1,23 @@
 import { NextResponse } from 'next/server';
 import { getEnrichedGameById, updateUserGame } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * GET /api/games/:id
  * Get full details for a specific game.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const { id } = await params;
     const idResult = gameIdSchema.safeParse({ id });
@@ -17,7 +25,7 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
 
-    const game = getEnrichedGameById(idResult.data.id);
+    const game = getEnrichedGameById(idResult.data.id, userId);
     if (!game) {
       return NextResponse.json({ error: 'Game not found' }, { status: 404 });
     }
@@ -40,6 +48,13 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const { id } = await params;
     const idResult = gameIdSchema.safeParse({ id });
@@ -60,7 +75,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = updateUserGame(idResult.data.id, parsed.data);
+    const updated = updateUserGame(idResult.data.id, parsed.data, userId);
     if (!updated) {
       return NextResponse.json({ error: 'Game not found' }, { status: 404 });
     }

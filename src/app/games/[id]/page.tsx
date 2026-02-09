@@ -1,8 +1,9 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink } from 'lucide-react';
 import { getEnrichedGameById, getPriceAlertForGame, getScoringConfig } from '@/lib/db/queries';
+import { getSession } from '@/lib/auth-helpers';
 import { calculateDealScore } from '@/lib/scoring/engine';
 import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
@@ -14,14 +15,17 @@ export default async function GameDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const session = await getSession();
+  if (!session) redirect('/login');
+
   const { id } = await params;
   const gameId = parseInt(id);
   if (isNaN(gameId)) notFound();
 
-  const game = getEnrichedGameById(gameId);
+  const game = getEnrichedGameById(gameId, session.user.id);
   if (!game) notFound();
 
-  const alert = getPriceAlertForGame(gameId);
+  const alert = getPriceAlertForGame(gameId, session.user.id);
 
   // Compute full deal score breakdown for transparency display
   const scoringConfig = getScoringConfig();

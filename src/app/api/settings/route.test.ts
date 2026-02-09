@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, PUT } from './route';
 
+// Mock auth helper
+vi.mock('@/lib/auth-helpers', () => ({
+  requireUserIdFromRequest: vi.fn().mockResolvedValue('test-user-id'),
+}));
+
 vi.mock('@/lib/db/queries', () => ({
   getAllSettings: vi.fn(),
   setSetting: vi.fn(),
@@ -26,7 +31,7 @@ describe('GET /api/settings', () => {
       discord_webhook_url: 'https://discord.com/api/webhooks/123',
     });
 
-    const res = await GET();
+    const res = await GET(createRequest('/api/settings'));
     const body = await res.json();
 
     expect(res.status).toBe(200);

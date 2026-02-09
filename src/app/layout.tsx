@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { Sidebar } from '@/components/layout/Sidebar';
+import { LayoutShell } from '@/components/layout/LayoutShell';
 import { PwaProvider } from '@/components/layout/PwaProvider';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -37,12 +37,9 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={inter.className}>
         <PwaProvider>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
-              {children}
-            </main>
-          </div>
+          <LayoutShell>
+            {children}
+          </LayoutShell>
         </PwaProvider>
       </body>
     </html>

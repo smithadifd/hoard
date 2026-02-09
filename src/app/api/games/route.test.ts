@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from './route';
 
+// Mock auth helper
+vi.mock('@/lib/auth-helpers', () => ({
+  requireUserIdFromRequest: vi.fn().mockResolvedValue('test-user-id'),
+}));
+
 // Mock the queries module
 vi.mock('@/lib/db/queries', () => ({
   getEnrichedGames: vi.fn(),
@@ -41,7 +46,8 @@ describe('GET /api/games', () => {
     expect(mockGetEnrichedGames).toHaveBeenCalledWith(
       expect.objectContaining({ search: 'Cyberpunk' }),
       1,
-      24
+      24,
+      'test-user-id'
     );
   });
 
@@ -53,7 +59,8 @@ describe('GET /api/games', () => {
     expect(mockGetEnrichedGames).toHaveBeenCalledWith(
       expect.anything(),
       3,
-      12
+      12,
+      'test-user-id'
     );
   });
 

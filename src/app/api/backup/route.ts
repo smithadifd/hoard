@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getBackupStatus, runDatabaseBackup } from '@/lib/sync/backup';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * GET /api/backup
  * Returns backup status information.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const status = getBackupStatus();
 
@@ -30,7 +37,13 @@ export async function GET() {
  * POST /api/backup
  * Triggers a manual backup.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  try {
+    await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const result = await runDatabaseBackup({ tag: 'manual' });
 

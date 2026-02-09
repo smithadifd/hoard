@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncLibrary } from '@/lib/sync/library';
 import { getEnrichedGames } from '@/lib/db/queries';
+import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 
 /**
  * POST /api/steam/library
@@ -8,6 +9,13 @@ import { getEnrichedGames } from '@/lib/db/queries';
  * Streams progress via SSE (text/event-stream).
  */
 export async function POST(request: NextRequest) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   const encoder = new TextEncoder();
   const abortController = new AbortController();
 
@@ -28,7 +36,7 @@ export async function POST(request: NextRequest) {
       try {
         const result = await syncLibrary((processed, total, context) => {
           send('progress', { processed, total, ...context });
-        }, abortController.signal);
+        }, abortController.signal, userId);
         send('done', { gamesProcessed: result.gamesProcessed, cancelled: abortController.signal.aborted });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Library sync failed';
@@ -56,9 +64,16 @@ export async function POST(request: NextRequest) {
  * GET /api/steam/library
  * Returns the user's library from the local database.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  let userId: string;
   try {
-    const { games, total } = getEnrichedGames({ view: 'library' });
+    userId = await requireUserIdFromRequest(request);
+  } catch {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
+  try {
+    const { games, total } = getEnrichedGames({ view: 'library' }, undefined, undefined, userId);
     return NextResponse.json({
       data: games,
       meta: { total },

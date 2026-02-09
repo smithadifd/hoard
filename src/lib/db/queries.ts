@@ -17,11 +17,27 @@ import {
   priceAlerts,
   settings,
   syncLog,
+  user,
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore } from '@/lib/scoring/engine';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
+
+// ============================================
+// Auth Helpers
+// ============================================
+
+/**
+ * Get the first (and typically only) user's ID.
+ * Used by scheduler/sync tasks that run without a request context.
+ */
+export function getFirstUserId(): string {
+  const db = getDb();
+  const row = db.select({ id: user.id }).from(user).get();
+  if (!row) throw new Error('No users found — run setup first');
+  return row.id;
+}
 
 // ============================================
 // Settings
@@ -206,9 +222,8 @@ export interface UpsertUserGameData {
   notes?: string;
 }
 
-export function upsertUserGame(gameId: number, data: UpsertUserGameData): void {
+export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId: string): void {
   const db = getDb();
-  const userId = 'default';
   const now = new Date().toISOString();
 
   db.insert(userGames)
@@ -288,10 +303,10 @@ function computeDataCompleteness(
 export function getEnrichedGames(
   filters: GameFilters,
   page: number = 1,
-  pageSize: number = 24
+  pageSize: number = 24,
+  userId: string = 'default'
 ): { games: EnrichedGame[]; total: number } {
   const db = getDb();
-  const userId = 'default';
   const offset = (page - 1) * pageSize;
 
   // Build WHERE conditions
@@ -542,9 +557,8 @@ export function getEnrichedGames(
   return { games: enriched, total };
 }
 
-export function getEnrichedGameById(gameId: number): EnrichedGame | null {
+export function getEnrichedGameById(gameId: number, userId: string): EnrichedGame | null {
   const db = getDb();
-  const userId = 'default';
 
   const row = db
     .select({
@@ -662,14 +676,13 @@ export function getEnrichedGameById(gameId: number): EnrichedGame | null {
 // Dashboard Stats
 // ============================================
 
-export function getDashboardStats(): {
+export function getDashboardStats(userId: string): {
   libraryCount: number;
   wishlistCount: number;
   watchlistCount: number;
   totalPlaytimeHours: number;
 } {
   const db = getDb();
-  const userId = 'default';
 
   const libraryRow = db
     .select({ count: sql<number>`count(*)` })
@@ -767,9 +780,8 @@ export interface PriceSnapshotRow {
   snapshotDate: string;
 }
 
-export function getGamesForPriceSync(): Array<{ id: number; steamAppId: number; title: string; itadGameId: string | null }> {
+export function getGamesForPriceSync(userId: string): Array<{ id: number; steamAppId: number; title: string; itadGameId: string | null }> {
   const db = getDb();
-  const userId = 'default';
 
   return db
     .select({
@@ -1076,10 +1088,10 @@ export function updateUserGame(
     isWatchlisted: boolean;
     isIgnored: boolean;
     priceThreshold: number;
-  }>
+  }>,
+  userId: string
 ): boolean {
   const db = getDb();
-  const userId = 'default';
   const now = new Date().toISOString();
 
   const result = db
@@ -1111,7 +1123,7 @@ export function updateUserGame(
     }
   } else if (updates.priceThreshold !== undefined) {
     // Upsert alert with new threshold
-    upsertPriceAlert(gameId, { targetPrice: updates.priceThreshold });
+    upsertPriceAlert(gameId, { targetPrice: updates.priceThreshold }, userId);
   } else if (updates.isWatchlisted === true) {
     // Ensure alert exists when watchlisting (re-activate if deactivated)
     const existing = db
@@ -1131,7 +1143,7 @@ export function updateUserGame(
         .from(userGames)
         .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
         .get();
-      upsertPriceAlert(gameId, { targetPrice: ug?.priceThreshold ?? undefined });
+      upsertPriceAlert(gameId, { targetPrice: ug?.priceThreshold ?? undefined }, userId);
     }
   }
 
@@ -1153,9 +1165,8 @@ export function getAllGenres(): string[] {
   return rows.map((r) => r.name);
 }
 
-export function getBacklogStats(): { unplayedCount: number; totalOwned: number } {
+export function getBacklogStats(userId: string): { unplayedCount: number; totalOwned: number } {
   const db = getDb();
-  const userId = 'default';
 
   const totalRow = db
     .select({ count: sql<number>`count(*)` })
@@ -1199,9 +1210,8 @@ export interface TriageGame {
   interestRatedAt: string | null;
 }
 
-export function getGamesForTriage(view?: 'library' | 'wishlist'): TriageGame[] {
+export function getGamesForTriage(view: 'library' | 'wishlist' | undefined, userId: string): TriageGame[] {
   const db = getDb();
-  const userId = 'default';
 
   const conditions: SQL[] = [eq(userGames.userId, userId)];
 
@@ -1313,10 +1323,10 @@ export function upsertPriceAlert(
     notifyOnAllTimeLow: boolean;
     notifyOnThreshold: boolean;
     isActive: boolean;
-  }>
+  }>,
+  userId: string
 ): number {
   const db = getDb();
-  const userId = 'default';
 
   const result = db
     .insert(priceAlerts)
@@ -1344,9 +1354,8 @@ export function upsertPriceAlert(
   return result.id;
 }
 
-export function getPriceAlertForGame(gameId: number): PriceAlertRow | null {
+export function getPriceAlertForGame(gameId: number, userId: string): PriceAlertRow | null {
   const db = getDb();
-  const userId = 'default';
 
   const row = db
     .select({
@@ -1377,9 +1386,8 @@ export function getPriceAlertForGame(gameId: number): PriceAlertRow | null {
   };
 }
 
-export function getActivePriceAlerts(): ActiveAlertRow[] {
+export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
   const db = getDb();
-  const userId = 'default';
 
   // Raw SQL for the complex join with latest snapshot subquery
   interface RawAlertRow {
@@ -1462,9 +1470,8 @@ export function getActivePriceAlerts(): ActiveAlertRow[] {
   }));
 }
 
-export function getAllPriceAlertsWithGames(): AlertWithGame[] {
+export function getAllPriceAlertsWithGames(userId: string): AlertWithGame[] {
   const db = getDb();
-  const userId = 'default';
 
   interface RawRow {
     id: number;
@@ -1567,9 +1574,8 @@ export function deletePriceAlert(alertId: number): boolean {
   return result.changes > 0;
 }
 
-export function getAlertStats(): { activeCount: number; recentlyTriggered: number } {
+export function getAlertStats(userId: string): { activeCount: number; recentlyTriggered: number } {
   const db = getDb();
-  const userId = 'default';
 
   const activeRow = db
     .select({ count: sql<number>`count(*)` })

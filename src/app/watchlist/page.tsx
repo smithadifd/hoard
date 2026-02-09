@@ -1,17 +1,22 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Bell, ArrowLeft } from 'lucide-react';
 import { getAllPriceAlertsWithGames, getAlertStats } from '@/lib/db/queries';
+import { getSession } from '@/lib/auth-helpers';
 import { WatchlistTable } from '@/components/alerts/WatchlistTable';
 
 export const dynamic = 'force-dynamic';
 
-export default function WatchlistPage() {
+export default async function WatchlistPage() {
+  const session = await getSession();
+  if (!session) redirect('/login');
+
   let alerts: ReturnType<typeof getAllPriceAlertsWithGames> = [];
   let stats = { activeCount: 0, recentlyTriggered: 0 };
 
   try {
-    alerts = getAllPriceAlertsWithGames();
-    stats = getAlertStats();
+    alerts = getAllPriceAlertsWithGames(session.user.id);
+    stats = getAlertStats(session.user.id);
   } catch {
     // DB not initialized yet
   }

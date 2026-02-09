@@ -15,6 +15,7 @@ import {
   insertPriceSnapshot,
   createSyncLog,
   completeSyncLog,
+  getFirstUserId,
 } from '../db/queries';
 
 export interface SyncResult {
@@ -29,8 +30,9 @@ export type ProgressContext = {
 
 export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
 
-export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
+export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const config = getEffectiveConfig();
+  const effectiveUserId = userId ?? getFirstUserId();
 
   if (!config.itadApiKey) {
     throw new Error('ITAD API Key is required. Configure it in Settings.');
@@ -40,7 +42,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
 
   try {
     const client = getITADClient();
-    const gamesToSync = getGamesForPriceSync();
+    const gamesToSync = getGamesForPriceSync(effectiveUserId);
 
     console.log(`[PriceSync] ${gamesToSync.length} games for price sync`);
 
@@ -156,7 +158,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     // Chain alert checking after successful price sync
     try {
       const { checkPriceAlerts } = await import('./alerts');
-      await checkPriceAlerts();
+      await checkPriceAlerts(undefined, effectiveUserId);
     } catch (alertError) {
       console.error('[PriceSync] Alert check failed:', alertError);
     }
