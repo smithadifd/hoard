@@ -10,6 +10,8 @@ import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
 
+export const dynamic = 'force-dynamic';
+
 export default async function GameDetailPage({
   params,
 }: {

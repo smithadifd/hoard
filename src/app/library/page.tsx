@@ -6,6 +6,8 @@ import { GameListFilters } from '@/components/filters/GameListFilters';
 import { Pagination } from '@/components/ui/Pagination';
 import type { GameFilters } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 interface LibraryPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
