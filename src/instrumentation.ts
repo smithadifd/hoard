@@ -14,6 +14,8 @@ export async function register() {
     const { syncLibrary } = await import('@/lib/sync/library');
     const { syncHltb } = await import('@/lib/sync/hltb');
     const { syncReviews } = await import('@/lib/sync/reviews');
+    const { runDatabaseBackup } = await import('@/lib/sync/backup');
+    const { getDiscordClient } = await import('@/lib/discord/client');
 
     const config = getEffectiveConfig();
 
@@ -46,6 +48,22 @@ export async function register() {
         await syncReviews();
       } catch (error) {
         console.error('[Scheduler] Review enrichment failed:', error);
+      }
+    });
+
+    registerTask('database-backup', config.cronBackup, async () => {
+      try {
+        const result = await runDatabaseBackup();
+        if (!result.success) {
+          console.error('[Scheduler] Backup failed:', result.error);
+          await getDiscordClient().sendBackupNotification(result);
+        }
+      } catch (error) {
+        console.error('[Scheduler] Backup failed:', error);
+        await getDiscordClient().sendBackupNotification({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     });
 

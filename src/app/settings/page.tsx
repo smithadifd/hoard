@@ -3,6 +3,7 @@ import { getEffectiveConfig } from '@/lib/config';
 import { SettingsForm } from '@/components/settings/SettingsForm';
 import { ScoringConfig } from '@/components/settings/ScoringConfig';
 import { AlertConfig } from '@/components/settings/AlertConfig';
+import { BackupConfig } from '@/components/settings/BackupConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,8 @@ export default function SettingsPage() {
         initialThrottleHours={alertThrottleHours}
         activeAlertCount={alertStats.activeCount}
       />
+
+      <BackupConfig />
     </div>
   );
 }
