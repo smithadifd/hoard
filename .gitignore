@@ -40,8 +40,8 @@ next-env.d.ts
 *.db-wal
 *.db-shm
 
-# drizzle
-/drizzle/meta/
+# drizzle snapshots (large JSON, not needed at runtime; _journal.json IS needed)
+/drizzle/meta/*_snapshot.json
 
 # personal claude code config
 CLAUDE.local.md
