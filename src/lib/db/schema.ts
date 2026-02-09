@@ -26,6 +26,8 @@ export const games = sqliteTable('games', {
   hltbMainExtra: real('hltb_main_extra'), // hours - main + extras
   hltbCompletionist: real('hltb_completionist'), // hours - completionist
   hltbLastUpdated: text('hltb_last_updated'), // ISO date
+  // Review metadata tracking
+  reviewLastUpdated: text('review_last_updated'), // ISO date — tracks when reviews were fetched
   // Metadata
   isCoop: integer('is_coop', { mode: 'boolean' }).default(false),
   isMultiplayer: integer('is_multiplayer', { mode: 'boolean' }).default(false),
@@ -71,6 +73,7 @@ export const userGames = sqliteTable('user_games', {
   lastPlayed: text('last_played'), // ISO date
   // Personal scoring
   personalInterest: integer('personal_interest').default(3), // 1-5 scale
+  interestRatedAt: text('interest_rated_at'), // ISO date — NULL means never explicitly rated
   priceThreshold: real('price_threshold'), // Alert when price drops below
   notes: text('notes'),
   // Timestamps

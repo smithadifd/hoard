@@ -274,6 +274,17 @@ export function upsertTags(gameId: number, tagNames: string[], type: string): vo
 // Game Queries
 // ============================================
 
+function computeDataCompleteness(
+  reviewScore: number | null,
+  hltbMain: number | null
+): 'full' | 'partial' | 'minimal' {
+  const hasReviews = reviewScore != null;
+  const hasHltb = hltbMain != null && hltbMain > 0;
+  if (hasReviews && hasHltb) return 'full';
+  if (hasReviews || hasHltb) return 'partial';
+  return 'minimal';
+}
+
 export function getEnrichedGames(
   filters: GameFilters,
   page: number = 1,
@@ -479,6 +490,7 @@ export function getEnrichedGames(
       genres: tagsByGame.get(r.id)?.genres ?? [],
       isCoop: r.isCoop ?? false,
       isMultiplayer: r.isMultiplayer ?? false,
+      dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
     };
 
     if (snapshot) {
@@ -614,6 +626,7 @@ export function getEnrichedGameById(gameId: number): EnrichedGame | null {
     genres: gameGenres,
     isCoop: row.isCoop ?? false,
     isMultiplayer: row.isMultiplayer ?? false,
+    dataCompleteness: computeDataCompleteness(row.reviewScore, row.hltbMain),
   };
 
   if (snapshot) {
@@ -792,10 +805,69 @@ export function bulkUpdateGameItadIds(updates: Array<{ steamAppId: number; itadG
 // HLTB Sync
 // ============================================
 
+// ============================================
+// Review Sync
+// ============================================
+
+export function getGamesForReviewSync(): Array<{ id: number; steamAppId: number; title: string }> {
+  const db = getDb();
+  const staleThreshold = new Date();
+  staleThreshold.setDate(staleThreshold.getDate() - 30); // 30 days
+
+  return db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+    })
+    .from(games)
+    .where(
+      or(
+        isNull(games.reviewScore),
+        isNull(games.reviewLastUpdated),
+        lt(games.reviewLastUpdated, staleThreshold.toISOString())
+      )
+    )
+    .orderBy(desc(games.reviewCount))
+    .all();
+}
+
+export function updateGameReviewData(
+  gameId: number,
+  data: {
+    reviewScore?: number;
+    reviewCount?: number;
+    reviewDescription?: string;
+    description?: string;
+    developer?: string;
+    publisher?: string;
+    isCoop?: boolean;
+    isMultiplayer?: boolean;
+  }
+): void {
+  const db = getDb();
+  db.update(games)
+    .set({
+      ...(data.reviewScore !== undefined && { reviewScore: data.reviewScore }),
+      ...(data.reviewCount !== undefined && { reviewCount: data.reviewCount }),
+      ...(data.reviewDescription !== undefined && { reviewDescription: data.reviewDescription }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.developer !== undefined && { developer: data.developer }),
+      ...(data.publisher !== undefined && { publisher: data.publisher }),
+      ...(data.isCoop !== undefined && { isCoop: data.isCoop }),
+      ...(data.isMultiplayer !== undefined && { isMultiplayer: data.isMultiplayer }),
+      reviewLastUpdated: new Date().toISOString(),
+    })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
 export function getGamesForHltbSync(): Array<{ id: number; title: string }> {
   const db = getDb();
   const staleThreshold = new Date();
   staleThreshold.setDate(staleThreshold.getDate() - 90); // 90 days
+  const retryThreshold = new Date();
+  retryThreshold.setDate(retryThreshold.getDate() - 7); // 7 days for failed matches
 
   return db
     .select({
@@ -806,7 +878,12 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string }> {
     .where(
       or(
         isNull(games.hltbLastUpdated),
-        lt(games.hltbLastUpdated, staleThreshold.toISOString())
+        lt(games.hltbLastUpdated, staleThreshold.toISOString()),
+        // Retry games that were checked but got no match (transient failures)
+        and(
+          isNull(games.hltbId),
+          lt(games.hltbLastUpdated, retryThreshold.toISOString())
+        )
       )
     )
     .orderBy(desc(games.reviewCount))
@@ -848,6 +925,23 @@ export function getHltbCoverage(): { withHltb: number; total: number } {
     .get();
   return {
     withHltb: hltbRow?.count ?? 0,
+    total: totalRow?.count ?? 0,
+  };
+}
+
+export function getReviewCoverage(): { withReviews: number; total: number } {
+  const db = getDb();
+  const totalRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(games)
+    .get();
+  const reviewRow = db
+    .select({ count: sql<number>`count(*)` })
+    .from(games)
+    .where(sql`${games.reviewScore} IS NOT NULL`)
+    .get();
+  return {
+    withReviews: reviewRow?.count ?? 0,
     total: totalRow?.count ?? 0,
   };
 }
@@ -989,7 +1083,12 @@ export function updateUserGame(
 
   const result = db
     .update(userGames)
-    .set({ ...updates, updatedAt: now })
+    .set({
+      ...updates,
+      updatedAt: now,
+      // Track when interest was explicitly rated
+      ...(updates.personalInterest !== undefined && { interestRatedAt: now }),
+    })
     .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
     .run();
 
@@ -1079,6 +1178,90 @@ export function getBacklogStats(): { unplayedCount: number; totalOwned: number }
     unplayedCount: unplayedRow?.count ?? 0,
     totalOwned: totalRow?.count ?? 0,
   };
+}
+
+// ============================================
+// Triage (Interest Rating)
+// ============================================
+
+export interface TriageGame {
+  id: number;
+  steamAppId: number;
+  title: string;
+  headerImageUrl: string | null;
+  developer: string | null;
+  reviewScore: number | null;
+  reviewDescription: string | null;
+  hltbMain: number | null;
+  currentPrice: number | null;
+  personalInterest: number;
+  interestRatedAt: string | null;
+}
+
+export function getGamesForTriage(view?: 'library' | 'wishlist'): TriageGame[] {
+  const db = getDb();
+  const userId = 'default';
+
+  const conditions: SQL[] = [eq(userGames.userId, userId)];
+
+  if (view === 'library') {
+    conditions.push(eq(userGames.isOwned, true));
+  } else if (view === 'wishlist') {
+    conditions.push(eq(userGames.isWishlisted, true));
+  }
+
+  // Get all games, unrated first (interestRatedAt IS NULL), then by title
+  interface RawRow {
+    id: number;
+    steamAppId: number;
+    title: string;
+    headerImageUrl: string | null;
+    developer: string | null;
+    reviewScore: number | null;
+    reviewDescription: string | null;
+    hltbMain: number | null;
+    personalInterest: number;
+    interestRatedAt: string | null;
+    currentPrice: number | null;
+  }
+
+  const rows = db.all(sql`
+    SELECT
+      g.id,
+      g.steam_app_id as steamAppId,
+      g.title,
+      g.header_image_url as headerImageUrl,
+      g.developer,
+      g.review_score as reviewScore,
+      g.review_description as reviewDescription,
+      g.hltb_main as hltbMain,
+      ug.personal_interest as personalInterest,
+      ug.interest_rated_at as interestRatedAt,
+      (SELECT ps.price_current FROM price_snapshots ps
+       WHERE ps.game_id = g.id
+       ORDER BY ps.snapshot_date DESC LIMIT 1) as currentPrice
+    FROM user_games ug
+    INNER JOIN games g ON ug.game_id = g.id
+    WHERE ug.user_id = ${userId}
+      ${view === 'library' ? sql`AND ug.is_owned = 1` : view === 'wishlist' ? sql`AND ug.is_wishlisted = 1` : sql``}
+    ORDER BY
+      CASE WHEN ug.interest_rated_at IS NULL THEN 0 ELSE 1 END,
+      g.title ASC
+  `) as RawRow[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    steamAppId: r.steamAppId,
+    title: r.title,
+    headerImageUrl: r.headerImageUrl,
+    developer: r.developer,
+    reviewScore: r.reviewScore,
+    reviewDescription: r.reviewDescription,
+    hltbMain: r.hltbMain,
+    currentPrice: r.currentPrice,
+    personalInterest: r.personalInterest ?? 3,
+    interestRatedAt: r.interestRatedAt,
+  }));
 }
 
 // ============================================

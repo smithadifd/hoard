@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getBacklogStats, getAlertStats } from '@/lib/db/queries';
+import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen, Star } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getReviewCoverage, getBacklogStats, getAlertStats } from '@/lib/db/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +8,7 @@ export default function DashboardPage() {
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
   let hltbCoverage = { withHltb: 0, total: 0 };
+  let reviewCoverage = { withReviews: 0, total: 0 };
   let backlogStats = { unplayedCount: 0, totalOwned: 0 };
   let alertStats = { activeCount: 0, recentlyTriggered: 0 };
   let lastSyncLabel = 'Never';
@@ -16,6 +17,7 @@ export default function DashboardPage() {
     stats = getDashboardStats();
     dealsActive = getDealsCount();
     hltbCoverage = getHltbCoverage();
+    reviewCoverage = getReviewCoverage();
     backlogStats = getBacklogStats();
     alertStats = getAlertStats();
     const logs = getRecentSyncLogs(5);
@@ -87,6 +89,14 @@ export default function DashboardPage() {
           subtitle={hltbCoverage.total > 0
             ? `${Math.round((hltbCoverage.withHltb / hltbCoverage.total) * 100)}% with duration data`
             : 'games with duration data'}
+        />
+        <StatCard
+          icon={<Star className="h-5 w-5" />}
+          label="Review Coverage"
+          value={reviewCoverage.total > 0 ? `${reviewCoverage.withReviews}/${reviewCoverage.total}` : '—'}
+          subtitle={reviewCoverage.total > 0
+            ? `${Math.round((reviewCoverage.withReviews / reviewCoverage.total) * 100)}% with review data`
+            : 'games with review data'}
         />
         <StatCard
           icon={<BookOpen className="h-5 w-5" />}

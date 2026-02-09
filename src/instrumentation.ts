@@ -13,6 +13,7 @@ export async function register() {
     const { syncPrices } = await import('@/lib/sync/prices');
     const { syncLibrary } = await import('@/lib/sync/library');
     const { syncHltb } = await import('@/lib/sync/hltb');
+    const { syncReviews } = await import('@/lib/sync/reviews');
 
     const config = getEffectiveConfig();
 
@@ -37,6 +38,14 @@ export async function register() {
         await syncHltb();
       } catch (error) {
         console.error('[Scheduler] HLTB sync failed:', error);
+      }
+    });
+
+    registerTask('review-enrichment', config.cronReviewSync, async () => {
+      try {
+        await syncReviews();
+      } catch (error) {
+        console.error('[Scheduler] Review enrichment failed:', error);
       }
     });
 
