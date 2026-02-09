@@ -77,16 +77,32 @@ export class DiscordClient {
     dollarsPerHour?: number;
     reviewDescription?: string;
   }): Promise<boolean> {
+    const isFree = game.currentPrice === 0;
     const isAllTimeLow = game.currentPrice <= game.historicalLow;
 
+    let prefix: string;
+    let color: number;
+    if (isFree) {
+      prefix = '🎁 FREE GAME';
+      color = 0x9333ea; // Purple for free
+    } else if (isAllTimeLow) {
+      prefix = '🏆 ALL-TIME LOW';
+      color = 0x22c55e; // Green for ATL
+    } else {
+      prefix = '💰 Deal Alert';
+      color = 0xeab308; // Yellow otherwise
+    }
+
     const embed: DiscordEmbed = {
-      title: `${isAllTimeLow ? '🏆 ALL-TIME LOW' : '💰 Deal Alert'}: ${game.title}`,
+      title: `${prefix}: ${game.title}`,
       url: game.storeUrl,
-      color: isAllTimeLow ? 0x22c55e : 0xeab308, // Green for ATL, yellow otherwise
+      color,
       fields: [
         {
           name: 'Price',
-          value: `~~$${game.regularPrice.toFixed(2)}~~ → **$${game.currentPrice.toFixed(2)}** (-${game.discountPercent}%)`,
+          value: isFree
+            ? `~~$${game.regularPrice.toFixed(2)}~~ → **FREE** (-100%)`
+            : `~~$${game.regularPrice.toFixed(2)}~~ → **$${game.currentPrice.toFixed(2)}** (-${game.discountPercent}%)`,
           inline: true,
         },
         {
