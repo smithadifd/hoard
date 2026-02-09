@@ -41,13 +41,26 @@ function createAuth(): Auth {
   });
 }
 
+function ensureAuth(): Auth {
+  if (!_auth) _auth = createAuth();
+  return _auth;
+}
+
 /**
  * Lazy singleton — avoids calling getDb() at module load time,
  * which would fail during `next build` in CI (no data/ directory).
+ *
+ * betterAuth() returns a callable object (function with properties),
+ * so the proxy target must also be a function to support the `apply` trap.
  */
-export const auth: Auth = new Proxy({} as Auth, {
+export const auth: Auth = new Proxy(function () {} as unknown as Auth, {
   get(_target, prop, receiver) {
-    if (!_auth) _auth = createAuth();
-    return Reflect.get(_auth, prop, receiver);
+    return Reflect.get(ensureAuth(), prop, receiver);
+  },
+  has(_target, prop) {
+    return Reflect.has(ensureAuth(), prop);
+  },
+  apply(_target, thisArg, args) {
+    return Reflect.apply(ensureAuth() as unknown as (...a: unknown[]) => unknown, thisArg, args);
   },
 });
