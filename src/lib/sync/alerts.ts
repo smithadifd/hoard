@@ -46,6 +46,11 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback): Promise<S
       // Check trigger conditions
       let shouldNotify = false;
 
+      // Always notify for free games (100% discount)
+      if (alert.currentPrice === 0) {
+        shouldNotify = true;
+      }
+
       if (alert.notifyOnThreshold && alert.targetPrice !== null) {
         if (alert.currentPrice <= alert.targetPrice) {
           shouldNotify = true;
