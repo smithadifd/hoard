@@ -3,6 +3,7 @@ import {
   getAllPriceAlertsWithGames,
   upsertPriceAlert,
 } from '@/lib/db/queries';
+import { alertUpsertSchema, formatZodError } from '@/lib/validations';
 
 /**
  * GET /api/alerts
@@ -37,20 +38,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { gameId, targetPrice, notifyOnAllTimeLow, notifyOnThreshold } = body;
-
-    if (!gameId || typeof gameId !== 'number') {
+    const parsed = alertUpsertSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'gameId is required and must be a number' },
+        { error: formatZodError(parsed.error) },
         { status: 400 }
       );
     }
 
-    const alertId = upsertPriceAlert(gameId, {
-      targetPrice,
-      notifyOnAllTimeLow,
-      notifyOnThreshold,
-    });
+    const { gameId, ...alertOptions } = parsed.data;
+    const alertId = upsertPriceAlert(gameId, alertOptions);
 
     return NextResponse.json({ data: { id: alertId, message: 'Alert saved' } });
   } catch (error) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateUserGame } from '@/lib/db/queries';
+import { interestSchema, formatZodError } from '@/lib/validations';
 
 /**
  * POST /api/games/interest
@@ -8,16 +9,16 @@ import { updateUserGame } from '@/lib/db/queries';
  */
 export async function POST(request: NextRequest) {
   try {
-    const { gameId, interest } = await request.json();
-
-    if (!gameId || typeof gameId !== 'number') {
-      return NextResponse.json({ error: 'gameId is required' }, { status: 400 });
+    const body = await request.json();
+    const parsed = interestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: formatZodError(parsed.error) },
+        { status: 400 }
+      );
     }
 
-    if (!interest || typeof interest !== 'number' || interest < 1 || interest > 5) {
-      return NextResponse.json({ error: 'interest must be 1-5' }, { status: 400 });
-    }
-
+    const { gameId, interest } = parsed.data;
     const updated = updateUserGame(gameId, { personalInterest: interest });
 
     if (!updated) {
@@ -27,7 +28,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: { gameId, interest } });
   } catch (error) {
     console.error('Failed to update interest:', error);
-    const message = error instanceof Error ? error.message : 'Failed to update interest';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to update interest' },
+      { status: 500 }
+    );
   }
 }

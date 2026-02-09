@@ -5,6 +5,7 @@ import { syncPrices } from '@/lib/sync/prices';
 import { syncHltb } from '@/lib/sync/hltb';
 import { syncReviews } from '@/lib/sync/reviews';
 import { getRecentSyncLogs } from '@/lib/db/queries';
+import { syncTriggerSchema, formatZodError } from '@/lib/validations';
 
 type ProgressContext = {
   gameName?: string;
@@ -79,9 +80,16 @@ function streamSync(syncFn: SyncFn, label: string, request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { type } = await request.json();
+    const body = await request.json();
+    const parsed = syncTriggerSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: formatZodError(parsed.error) },
+        { status: 400 }
+      );
+    }
 
-    switch (type) {
+    switch (parsed.data.type) {
       case 'library':
         return streamSync(syncLibrary, 'Library', request);
       case 'wishlist':
@@ -92,16 +100,13 @@ export async function POST(request: NextRequest) {
         return streamSync(syncHltb, 'HLTB', request);
       case 'reviews':
         return streamSync(syncReviews, 'Review', request);
-      default:
-        return NextResponse.json(
-          { error: `Unknown sync type: ${type}` },
-          { status: 400 }
-        );
     }
   } catch (error) {
     console.error('Sync failed:', error);
-    const message = error instanceof Error ? error.message : 'Sync failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Sync failed' },
+      { status: 500 }
+    );
   }
 }
 

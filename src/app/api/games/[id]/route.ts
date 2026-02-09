@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getEnrichedGameById, updateUserGame } from '@/lib/db/queries';
+import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 
 /**
  * GET /api/games/:id
@@ -11,12 +12,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const gameId = parseInt(id);
-    if (isNaN(gameId)) {
+    const idResult = gameIdSchema.safeParse({ id });
+    if (!idResult.success) {
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
 
-    const game = getEnrichedGameById(gameId);
+    const game = getEnrichedGameById(idResult.data.id);
     if (!game) {
       return NextResponse.json({ error: 'Game not found' }, { status: 404 });
     }
@@ -41,26 +42,25 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const gameId = parseInt(id);
-    if (isNaN(gameId)) {
+    const idResult = gameIdSchema.safeParse({ id });
+    if (!idResult.success) {
       return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
     }
 
     const body = await request.json();
-    const allowedFields = ['personalInterest', 'notes', 'isWatchlisted', 'isIgnored', 'priceThreshold'] as const;
-    const updates: Record<string, unknown> = {};
-
-    for (const field of allowedFields) {
-      if (field in body) {
-        updates[field] = body[field];
-      }
+    const parsed = gameUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: formatZodError(parsed.error) },
+        { status: 400 }
+      );
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(parsed.data).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = updateUserGame(gameId, updates as Parameters<typeof updateUserGame>[1]);
+    const updated = updateUserGame(idResult.data.id, parsed.data);
     if (!updated) {
       return NextResponse.json({ error: 'Game not found' }, { status: 404 });
     }
