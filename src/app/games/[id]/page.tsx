@@ -2,10 +2,12 @@ import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink } from 'lucide-react';
-import { getEnrichedGameById, getPriceAlertForGame } from '@/lib/db/queries';
+import { getEnrichedGameById, getPriceAlertForGame, getScoringConfig } from '@/lib/db/queries';
+import { calculateDealScore } from '@/lib/scoring/engine';
 import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
+import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
 
 export default async function GameDetailPage({
   params,
@@ -20,6 +22,19 @@ export default async function GameDetailPage({
   if (!game) notFound();
 
   const alert = getPriceAlertForGame(gameId);
+
+  // Compute full deal score breakdown for transparency display
+  const scoringConfig = getScoringConfig();
+  const fullDealScore = game.currentPrice !== undefined && game.currentPrice > 0
+    ? calculateDealScore({
+        currentPrice: game.currentPrice,
+        regularPrice: game.regularPrice ?? game.currentPrice,
+        historicalLow: game.historicalLow ?? game.currentPrice,
+        reviewPercent: game.reviewScore ?? null,
+        hltbMainHours: game.hltbMain ?? null,
+        personalInterest: game.personalInterest,
+      }, scoringConfig.weights, scoringConfig.thresholds)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -151,6 +166,16 @@ export default async function GameDetailPage({
                 </p>
               )}
             </section>
+          )}
+
+          {/* Score Breakdown */}
+          {fullDealScore && (
+            <ScoreBreakdown
+              dealScore={fullDealScore}
+              weights={scoringConfig.weights}
+              hasReviewData={game.reviewScore !== undefined}
+              hasHltbData={game.hltbMain !== undefined && game.hltbMain > 0}
+            />
           )}
 
           {/* Description */}

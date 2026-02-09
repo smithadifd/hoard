@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock, X } from 'lucide-react';
+import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock, Star, X } from 'lucide-react';
 
 interface SettingsFormProps {
   initialSettings: Record<string, string>;
@@ -88,6 +88,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     wishlist: 'idle',
     prices: 'idle',
     hltb: 'idle',
+    reviews: 'idle',
   });
   const [syncMessage, setSyncMessage] = useState<Record<string, string>>({});
   const [syncDetail, setSyncDetail] = useState<Record<string, string>>({});
@@ -328,6 +329,19 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               body: JSON.stringify({ type: 'hltb' }),
             })}
             onCancel={() => handleCancel('hltb')}
+            disabled={!hasSteamKeys}
+          />
+          <SyncButton
+            label="Sync Reviews"
+            icon={<Star className="h-4 w-4" />}
+            status={syncStatus.reviews}
+            message={syncMessage.reviews}
+            detail={syncDetail.reviews}
+            onClick={() => handleStreamSync('reviews', '/api/sync', {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'reviews' }),
+            })}
+            onCancel={() => handleCancel('reviews')}
             disabled={!hasSteamKeys}
           />
         </div>

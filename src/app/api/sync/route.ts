@@ -3,6 +3,7 @@ import { syncLibrary } from '@/lib/sync/library';
 import { syncWishlist } from '@/lib/sync/wishlist';
 import { syncPrices } from '@/lib/sync/prices';
 import { syncHltb } from '@/lib/sync/hltb';
+import { syncReviews } from '@/lib/sync/reviews';
 import { getRecentSyncLogs } from '@/lib/db/queries';
 
 type ProgressContext = {
@@ -89,6 +90,8 @@ export async function POST(request: NextRequest) {
         return streamSync(syncPrices, 'Price', request);
       case 'hltb':
         return streamSync(syncHltb, 'HLTB', request);
+      case 'reviews':
+        return streamSync(syncReviews, 'Review', request);
       default:
         return NextResponse.json(
           { error: `Unknown sync type: ${type}` },

@@ -55,6 +55,9 @@ export interface EnrichedGame {
   dealScore?: number;
   dealRating?: 'excellent' | 'great' | 'good' | 'okay' | 'poor';
   dealSummary?: string;
+
+  // Data completeness
+  dataCompleteness: 'full' | 'partial' | 'minimal';
 }
 
 /**

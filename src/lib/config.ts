@@ -26,6 +26,7 @@ export interface AppConfig {
   cronPriceCheck: string;
   cronLibrarySync: string;
   cronHltbSync: string;
+  cronReviewSync: string;
 
   // Alerts
   alertThrottleHours: number;
@@ -45,6 +46,7 @@ export function getConfig(): AppConfig {
       cronPriceCheck: process.env.CRON_PRICE_CHECK || '0 */12 * * *',
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
       cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0',
+      cronReviewSync: process.env.CRON_REVIEW_SYNC || '0 4 * * 3',
       alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),
     };
   }

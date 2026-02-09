@@ -8,6 +8,7 @@ import {
   Heart,
   Gamepad2,
   Bell,
+  ListChecks,
   Settings,
   TrendingDown,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ const navigation = [
   { name: 'Library', href: '/library', icon: Library },
   { name: 'Wishlist', href: '/wishlist', icon: Heart },
   { name: 'Backlog', href: '/backlog', icon: Gamepad2 },
+  { name: 'Triage', href: '/triage', icon: ListChecks },
   { name: 'Watchlist', href: '/watchlist', icon: Bell },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
