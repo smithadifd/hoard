@@ -858,6 +858,7 @@ export function updateGameReviewData(
     isMultiplayer?: boolean;
   }
 ): void {
+  const hasData = Object.keys(data).length > 0;
   const db = getDb();
   db.update(games)
     .set({
@@ -869,7 +870,11 @@ export function updateGameReviewData(
       ...(data.publisher !== undefined && { publisher: data.publisher }),
       ...(data.isCoop !== undefined && { isCoop: data.isCoop }),
       ...(data.isMultiplayer !== undefined && { isMultiplayer: data.isMultiplayer }),
-      reviewLastUpdated: new Date().toISOString(),
+      // Successful: mark as checked for 30 days.
+      // Failed: backdate by 27 days so it retries after ~3 days instead of 30.
+      reviewLastUpdated: hasData
+        ? new Date().toISOString()
+        : new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString(),
     })
     .where(eq(games.id, gameId))
     .run();
