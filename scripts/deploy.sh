@@ -110,6 +110,15 @@ if [ ! -f ".env.production" ]; then
 fi
 
 echo ""
+echo "--- Creating pre-deploy backup ---"
+# Hit the backup API endpoint on the running container
+if curl -sf --max-time 30 -X POST "http://localhost:3001/api/backup" > /dev/null 2>&1; then
+    echo "Pre-deploy backup created successfully"
+else
+    echo "WARNING: Pre-deploy backup failed (container may not be running)"
+fi
+
+echo ""
 echo "--- Building Docker image ---"
 docker-compose -f "$COMPOSE_FILE" --env-file .env.production build
 

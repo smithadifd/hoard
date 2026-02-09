@@ -124,6 +124,33 @@ export class DiscordClient {
 
     return this.send('', [embed]);
   }
+
+  /**
+   * Send a backup status notification.
+   * Only sends on failure by default to avoid notification fatigue.
+   */
+  async sendBackupNotification(result: {
+    success: boolean;
+    fileSize?: number;
+    error?: string;
+    backupCount?: number;
+  }): Promise<boolean> {
+    if (result.success) {
+      // Skip success notifications — only failures are worth alerting
+      return true;
+    }
+
+    const embed: DiscordEmbed = {
+      title: '\u26a0\ufe0f Backup Failed',
+      description: result.error || 'Unknown error during database backup',
+      color: 0xef4444, // Red
+      fields: [],
+      footer: { text: 'Hoard - Database Backup' },
+      timestamp: new Date().toISOString(),
+    };
+
+    return this.send('', [embed]);
+  }
 }
 
 // Singleton instance

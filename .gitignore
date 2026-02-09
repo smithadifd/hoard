@@ -46,6 +46,9 @@ next-env.d.ts
 # personal claude code config
 CLAUDE.local.md
 
+# implementation plans (local workflow, not app code)
+/plans/
+
 # Serwist (generated service worker files)
 public/sw*
 public/swe-worker*
