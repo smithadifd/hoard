@@ -71,6 +71,10 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
         // Fetch review summary
         const reviews = await client.getReviewSummary(game.steamAppId);
 
+        if (processed < 3) {
+          console.log(`[ReviewSync] ${game.title} (${game.steamAppId}): details=${!!details}, reviews=${!!reviews}`);
+        }
+
         if (!details && !reviews) {
           // Both calls failed (rate-limited or delisted) — mark as checked so we skip next time
           updateGameReviewData(game.id, {});
