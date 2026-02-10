@@ -99,16 +99,28 @@ export class SteamClient {
 
     try {
       const response = await fetch(url);
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.log(`[Steam] getAppDetails(${appId}): HTTP ${response.status}`);
+        return null;
+      }
 
-      const data = await response.json();
-      const appData = data[appId.toString()];
+      const text = await response.text();
+      try {
+        const data = JSON.parse(text);
+        const appData = data[appId.toString()];
 
-      if (!appData?.success) return null;
+        if (!appData?.success) {
+          console.log(`[Steam] getAppDetails(${appId}): success=false`);
+          return null;
+        }
 
-      return appData.data;
-    } catch {
-      // JSON parse failure (rate-limited HTML response) or network error
+        return appData.data;
+      } catch {
+        console.log(`[Steam] getAppDetails(${appId}): JSON parse failed, response starts with: ${text.substring(0, 100)}`);
+        return null;
+      }
+    } catch (err) {
+      console.log(`[Steam] getAppDetails(${appId}): fetch error: ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }
@@ -121,14 +133,26 @@ export class SteamClient {
 
     try {
       const response = await fetch(url);
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.log(`[Steam] getReviewSummary(${appId}): HTTP ${response.status}`);
+        return null;
+      }
 
-      const data: SteamReviewSummary = await response.json();
-      if (!data.success) return null;
+      const text = await response.text();
+      try {
+        const data: SteamReviewSummary = JSON.parse(text);
+        if (!data.success) {
+          console.log(`[Steam] getReviewSummary(${appId}): success=false`);
+          return null;
+        }
 
-      return data.query_summary;
-    } catch {
-      // JSON parse failure (rate-limited HTML response) or network error
+        return data.query_summary;
+      } catch {
+        console.log(`[Steam] getReviewSummary(${appId}): JSON parse failed, response starts with: ${text.substring(0, 100)}`);
+        return null;
+      }
+    } catch (err) {
+      console.log(`[Steam] getReviewSummary(${appId}): fetch error: ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }
