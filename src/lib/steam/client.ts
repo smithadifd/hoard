@@ -19,6 +19,7 @@ import type {
 
 const STEAM_API_BASE = 'https://api.steampowered.com';
 const STEAM_STORE_API = 'https://store.steampowered.com/api';
+const STEAM_STORE_BASE = 'https://store.steampowered.com';
 
 export class SteamClient {
   private apiKey: string;
@@ -129,7 +130,7 @@ export class SteamClient {
    * Get review summary for a game.
    */
   async getReviewSummary(appId: number): Promise<SteamReviewSummary['query_summary'] | null> {
-    const url = `${STEAM_STORE_API}/appreviews/${appId}?json=1&purchase_type=all&num_per_page=0`;
+    const url = `${STEAM_STORE_BASE}/appreviews/${appId}?json=1&purchase_type=all&num_per_page=0`;
 
     try {
       const response = await fetch(url);
