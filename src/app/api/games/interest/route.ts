@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { updateUserGame } from '@/lib/db/queries';
 import { interestSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
 
 /**
  * POST /api/games/interest
@@ -13,32 +14,26 @@ export async function POST(request: NextRequest) {
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const body = await request.json();
     const parsed = interestSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: formatZodError(parsed.error) },
-        { status: 400 }
-      );
+      return apiValidationError(formatZodError(parsed.error));
     }
 
     const { gameId, interest } = parsed.data;
     const updated = updateUserGame(gameId, { personalInterest: interest }, userId);
 
     if (!updated) {
-      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+      return apiNotFound('Game');
     }
 
-    return NextResponse.json({ data: { gameId, interest } });
+    return apiSuccess({ gameId, interest });
   } catch (error) {
-    console.error('Failed to update interest:', error);
-    return NextResponse.json(
-      { error: 'Failed to update interest' },
-      { status: 500 }
-    );
+    console.error('[POST /api/games/interest]', error);
+    return apiError('Failed to update interest');
   }
 }

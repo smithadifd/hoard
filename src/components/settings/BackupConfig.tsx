@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { HardDrive, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface BackupStatus {
   lastBackup: string | null;
@@ -29,9 +30,21 @@ function formatRelativeTime(isoDate: string): string {
 export function BackupConfig() {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [backingUp, setBackingUp] = useState(false);
-  const [backupResult, setBackupResult] = useState<'idle' | 'success' | 'error'>('idle');
   const [backupMessage, setBackupMessage] = useState('');
+
+  const {
+    mutate: runBackup,
+    isPending: backingUp,
+    status: backupResult,
+  } = useApiMutation<undefined, { data: { fileSize: number } }>('/api/backup', {
+    method: 'POST',
+    onSuccess: (resp) => {
+      setBackupMessage(`Backup created (${formatBytes(resp.data.fileSize)})`);
+    },
+    onError: (msg) => {
+      setBackupMessage(msg);
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -49,26 +62,9 @@ export function BackupConfig() {
     return () => { cancelled = true; };
   }, [backupResult]);
 
-  const handleBackupNow = async () => {
-    setBackingUp(true);
-    setBackupResult('idle');
+  const handleBackupNow = () => {
     setBackupMessage('');
-    try {
-      const res = await fetch('/api/backup', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        setBackupResult('error');
-        setBackupMessage(data.error || 'Backup failed');
-      } else {
-        setBackupResult('success');
-        setBackupMessage(`Backup created (${formatBytes(data.data.fileSize)})`);
-      }
-    } catch {
-      setBackupResult('error');
-      setBackupMessage('Failed to create backup');
-    } finally {
-      setBackingUp(false);
-    }
+    runBackup();
   };
 
   return (

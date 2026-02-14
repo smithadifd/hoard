@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check } from 'lucide-react';
+import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface GameUserControlsProps {
   gameId: number;
@@ -29,41 +30,27 @@ export function GameUserControls({
   const [interest, setInterest] = useState(initialInterest);
   const [isWatchlisted, setIsWatchlisted] = useState(initialWatchlisted);
   const [notes, setNotes] = useState(initialNotes || '');
-  const [saving, setSaving] = useState(false);
   const [notifyAtl, setNotifyAtl] = useState(initialAtl);
   const [notifyThreshold, setNotifyThreshold] = useState(initialThresholdNotify);
   const [thresholdSaved, setThresholdSaved] = useState(false);
   const thresholdRef = useRef<HTMLInputElement>(null);
 
-  const save = async (updates: Record<string, unknown>) => {
-    setSaving(true);
-    try {
-      await fetch(`/api/games/${gameId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-    } catch (err) {
-      console.error('Failed to save:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const gameMutation = useApiMutation<Record<string, unknown>>(
+    () => `/api/games/${gameId}`,
+    { method: 'PATCH' }
+  );
 
-  const saveAlert = async (updates: Record<string, unknown>) => {
-    setSaving(true);
-    try {
-      await fetch('/api/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameId, ...updates }),
-      });
-    } catch (err) {
-      console.error('Failed to save alert:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const alertMutation = useApiMutation<Record<string, unknown>>(
+    '/api/alerts',
+    { method: 'POST' }
+  );
+
+  const saving = gameMutation.isPending || alertMutation.isPending;
+
+  const save = (updates: Record<string, unknown>) => gameMutation.mutate(updates);
+
+  const saveAlert = (updates: Record<string, unknown>) =>
+    alertMutation.mutate({ gameId, ...updates });
 
   const handleInterestChange = (value: number) => {
     setInterest(value);

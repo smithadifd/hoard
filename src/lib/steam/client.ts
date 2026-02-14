@@ -9,6 +9,7 @@
  * Docs: https://developer.valvesoftware.com/wiki/Steam_Web_API
  */
 
+import { getEffectiveConfig } from '../config';
 import type {
   SteamOwnedGamesResponse,
   SteamWishlistResponse,
@@ -22,21 +23,26 @@ const STEAM_STORE_API = 'https://store.steampowered.com/api';
 const STEAM_STORE_BASE = 'https://store.steampowered.com';
 
 export class SteamClient {
-  private apiKey: string;
-  private userId: string;
-
-  constructor(apiKey: string, userId: string) {
-    this.apiKey = apiKey;
-    this.userId = userId;
+  /**
+   * Read credentials lazily so they always reflect the latest value
+   * from the DB settings table, even if the user changes them mid-session.
+   */
+  private getCredentials(): { apiKey: string; userId: string } {
+    const config = getEffectiveConfig();
+    if (!config.steamApiKey || !config.steamUserId) {
+      throw new Error('Steam API Key and User ID are required. Configure them in Settings.');
+    }
+    return { apiKey: config.steamApiKey, userId: config.steamUserId };
   }
 
   /**
    * Fetch all owned games with playtime data.
    */
   async getOwnedGames(): Promise<SteamOwnedGamesResponse['response']> {
+    const { apiKey, userId } = this.getCredentials();
     const url = new URL(`${STEAM_API_BASE}/IPlayerService/GetOwnedGames/v1/`);
-    url.searchParams.set('key', this.apiKey);
-    url.searchParams.set('steamid', this.userId);
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('steamid', userId);
     url.searchParams.set('include_appinfo', '1');
     url.searchParams.set('include_played_free_games', '1');
     url.searchParams.set('format', 'json');
@@ -73,8 +79,9 @@ export class SteamClient {
    * Wishlist must be public or this will return empty.
    */
   async getWishlist(): Promise<SteamWishlistEntry[]> {
+    const { userId } = this.getCredentials();
     const url = new URL(`${STEAM_API_BASE}/IWishlistService/GetWishlist/v1/`);
-    url.searchParams.set('steamid', this.userId);
+    url.searchParams.set('steamid', userId);
     url.searchParams.set('format', 'json');
 
     const response = await fetch(url.toString());
@@ -182,10 +189,15 @@ export class SteamClient {
   }
 }
 
+let steamClient: SteamClient | null = null;
+
 /**
- * Create a SteamClient with the given credentials.
- * Use getEffectiveConfig() to get credentials from DB or env.
+ * Get the singleton SteamClient instance.
+ * Credentials are read lazily from config on each API call.
  */
-export function createSteamClient(apiKey: string, userId: string): SteamClient {
-  return new SteamClient(apiKey, userId);
+export function getSteamClient(): SteamClient {
+  if (!steamClient) {
+    steamClient = new SteamClient();
+  }
+  return steamClient;
 }

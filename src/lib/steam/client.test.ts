@@ -1,11 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SteamClient } from './client';
 
+vi.mock('../config', () => ({
+  getEffectiveConfig: () => ({
+    steamApiKey: 'test-api-key',
+    steamUserId: '76561198012345678',
+  }),
+}));
+
 describe('SteamClient', () => {
   let client: SteamClient;
 
   beforeEach(() => {
-    client = new SteamClient('test-api-key', '76561198012345678');
+    client = new SteamClient();
     vi.restoreAllMocks();
   });
 

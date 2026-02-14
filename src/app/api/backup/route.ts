@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
 import { getBackupStatus, runDatabaseBackup } from '@/lib/sync/backup';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized } from '@/lib/utils/api';
 
 /**
  * GET /api/backup
@@ -10,26 +10,21 @@ export async function GET(request: Request) {
   try {
     await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const status = getBackupStatus();
 
-    return NextResponse.json({
-      data: {
-        lastBackup: status.lastBackup,
-        backupCount: status.backupCount,
-        totalSize: status.totalSize,
-        oldestBackup: status.oldestBackup,
-      },
+    return apiSuccess({
+      lastBackup: status.lastBackup,
+      backupCount: status.backupCount,
+      totalSize: status.totalSize,
+      oldestBackup: status.oldestBackup,
     });
   } catch (error) {
-    console.error('Failed to get backup status:', error);
-    return NextResponse.json(
-      { error: 'Failed to get backup status' },
-      { status: 500 }
-    );
+    console.error('[GET /api/backup]', error);
+    return apiError('Failed to get backup status');
   }
 }
 
@@ -41,31 +36,23 @@ export async function POST(request: Request) {
   try {
     await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const result = await runDatabaseBackup({ tag: 'manual' });
 
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || 'Backup failed' },
-        { status: 500 }
-      );
+      return apiError(result.error || 'Backup failed');
     }
 
-    return NextResponse.json({
-      data: {
-        success: true,
-        fileSize: result.fileSize,
-        backupCount: result.backupCount,
-      },
+    return apiSuccess({
+      success: true,
+      fileSize: result.fileSize,
+      backupCount: result.backupCount,
     });
   } catch (error) {
-    console.error('Failed to run backup:', error);
-    return NextResponse.json(
-      { error: 'Failed to run backup' },
-      { status: 500 }
-    );
+    console.error('[POST /api/backup]', error);
+    return apiError('Failed to run backup');
   }
 }

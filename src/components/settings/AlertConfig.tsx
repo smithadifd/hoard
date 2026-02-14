@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Bell, Send, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface AlertConfigProps {
   initialThrottleHours: number;
@@ -13,52 +14,33 @@ export function AlertConfig({
   activeAlertCount,
 }: AlertConfigProps) {
   const [throttleHours, setThrottleHours] = useState(initialThrottleHours.toString());
-  const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [testing, setTesting] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [testMessage, setTestMessage] = useState('');
 
-  const handleSaveThrottle = async () => {
-    setSaving(true);
-    setSaveStatus('idle');
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          settings: { alert_throttle_hours: throttleHours },
-        }),
-      });
-      if (!res.ok) throw new Error('Save failed');
-      setSaveStatus('success');
-    } catch {
-      setSaveStatus('error');
-    } finally {
-      setSaving(false);
-    }
+  const {
+    mutate: saveThrottle,
+    isPending: saving,
+    status: saveStatus,
+    reset: resetSaveStatus,
+  } = useApiMutation('/api/settings', { method: 'PUT' });
+
+  const {
+    mutate: testWebhook,
+    isPending: testing,
+    status: testStatus,
+    error: testError,
+  } = useApiMutation('/api/alerts/test', {
+    method: 'POST',
+  });
+
+  const testMessage = testStatus === 'success'
+    ? 'Test notification sent!'
+    : testError || '';
+
+  const handleSaveThrottle = () => {
+    saveThrottle({ settings: { alert_throttle_hours: throttleHours } });
   };
 
-  const handleTestWebhook = async () => {
-    setTesting(true);
-    setTestStatus('idle');
-    setTestMessage('');
-    try {
-      const res = await fetch('/api/alerts/test', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        setTestStatus('error');
-        setTestMessage(data.error || 'Test failed');
-      } else {
-        setTestStatus('success');
-        setTestMessage('Test notification sent!');
-      }
-    } catch {
-      setTestStatus('error');
-      setTestMessage('Failed to send test notification');
-    } finally {
-      setTesting(false);
-    }
+  const handleTestWebhook = () => {
+    testWebhook();
   };
 
   return (
@@ -88,7 +70,7 @@ export function AlertConfig({
             value={throttleHours}
             onChange={(e) => {
               setThrottleHours(e.target.value);
-              setSaveStatus('idle');
+              resetSaveStatus();
             }}
             className="w-24 px-3 py-2 rounded-md bg-background border border-input text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />

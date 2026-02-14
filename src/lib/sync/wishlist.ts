@@ -6,8 +6,7 @@
  * For games not already in the DB, we fetch names from Steam appdetails.
  */
 
-import { getEffectiveConfig } from '../config';
-import { createSteamClient } from '../steam/client';
+import { getSteamClient } from '../steam/client';
 import {
   upsertGameFromSteam,
   upsertUserGame,
@@ -30,17 +29,11 @@ export type ProgressContext = {
 export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
 
 export async function syncWishlist(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
-  const config = getEffectiveConfig();
   const effectiveUserId = userId ?? getFirstUserId();
-
-  if (!config.steamApiKey || !config.steamUserId) {
-    throw new Error('Steam API Key and User ID are required. Configure them in Settings.');
-  }
-
   const syncLogId = createSyncLog('steam_wishlist');
 
   try {
-    const client = createSteamClient(config.steamApiKey, config.steamUserId);
+    const client = getSteamClient();
     const wishlistEntries = await client.getWishlist();
 
     if (wishlistEntries.length === 0) {

@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { getEnrichedGameById, updateUserGame } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
 
 /**
  * GET /api/games/:id
@@ -15,28 +15,25 @@ export async function GET(
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const { id } = await params;
     const idResult = gameIdSchema.safeParse({ id });
     if (!idResult.success) {
-      return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
+      return apiValidationError('Invalid game ID');
     }
 
     const game = getEnrichedGameById(idResult.data.id, userId);
     if (!game) {
-      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+      return apiNotFound('Game');
     }
 
-    return NextResponse.json({ data: game });
+    return apiSuccess(game);
   } catch (error) {
-    console.error('Failed to fetch game:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch game' },
-      { status: 500 }
-    );
+    console.error('[GET /api/games/:id]', error);
+    return apiError('Failed to fetch game');
   }
 }
 
@@ -52,40 +49,34 @@ export async function PATCH(
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const { id } = await params;
     const idResult = gameIdSchema.safeParse({ id });
     if (!idResult.success) {
-      return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
+      return apiValidationError('Invalid game ID');
     }
 
     const body = await request.json();
     const parsed = gameUpdateSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: formatZodError(parsed.error) },
-        { status: 400 }
-      );
+      return apiValidationError(formatZodError(parsed.error));
     }
 
     if (Object.keys(parsed.data).length === 0) {
-      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+      return apiValidationError('No valid fields to update');
     }
 
     const updated = updateUserGame(idResult.data.id, parsed.data, userId);
     if (!updated) {
-      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+      return apiNotFound('Game');
     }
 
-    return NextResponse.json({ data: { message: 'Updated' } });
+    return apiSuccess({ message: 'Updated' });
   } catch (error) {
-    console.error('Failed to update game:', error);
-    return NextResponse.json(
-      { error: 'Failed to update game' },
-      { status: 500 }
-    );
+    console.error('[PATCH /api/games/:id]', error);
+    return apiError('Failed to update game');
   }
 }

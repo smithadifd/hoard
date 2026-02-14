@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { user, userGames, priceAlerts } from '@/lib/db/schema';
 import { sql, eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { apiSuccess, apiError, apiValidationError } from '@/lib/utils/api';
 
 const setupSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -18,17 +19,14 @@ export async function POST(request: NextRequest) {
     // Check if any users already exist
     const row = db.select({ count: sql<number>`count(*)` }).from(user).get();
     if ((row?.count ?? 0) > 0) {
-      return NextResponse.json(
-        { error: 'Setup already completed. Please sign in.' },
-        { status: 403 }
-      );
+      return apiError('Setup already completed. Please sign in.', 403);
     }
 
     const body = await request.json();
     const parsed = setupSchema.safeParse(body);
     if (!parsed.success) {
       const firstError = parsed.error.issues[0]?.message || 'Invalid input';
-      return NextResponse.json({ error: firstError }, { status: 400 });
+      return apiValidationError(firstError);
     }
 
     // Create user via Better Auth API
@@ -42,10 +40,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!result?.user?.id) {
-      return NextResponse.json(
-        { error: 'Failed to create account' },
-        { status: 500 }
-      );
+      return apiError('Failed to create account');
     }
 
     // Migrate existing 'default' userId records to the new user
@@ -61,14 +56,9 @@ export async function POST(request: NextRequest) {
       .where(eq(priceAlerts.userId, 'default'))
       .run();
 
-    return NextResponse.json({
-      data: { message: 'Account created successfully' },
-    });
+    return apiSuccess({ message: 'Account created successfully' });
   } catch (error) {
-    console.error('[Setup] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create account' },
-      { status: 500 }
-    );
+    console.error('[POST /api/setup]', error);
+    return apiError('Failed to create account');
   }
 }

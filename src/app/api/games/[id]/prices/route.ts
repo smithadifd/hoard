@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { getPriceHistory } from '@/lib/db/queries';
 import { gameIdSchema } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
 
 /**
  * GET /api/games/:id/prices
@@ -14,23 +14,20 @@ export async function GET(
   try {
     await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const { id } = await params;
     const idResult = gameIdSchema.safeParse({ id });
     if (!idResult.success) {
-      return NextResponse.json({ error: 'Invalid game ID' }, { status: 400 });
+      return apiValidationError('Invalid game ID');
     }
 
     const history = getPriceHistory(idResult.data.id);
-    return NextResponse.json({ data: history });
+    return apiSuccess(history);
   } catch (error) {
-    console.error('Failed to fetch price history:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch price history' },
-      { status: 500 }
-    );
+    console.error('[GET /api/games/:id/prices]', error);
+    return apiError('Failed to fetch price history');
   }
 }

@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { getEffectiveConfig } from '@/lib/config';
 import { getDiscordClient } from '@/lib/discord/client';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
 
 /**
  * POST /api/alerts/test
@@ -11,17 +11,14 @@ export async function POST(request: Request) {
   try {
     await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const config = getEffectiveConfig();
 
     if (!config.discordWebhookUrl) {
-      return NextResponse.json(
-        { error: 'Discord webhook URL is not configured. Set it in Settings first.' },
-        { status: 400 }
-      );
+      return apiValidationError('Discord webhook URL is not configured. Set it in Settings first.');
     }
 
     const discord = getDiscordClient();
@@ -34,18 +31,12 @@ export async function POST(request: Request) {
     }]);
 
     if (!sent) {
-      return NextResponse.json(
-        { error: 'Failed to send test notification. Check your webhook URL.' },
-        { status: 500 }
-      );
+      return apiError('Failed to send test notification. Check your webhook URL.');
     }
 
-    return NextResponse.json({ data: { sent: true, message: 'Test notification sent!' } });
+    return apiSuccess({ sent: true, message: 'Test notification sent!' });
   } catch (error) {
-    console.error('Failed to send test notification:', error);
-    return NextResponse.json(
-      { error: 'Failed to send test notification' },
-      { status: 500 }
-    );
+    console.error('[POST /api/alerts/test]', error);
+    return apiError('Failed to send test notification');
   }
 }
