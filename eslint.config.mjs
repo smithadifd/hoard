@@ -21,6 +21,20 @@ const eslintConfig = defineConfig([
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+    },
+  },
+  // Allow console.log in server-side code
+  {
+    files: [
+      'src/lib/**/*.ts',
+      'src/app/api/**/*.ts',
+      'src/instrumentation.ts',
+      'scripts/**/*',
+    ],
+    rules: {
+      'no-console': 'off',
     },
   },
 ]);

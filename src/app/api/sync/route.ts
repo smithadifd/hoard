@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { syncLibrary } from '@/lib/sync/library';
 import { syncWishlist } from '@/lib/sync/wishlist';
 import { syncPrices } from '@/lib/sync/prices';
@@ -7,6 +7,7 @@ import { syncReviews } from '@/lib/sync/reviews';
 import { getRecentSyncLogs } from '@/lib/db/queries';
 import { syncTriggerSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
 
 type ProgressContext = {
   gameName?: string;
@@ -54,7 +55,7 @@ function streamSync(syncFn: SyncFn, label: string, request: NextRequest, userId:
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : `${label} sync failed`;
-        console.error(`${label} sync failed:`, error);
+        console.error(`[POST /api/sync] ${label} sync failed:`, error);
         send('error', { error: message });
       } finally {
         controller.close();
@@ -85,17 +86,14 @@ export async function POST(request: NextRequest) {
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const body = await request.json();
     const parsed = syncTriggerSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: formatZodError(parsed.error) },
-        { status: 400 }
-      );
+      return apiValidationError(formatZodError(parsed.error));
     }
 
     switch (parsed.data.type) {
@@ -111,11 +109,8 @@ export async function POST(request: NextRequest) {
         return streamSync(syncReviews, 'Review', request, userId);
     }
   } catch (error) {
-    console.error('Sync failed:', error);
-    return NextResponse.json(
-      { error: 'Sync failed' },
-      { status: 500 }
-    );
+    console.error('[POST /api/sync]', error);
+    return apiError('Sync failed');
   }
 }
 
@@ -127,17 +122,14 @@ export async function GET(request: NextRequest) {
   try {
     await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const logs = getRecentSyncLogs(20);
-    return NextResponse.json({ data: logs });
+    return apiSuccess(logs);
   } catch (error) {
-    console.error('Failed to fetch sync status:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch sync status' },
-      { status: 500 }
-    );
+    console.error('[GET /api/sync]', error);
+    return apiError('Failed to fetch sync status');
   }
 }

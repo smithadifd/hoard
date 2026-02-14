@@ -6,8 +6,7 @@
  * missing review data (or with stale data older than 30 days).
  */
 
-import { getEffectiveConfig } from '../config';
-import { createSteamClient } from '../steam/client';
+import { getSteamClient } from '../steam/client';
 import {
   getGamesForReviewSync,
   updateGameReviewData,
@@ -33,12 +32,6 @@ const BATCH_SIZE = 100;
 const DELAY_MS = 3000; // 3s between games (2 API calls per game)
 
 export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortSignal): Promise<SyncResult> {
-  const config = getEffectiveConfig();
-
-  if (!config.steamApiKey || !config.steamUserId) {
-    throw new Error('Steam API Key and User ID are required. Configure them in Settings.');
-  }
-
   const syncLogId = createSyncLog('reviews');
 
   try {
@@ -52,7 +45,7 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
       return { gamesProcessed: 0, syncLogId, message: 'All games already have review data (refreshes after 30 days)' };
     }
 
-    const client = createSteamClient(config.steamApiKey, config.steamUserId);
+    const client = getSteamClient();
     let processed = 0;
     let enriched = 0;
 

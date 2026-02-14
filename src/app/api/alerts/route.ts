@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import {
   getAllPriceAlertsWithGames,
   upsertPriceAlert,
 } from '@/lib/db/queries';
 import { alertUpsertSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
 
 /**
  * GET /api/alerts
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
@@ -28,13 +29,10 @@ export async function GET(request: NextRequest) {
       alerts = alerts.filter((a) => a.isActive);
     }
 
-    return NextResponse.json({ data: alerts });
+    return apiSuccess(alerts);
   } catch (error) {
-    console.error('Failed to fetch alerts:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch alerts' },
-      { status: 500 }
-    );
+    console.error('[GET /api/alerts]', error);
+    return apiError('Failed to fetch alerts');
   }
 }
 
@@ -48,28 +46,22 @@ export async function POST(request: NextRequest) {
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const body = await request.json();
     const parsed = alertUpsertSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: formatZodError(parsed.error) },
-        { status: 400 }
-      );
+      return apiValidationError(formatZodError(parsed.error));
     }
 
     const { gameId, ...alertOptions } = parsed.data;
     const alertId = upsertPriceAlert(gameId, alertOptions, userId);
 
-    return NextResponse.json({ data: { id: alertId, message: 'Alert saved' } });
+    return apiSuccess({ id: alertId, message: 'Alert saved' });
   } catch (error) {
-    console.error('Failed to create alert:', error);
-    return NextResponse.json(
-      { error: 'Failed to create alert' },
-      { status: 500 }
-    );
+    console.error('[POST /api/alerts]', error);
+    return apiError('Failed to create alert');
   }
 }

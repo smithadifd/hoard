@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Save, Loader2, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
+import { useApiMutation } from '@/hooks/useApiMutation';
 
 const DEFAULT_WEIGHTS: ScoringWeights = {
   priceWeight: 0.30,
@@ -29,8 +30,10 @@ interface ScoringConfigProps {
 export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConfigProps) {
   const [weights, setWeights] = useState<ScoringWeights>(initialWeights);
   const [thresholds, setThresholds] = useState<ScoringThresholds>(initialThresholds);
-  const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const { mutate: saveConfig, isPending: saving, status: saveStatus, reset: resetSaveStatus } = useApiMutation(
+    '/api/settings',
+    { method: 'PUT' }
+  );
 
   const totalWeight = weights.priceWeight + weights.reviewWeight + weights.valueWeight + weights.interestWeight;
   const isValid = Math.abs(totalWeight - 1.0) < 0.01;
@@ -38,7 +41,7 @@ export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConf
   const handleWeightChange = (key: keyof ScoringWeights, rawValue: number) => {
     const value = rawValue / 100;
     setWeights((prev) => ({ ...prev, [key]: value }));
-    setSaveStatus('idle');
+    resetSaveStatus();
   };
 
   const handleThresholdChange = (tier: keyof ScoringThresholds['maxDollarsPerHour'], value: string) => {
@@ -47,38 +50,23 @@ export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConf
     setThresholds((prev) => ({
       maxDollarsPerHour: { ...prev.maxDollarsPerHour, [tier]: num },
     }));
-    setSaveStatus('idle');
+    resetSaveStatus();
   };
 
   const handleReset = () => {
     setWeights(DEFAULT_WEIGHTS);
     setThresholds(DEFAULT_THRESHOLDS);
-    setSaveStatus('idle');
+    resetSaveStatus();
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!isValid) return;
-    setSaving(true);
-    setSaveStatus('idle');
-
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          settings: {
-            scoring_weights: JSON.stringify(weights),
-            scoring_thresholds: JSON.stringify(thresholds),
-          },
-        }),
-      });
-      if (!res.ok) throw new Error('Save failed');
-      setSaveStatus('success');
-    } catch {
-      setSaveStatus('error');
-    } finally {
-      setSaving(false);
-    }
+    saveConfig({
+      settings: {
+        scoring_weights: JSON.stringify(weights),
+        scoring_thresholds: JSON.stringify(thresholds),
+      },
+    });
   };
 
   return (

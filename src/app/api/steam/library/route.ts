@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { syncLibrary } from '@/lib/sync/library';
 import { getEnrichedGames } from '@/lib/db/queries';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
+import { apiSuccess, apiError, apiUnauthorized } from '@/lib/utils/api';
 
 /**
  * POST /api/steam/library
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   const encoder = new TextEncoder();
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
         send('done', { gamesProcessed: result.gamesProcessed, cancelled: abortController.signal.aborted });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Library sync failed';
-        console.error('Library sync failed:', error);
+        console.error('[POST /api/steam/library] Library sync failed:', error);
         send('error', { error: message });
       } finally {
         controller.close();
@@ -69,20 +70,14 @@ export async function GET(request: NextRequest) {
   try {
     userId = await requireUserIdFromRequest(request);
   } catch {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return apiUnauthorized();
   }
 
   try {
     const { games, total } = getEnrichedGames({ view: 'library' }, undefined, undefined, userId);
-    return NextResponse.json({
-      data: games,
-      meta: { total },
-    });
+    return apiSuccess(games, { total });
   } catch (error) {
-    console.error('Failed to fetch library:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch library' },
-      { status: 500 }
-    );
+    console.error('[GET /api/steam/library]', error);
+    return apiError('Failed to fetch library');
   }
 }
