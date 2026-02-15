@@ -33,11 +33,15 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
       ? params.genres.split(',')
       : undefined,
     minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
+    requireCompleteData: params.showAll === 'true' ? false : true,
+    hideUnreleased: params.showUnreleased === 'true' ? false : true,
   };
 
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
-  const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
+  const { games, total, totalUnfiltered } = getEnrichedGames(filters, page, pageSize, session.user.id);
+
+  const hiddenCount = totalUnfiltered !== undefined ? totalUnfiltered - total : 0;
 
   const paginationParams: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {
@@ -51,7 +55,11 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Wishlist</h1>
         <p className="text-muted-foreground mt-1">
-          {total > 0 ? `${total} wishlisted games` : 'Your wishlisted games — see deals at a glance'}
+          {total > 0
+            ? hiddenCount > 0
+              ? `${total} of ${totalUnfiltered} wishlisted games (${hiddenCount} hidden)`
+              : `${total} wishlisted games`
+            : 'Your wishlisted games — see deals at a glance'}
         </p>
       </div>
 

@@ -43,6 +43,13 @@ export function GameCard({ game }: GameCardProps) {
           </div>
         )}
 
+        {/* Coming Soon Badge (non-owned unreleased games) */}
+        {game.isReleased === false && !game.isOwned && (
+          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-600/80 text-white backdrop-blur-sm">
+            Coming Soon
+          </span>
+        )}
+
         {/* Playtime Status Badge */}
         {game.isOwned && game.playtimeMinutes === 0 && (
           <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/80 text-white backdrop-blur-sm">
@@ -63,22 +70,26 @@ export function GameCard({ game }: GameCardProps) {
         </h3>
 
         {/* Meta Row */}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
           {/* Reviews */}
-          {game.reviewScore !== undefined && (
+          {game.reviewScore !== undefined ? (
             <span className="flex items-center gap-1">
               <Star className="h-3 w-3" />
               {game.reviewScore}%
             </span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground/60">No reviews</span>
           )}
 
           {/* HLTB Duration */}
-          {game.hltbMain !== undefined && game.hltbMain > 0 && (
+          {game.hltbMain !== undefined && game.hltbMain > 0 ? (
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
               {game.hltbMain}h
             </span>
-          )}
+          ) : game.reviewScore !== undefined ? (
+            <span className="text-[10px] text-muted-foreground/60">No duration</span>
+          ) : null}
 
           {/* Playtime (if owned) */}
           {game.isOwned && game.playtimeMinutes > 0 && (
@@ -89,7 +100,7 @@ export function GameCard({ game }: GameCardProps) {
         </div>
 
         {/* Price Row */}
-        {game.currentPrice !== undefined && (
+        {game.currentPrice !== undefined ? (
           <div className="flex items-center justify-between gap-y-1 flex-wrap">
             <div className="flex items-center gap-2 min-w-0 flex-wrap gap-y-1">
               {game.discountPercent && game.discountPercent > 0 ? (
@@ -119,6 +130,8 @@ export function GameCard({ game }: GameCardProps) {
               </span>
             )}
           </div>
+        ) : (
+          <div className="text-[10px] text-muted-foreground/60">No price data</div>
         )}
       </div>
     </Link>

@@ -85,6 +85,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
         releaseDate: details?.release_date?.date,
         developer: details?.developers?.[0],
         publisher: details?.publishers?.[0],
+        isReleased: details?.release_date?.coming_soon === true ? false : undefined,
       });
 
       upsertUserGame(gameId, { isWishlisted: true }, effectiveUserId);

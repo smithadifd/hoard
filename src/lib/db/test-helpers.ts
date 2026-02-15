@@ -37,6 +37,7 @@ const SCHEMA_SQL = `
     review_last_updated TEXT,
     is_coop INTEGER DEFAULT 0,
     is_multiplayer INTEGER DEFAULT 0,
+    is_released INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );

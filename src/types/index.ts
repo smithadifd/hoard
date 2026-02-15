@@ -56,8 +56,16 @@ export interface EnrichedGame {
   dealRating?: 'excellent' | 'great' | 'good' | 'okay' | 'poor';
   dealSummary?: string;
 
+  // Release status
+  isReleased?: boolean;
+
   // Data completeness
   dataCompleteness: 'full' | 'partial' | 'minimal';
+
+  // Data freshness timestamps
+  reviewLastUpdated?: string;
+  hltbLastUpdated?: string;
+  priceLastUpdated?: string;
 }
 
 /**
@@ -78,6 +86,8 @@ export interface GameFilters {
   minReview?: number; // Minimum review percentage
   maxPrice?: number;
   onSale?: boolean;
+  requireCompleteData?: boolean;
+  hideUnreleased?: boolean;
   sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate';
   sortOrder?: 'asc' | 'desc';
 }
