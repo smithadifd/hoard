@@ -131,6 +131,39 @@ echo "--- Starting containers ---"
 docker-compose -f "$COMPOSE_FILE" --env-file .env.production up -d
 
 echo ""
+echo "--- Running database migrations ---"
+# Run drizzle-kit push inside the container to apply any schema changes
+# Uses the builder stage's node_modules which include drizzle-kit
+docker exec hoard_app node -e "
+const Database = require('better-sqlite3');
+const db = new Database('/app/data/hoard.db');
+const fs = require('fs');
+
+// Read current schema columns
+const tables = db.prepare(\"SELECT name FROM sqlite_master WHERE type='table'\").all().map(t => t.name);
+const columnsByTable = {};
+for (const table of tables) {
+  columnsByTable[table] = db.pragma('table_info(' + table + ')').map(c => c.name);
+}
+
+// Schema migrations — add new columns that don't exist yet
+const migrations = [
+  { table: 'games', column: 'is_released', sql: 'ALTER TABLE games ADD COLUMN is_released INTEGER' },
+];
+
+let applied = 0;
+for (const m of migrations) {
+  if (columnsByTable[m.table] && !columnsByTable[m.table].includes(m.column)) {
+    db.exec(m.sql);
+    console.log('  Applied: ' + m.sql);
+    applied++;
+  }
+}
+if (applied === 0) console.log('  Schema is up to date');
+db.close();
+"
+
+echo ""
 echo "--- Container status ---"
 docker-compose -f "$COMPOSE_FILE" ps
 REMOTE_SCRIPT
