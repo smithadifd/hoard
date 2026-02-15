@@ -18,6 +18,7 @@ export interface AppConfig {
 
   // Discord
   discordWebhookUrl: string;
+  discordOpsWebhookUrl: string;
 
   // App
   appUrl: string;
@@ -46,6 +47,7 @@ export function getConfig(): AppConfig {
       steamUserId: process.env.STEAM_USER_ID || '',
       itadApiKey: process.env.ITAD_API_KEY || '',
       discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || '',
+      discordOpsWebhookUrl: process.env.DISCORD_OPS_WEBHOOK_URL || '',
       appUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://hoard.home',
       cronPriceCheck: process.env.CRON_PRICE_CHECK || '0 */12 * * *',
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
@@ -93,6 +95,7 @@ export function getEffectiveConfig(): AppConfig {
     steamUserId: dbSettings['steam_user_id'] || envConfig.steamUserId,
     itadApiKey: dbSettings['itad_api_key'] || envConfig.itadApiKey,
     discordWebhookUrl: dbSettings['discord_webhook_url'] || envConfig.discordWebhookUrl,
+    discordOpsWebhookUrl: dbSettings['discord_ops_webhook_url'] || envConfig.discordOpsWebhookUrl,
     alertThrottleHours: dbSettings['alert_throttle_hours']
       ? parseInt(dbSettings['alert_throttle_hours'], 10)
       : envConfig.alertThrottleHours,

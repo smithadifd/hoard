@@ -20,6 +20,7 @@ services:
       - STEAM_USER_ID=${STEAM_USER_ID}
       - ITAD_API_KEY=${ITAD_API_KEY:-}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - DISCORD_OPS_WEBHOOK_URL=${DISCORD_OPS_WEBHOOK_URL:-}
       - NEXT_PUBLIC_APP_URL=${APP_URL:-https://hoard.home}
       - CRON_PRICE_CHECK=${CRON_PRICE_CHECK:-0 */12 * * *}
       - CRON_LIBRARY_SYNC=${CRON_LIBRARY_SYNC:-0 3 * * *}
@@ -33,6 +34,12 @@ services:
     ports:
       - "3001:3000"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:

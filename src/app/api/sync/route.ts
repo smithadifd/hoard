@@ -5,6 +5,7 @@ import { syncPrices } from '@/lib/sync/prices';
 import { syncHltb } from '@/lib/sync/hltb';
 import { syncReviews } from '@/lib/sync/reviews';
 import { getRecentSyncLogs } from '@/lib/db/queries';
+import { getTaskStatus } from '@/lib/scheduler';
 import { syncTriggerSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
@@ -127,7 +128,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const logs = getRecentSyncLogs(20);
-    return apiSuccess(logs);
+    const tasks = getTaskStatus();
+    return apiSuccess({ logs, tasks });
   } catch (error) {
     console.error('[GET /api/sync]', error);
     return apiError('Failed to fetch sync status');

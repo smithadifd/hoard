@@ -105,6 +105,7 @@ const settingsKeyEnum = z.enum([
   'steam_user_id',
   'itad_api_key',
   'discord_webhook_url',
+  'discord_ops_webhook_url',
   'scoring_weights',
   'scoring_thresholds',
   'alert_throttle_hours',

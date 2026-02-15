@@ -36,10 +36,17 @@ export class DiscordClient {
   }
 
   /**
-   * Send a raw webhook message.
+   * Get the ops webhook URL. Falls back to main webhook if not configured.
    */
-  async send(content: string, embeds?: DiscordEmbed[]): Promise<boolean> {
-    const webhookUrl = this.getWebhookUrl();
+  private getOpsWebhookUrl(): string {
+    const config = getEffectiveConfig();
+    return config.discordOpsWebhookUrl || config.discordWebhookUrl;
+  }
+
+  /**
+   * Send a raw webhook message to a specific URL.
+   */
+  private async sendToUrl(webhookUrl: string, content: string, embeds?: DiscordEmbed[]): Promise<boolean> {
     if (!webhookUrl) {
       console.warn('Discord webhook URL not configured, skipping notification');
       return false;
@@ -49,10 +56,7 @@ export class DiscordClient {
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content,
-          embeds,
-        }),
+        body: JSON.stringify({ content, embeds }),
       });
 
       return response.ok;
@@ -60,6 +64,20 @@ export class DiscordClient {
       console.error('Discord notification failed:', error);
       return false;
     }
+  }
+
+  /**
+   * Send a raw webhook message to the main (deals) channel.
+   */
+  async send(content: string, embeds?: DiscordEmbed[]): Promise<boolean> {
+    return this.sendToUrl(this.getWebhookUrl(), content, embeds);
+  }
+
+  /**
+   * Send a raw webhook message to the ops channel.
+   */
+  async sendToOps(content: string, embeds?: DiscordEmbed[]): Promise<boolean> {
+    return this.sendToUrl(this.getOpsWebhookUrl(), content, embeds);
   }
 
   /**
@@ -142,6 +160,27 @@ export class DiscordClient {
   }
 
   /**
+   * Send an operational alert (sync failures, startup, etc.).
+   */
+  async sendOperationalAlert(alert: {
+    title: string;
+    description: string;
+    color?: number;
+    fields?: Array<{ name: string; value: string; inline?: boolean }>;
+  }): Promise<boolean> {
+    const embed: DiscordEmbed = {
+      title: alert.title,
+      description: alert.description,
+      color: alert.color ?? 0xef4444, // Red by default
+      fields: alert.fields,
+      footer: { text: 'Hoard - Operations' },
+      timestamp: new Date().toISOString(),
+    };
+
+    return this.sendToOps('', [embed]);
+  }
+
+  /**
    * Send a backup status notification.
    * Only sends on failure by default to avoid notification fatigue.
    */
@@ -161,11 +200,11 @@ export class DiscordClient {
       description: result.error || 'Unknown error during database backup',
       color: 0xef4444, // Red
       fields: [],
-      footer: { text: 'Hoard - Database Backup' },
+      footer: { text: 'Hoard - Operations' },
       timestamp: new Date().toISOString(),
     };
 
-    return this.send('', [embed]);
+    return this.sendToOps('', [embed]);
   }
 }
 
