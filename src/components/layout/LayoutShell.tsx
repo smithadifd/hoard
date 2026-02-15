@@ -2,11 +2,17 @@
 
 import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
+import { Header } from './Header';
 import { StaleDataBanner } from './StaleDataBanner';
 
 const AUTH_PATHS = ['/login', '/setup'];
 
-export function LayoutShell({ children }: { children: React.ReactNode }) {
+interface LayoutShellProps {
+  children: React.ReactNode;
+  user?: { name: string; email: string } | null;
+}
+
+export function LayoutShell({ children, user }: LayoutShellProps) {
   const pathname = usePathname();
   const isAuthPage = AUTH_PATHS.includes(pathname);
 
@@ -18,6 +24,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
+        {user && <Header userName={user.name} userEmail={user.email} />}
         <StaleDataBanner />
         <main className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
           {children}
