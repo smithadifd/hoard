@@ -51,6 +51,16 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
       console.log(`[Scheduler] Completed task: ${name}`);
     } catch (error) {
       console.error(`[Scheduler] Task "${name}" failed:`, error);
+      try {
+        const { getDiscordClient } = await import('../discord/client');
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        await getDiscordClient().sendOperationalAlert({
+          title: `Sync Failed: ${name}`,
+          description: msg,
+        });
+      } catch {
+        // Don't let notification failure crash the scheduler
+      }
     } finally {
       taskInfo.isRunning = false;
     }

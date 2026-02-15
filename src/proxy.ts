@@ -9,7 +9,7 @@ import { getSessionCookie } from 'better-auth/cookies';
  */
 
 // --- Public paths that bypass auth ---
-const PUBLIC_PATHS = ['/login', '/setup', '/api/auth', '/api/setup'];
+const PUBLIC_PATHS = ['/login', '/setup', '/api/auth', '/api/setup', '/api/health'];
 
 const STATIC_PREFIXES = [
   '/_next',

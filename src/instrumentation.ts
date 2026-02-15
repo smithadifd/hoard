@@ -8,7 +8,7 @@
 export async function register() {
   // Only run on the server (not during build or on edge)
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { registerTask, startScheduler } = await import('@/lib/scheduler');
+    const { registerTask, startScheduler, getTaskStatus } = await import('@/lib/scheduler');
     const { getEffectiveConfig } = await import('@/lib/config');
     const { syncPrices } = await import('@/lib/sync/prices');
     const { syncLibrary } = await import('@/lib/sync/library');
@@ -19,37 +19,10 @@ export async function register() {
 
     const config = getEffectiveConfig();
 
-    registerTask('price-check', config.cronPriceCheck, async () => {
-      try {
-        await syncPrices();
-      } catch (error) {
-        console.error('[Scheduler] Price check failed:', error);
-      }
-    });
-
-    registerTask('library-sync', config.cronLibrarySync, async () => {
-      try {
-        await syncLibrary();
-      } catch (error) {
-        console.error('[Scheduler] Library sync failed:', error);
-      }
-    });
-
-    registerTask('hltb-sync', config.cronHltbSync, async () => {
-      try {
-        await syncHltb();
-      } catch (error) {
-        console.error('[Scheduler] HLTB sync failed:', error);
-      }
-    });
-
-    registerTask('review-enrichment', config.cronReviewSync, async () => {
-      try {
-        await syncReviews();
-      } catch (error) {
-        console.error('[Scheduler] Review enrichment failed:', error);
-      }
-    });
+    registerTask('price-check', config.cronPriceCheck, async () => { await syncPrices(); });
+    registerTask('library-sync', config.cronLibrarySync, async () => { await syncLibrary(); });
+    registerTask('hltb-sync', config.cronHltbSync, async () => { await syncHltb(); });
+    registerTask('review-enrichment', config.cronReviewSync, async () => { await syncReviews(); });
 
     registerTask('database-backup', config.cronBackup, async () => {
       try {
@@ -68,5 +41,22 @@ export async function register() {
     });
 
     startScheduler();
+
+    // Send startup notification to Discord
+    try {
+      const taskStatus = getTaskStatus();
+      await getDiscordClient().sendOperationalAlert({
+        title: 'Hoard Started',
+        description: `Scheduler active with ${taskStatus.length} task${taskStatus.length !== 1 ? 's' : ''}`,
+        color: 0x22c55e, // Green
+        fields: taskStatus.map(t => ({
+          name: t.name,
+          value: t.schedule,
+          inline: true,
+        })),
+      });
+    } catch {
+      console.warn('[Startup] Failed to send Discord notification');
+    }
   }
 }

@@ -14,6 +14,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     steam_user_id: initialSettings['steam_user_id'] || '',
     itad_api_key: initialSettings['itad_api_key'] || '',
     discord_webhook_url: initialSettings['discord_webhook_url'] || '',
+    discord_ops_webhook_url: initialSettings['discord_ops_webhook_url'] || '',
   });
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -175,11 +176,18 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             type="password"
           />
           <FormField
-            label="Discord Webhook URL"
+            label="Discord Webhook URL (Deals)"
             placeholder="https://discord.com/api/webhooks/..."
             helpText="Optional — for price alert notifications"
             value={settings.discord_webhook_url}
             onChange={(v) => updateSetting('discord_webhook_url', v)}
+          />
+          <FormField
+            label="Discord Webhook URL (Ops)"
+            placeholder="https://discord.com/api/webhooks/..."
+            helpText="Optional — for sync failures, startup alerts. Falls back to deals webhook if empty."
+            value={settings.discord_ops_webhook_url}
+            onChange={(v) => updateSetting('discord_ops_webhook_url', v)}
           />
         </div>
 

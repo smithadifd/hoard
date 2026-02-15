@@ -6,6 +6,7 @@ import { SettingsForm } from '@/components/settings/SettingsForm';
 import { ScoringConfig } from '@/components/settings/ScoringConfig';
 import { AlertConfig } from '@/components/settings/AlertConfig';
 import { BackupConfig } from '@/components/settings/BackupConfig';
+import { SyncHistory } from '@/components/settings/SyncHistory';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,8 @@ export default async function SettingsPage() {
       />
 
       <BackupConfig />
+
+      <SyncHistory />
     </div>
   );
 }

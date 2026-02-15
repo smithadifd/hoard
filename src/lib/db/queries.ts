@@ -761,6 +761,27 @@ export function getRecentSyncLogs(limit: number = 20) {
     .all();
 }
 
+export function getLastSuccessfulSyncBySource(): Record<string, string> {
+  const db = getDb();
+  const rows = db
+    .select({
+      source: syncLog.source,
+      lastSuccess: sql<string>`MAX(${syncLog.completedAt})`,
+    })
+    .from(syncLog)
+    .where(eq(syncLog.status, 'success'))
+    .groupBy(syncLog.source)
+    .all();
+
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    if (row.lastSuccess) {
+      result[row.source] = row.lastSuccess;
+    }
+  }
+  return result;
+}
+
 // ============================================
 // Price Queries
 // ============================================

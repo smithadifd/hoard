@@ -270,6 +270,7 @@ describe('settingsUpdateSchema', () => {
         steam_user_id: '76561198000000000',
         itad_api_key: 'itad-key',
         discord_webhook_url: 'https://discord.com/api/webhooks/123/abc',
+        discord_ops_webhook_url: 'https://discord.com/api/webhooks/456/def',
         scoring_weights: '{"priceWeight": 0.3}',
         scoring_thresholds: '{}',
         alert_throttle_hours: '24',

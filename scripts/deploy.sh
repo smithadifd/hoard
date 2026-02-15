@@ -155,6 +155,21 @@ healthcheck() {
     while [ $attempt -le $max_attempts ]; do
         if curl -sf --max-time 5 "$url" > /dev/null 2>&1; then
             info "Health check passed: $url"
+
+            # Verify app health endpoint
+            info "Verifying app health..."
+            local health_json
+            health_json=$(curl -sf --max-time 10 "http://${nas_host}:${APP_PORT}/api/health" 2>/dev/null) || true
+            if [ -n "$health_json" ]; then
+                local app_status
+                app_status=$(echo "$health_json" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['status'])" 2>/dev/null) || true
+                if [ "$app_status" = "healthy" ]; then
+                    info "App health: healthy (DB + scheduler OK)"
+                elif [ -n "$app_status" ]; then
+                    warn "App health: $app_status - check container logs"
+                fi
+            fi
+
             return 0
         fi
         warn "Attempt $attempt/$max_attempts - waiting for app to start..."
