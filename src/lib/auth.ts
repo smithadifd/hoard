@@ -33,6 +33,7 @@ function createAuth(): Auth {
     trustedOrigins: [
       'https://hoard.home',
       'http://localhost:3000',
+      'http://192.168.50.88:3001',
     ],
 
     plugins: [
