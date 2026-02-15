@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback, useState } from 'react';
 import { GameFilters } from '@/components/filters/GameFilters';
 import { PresetButtons } from './PresetButtons';
+import { PickForMePanel, weightedPick } from './PickForMePanel';
 import { RandomPickModal } from './RandomPickModal';
 import type { GameFilters as GameFiltersType } from '@/types';
 import type { EnrichedGame } from '@/types';
@@ -12,19 +13,16 @@ interface BacklogFiltersProps {
   currentFilters: GameFiltersType;
   games: EnrichedGame[];
   availableGenres: string[];
+  presetCounts?: Record<string, number>;
 }
 
-function pickRandom(games: EnrichedGame[]): EnrichedGame | null {
-  if (games.length === 0) return null;
-  return games[Math.floor(Math.random() * games.length)];
-}
-
-export function BacklogFilters({ currentFilters, games, availableGenres }: BacklogFiltersProps) {
+export function BacklogFilters({ currentFilters, games, availableGenres, presetCounts }: BacklogFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pickedGame, setPickedGame] = useState<EnrichedGame | null>(null);
+  const [candidates, setCandidates] = useState<EnrichedGame[]>([]);
 
   const navigate = useCallback(
     (newFilters: GameFiltersType) => {
@@ -67,29 +65,35 @@ export function BacklogFilters({ currentFilters, games, availableGenres }: Backl
     [navigate]
   );
 
-  const handleRandomPick = useCallback(() => {
-    if (games.length === 0) return;
-    setPickedGame(pickRandom(games));
+  const handlePick = useCallback((pick: EnrichedGame, pool: EnrichedGame[]) => {
+    setPickedGame(pick);
+    setCandidates(pool);
     setModalOpen(true);
-  }, [games]);
+  }, []);
 
   const handleReroll = useCallback(() => {
-    setPickedGame(pickRandom(games));
-  }, [games]);
+    if (candidates.length === 0) return;
+    const newPick = weightedPick(candidates);
+    setPickedGame(newPick);
+  }, [candidates]);
 
   return (
     <div className="space-y-4">
-      <PresetButtons currentFilters={currentFilters} onPresetSelect={handlePresetSelect} />
+      <PresetButtons
+        currentFilters={currentFilters}
+        onPresetSelect={handlePresetSelect}
+        presetCounts={presetCounts}
+      />
       <GameFilters
         filters={currentFilters}
         onFiltersChange={handleFiltersChange}
-        onRandomPick={handleRandomPick}
-        showRandomPick={true}
         availableGenres={availableGenres}
         hidePricing={true}
       />
+      <PickForMePanel games={games} onPick={handlePick} />
       <RandomPickModal
-        picked={pickedGame}
+        finalPick={pickedGame}
+        candidates={candidates}
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onReroll={handleReroll}

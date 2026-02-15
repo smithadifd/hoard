@@ -25,11 +25,13 @@ const DEFAULT_THRESHOLDS: ScoringThresholds = {
 interface ScoringConfigProps {
   initialWeights: ScoringWeights;
   initialThresholds: ScoringThresholds;
+  initialBacklogThreshold?: number;
 }
 
-export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConfigProps) {
+export function ScoringConfig({ initialWeights, initialThresholds, initialBacklogThreshold = 10 }: ScoringConfigProps) {
   const [weights, setWeights] = useState<ScoringWeights>(initialWeights);
   const [thresholds, setThresholds] = useState<ScoringThresholds>(initialThresholds);
+  const [backlogThreshold, setBacklogThreshold] = useState(initialBacklogThreshold);
   const { mutate: saveConfig, isPending: saving, status: saveStatus, reset: resetSaveStatus } = useApiMutation(
     '/api/settings',
     { method: 'PUT' }
@@ -53,9 +55,17 @@ export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConf
     resetSaveStatus();
   };
 
+  const handleBacklogThresholdChange = (value: string) => {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 1 || num > 50) return;
+    setBacklogThreshold(num);
+    resetSaveStatus();
+  };
+
   const handleReset = () => {
     setWeights(DEFAULT_WEIGHTS);
     setThresholds(DEFAULT_THRESHOLDS);
+    setBacklogThreshold(10);
     resetSaveStatus();
   };
 
@@ -65,6 +75,7 @@ export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConf
       settings: {
         scoring_weights: JSON.stringify(weights),
         scoring_thresholds: JSON.stringify(thresholds),
+        backlog_threshold_percent: String(backlogThreshold),
       },
     });
   };
@@ -138,6 +149,27 @@ export function ScoringConfig({ initialWeights, initialThresholds }: ScoringConf
             value={thresholds.maxDollarsPerHour.negative}
             onChange={(v) => handleThresholdChange('negative', v)}
           />
+        </div>
+      </div>
+
+      {/* Backlog Threshold */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-medium">Backlog Threshold</h3>
+        <p className="text-xs text-muted-foreground">
+          Games where you&apos;ve played less than this percentage of the main story (HLTB) are
+          considered part of your backlog. Games without HLTB data use a 15-minute absolute threshold.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={1}
+            max={50}
+            step={1}
+            value={backlogThreshold}
+            onChange={(e) => handleBacklogThresholdChange(e.target.value)}
+            className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+          />
+          <span className="text-sm font-medium w-12 text-right">{backlogThreshold}%</span>
         </div>
       </div>
 

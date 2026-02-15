@@ -76,7 +76,7 @@ export interface GameFilters {
   view?: 'library' | 'wishlist' | 'watchlist';
   owned?: boolean;
   played?: boolean; // Has any playtime
-  playtimeStatus?: 'unplayed' | 'underplayed'; // unplayed=0min, underplayed=1-60min
+  playtimeStatus?: 'unplayed' | 'underplayed' | 'backlog'; // unplayed=0min, underplayed=1-60min, backlog=unplayed OR barely started (<X% of HLTB)
   maxHours?: number; // Max HLTB main hours
   minHours?: number;
   genres?: string[];
@@ -84,8 +84,11 @@ export interface GameFilters {
   coop?: boolean;
   multiplayer?: boolean;
   minReview?: number; // Minimum review percentage
+  maxReviewCount?: number; // Maximum review count (for Hidden Gems: exclude popular titles)
   maxPrice?: number;
   onSale?: boolean;
+  strictFilters?: boolean; // When true, NULL values fail filters instead of passing
+  excludeTags?: string[]; // Exclude games with these tags
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
   sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate';

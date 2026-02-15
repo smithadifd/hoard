@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
-import { getEnrichedGames, getAllGenres } from '@/lib/db/queries';
+import { getEnrichedGames, getAllGenres, countGames } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { GameGrid } from '@/components/games/GameGrid';
 import { BacklogFilters } from '@/components/backlog/BacklogFilters';
 import { Pagination } from '@/components/ui/Pagination';
+import { BACKLOG_PRESETS } from '@/lib/backlog/presets';
 import type { GameFilters } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,7 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
 
   const filters: GameFilters = {
     view: 'library',
+    strictFilters: true, // Backlog always uses strict filters — no NULL pass-through
     search: typeof params.search === 'string' ? params.search : undefined,
     sortBy: (typeof params.sortBy === 'string' ? params.sortBy : 'title') as GameFilters['sortBy'],
     sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
@@ -29,7 +31,7 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
     onSale: typeof params.onSale === 'string' ? params.onSale === 'true' : undefined,
     playtimeStatus: typeof params.playtime === 'string'
       ? (params.playtime as GameFilters['playtimeStatus'])
-      : 'unplayed', // Default to unplayed
+      : 'backlog', // Default to smart backlog (unplayed + barely started)
     genres: typeof params.genres === 'string' && params.genres
       ? params.genres.split(',')
       : undefined,
@@ -40,6 +42,24 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
   const pageSize = 24;
   const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
   const availableGenres = getAllGenres();
+
+  // Compute match counts for each preset (efficient count-only queries)
+  const presetCounts: Record<string, number> = {};
+  for (const preset of BACKLOG_PRESETS) {
+    presetCounts[preset.id] = countGames(
+      { view: 'library', ...preset.filters },
+      session.user.id,
+    );
+  }
+
+  // Detect which preset is active for empty state messaging
+  const activePreset = BACKLOG_PRESETS.find((p) => {
+    for (const [key, value] of Object.entries(p.filters)) {
+      const k = key as keyof GameFilters;
+      if (filters[k] !== value) return false;
+    }
+    return true;
+  });
 
   const paginationParams: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {
@@ -63,12 +83,22 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
         currentFilters={filters}
         games={games}
         availableGenres={availableGenres}
+        presetCounts={presetCounts}
       />
 
-      <GameGrid
-        games={games}
-        emptyMessage="No games match your filters. Try adjusting the filters or sync your library from Settings."
-      />
+      {total === 0 && activePreset ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">No games match &ldquo;{activePreset.label}&rdquo;</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">
+            {activePreset.description}. Try syncing your library metadata or adjusting filters.
+          </p>
+        </div>
+      ) : (
+        <GameGrid
+          games={games}
+          emptyMessage="No games match your filters. Try adjusting the filters or sync your library from Settings."
+        />
+      )}
 
       <Pagination
         current={page}
