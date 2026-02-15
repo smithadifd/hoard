@@ -11,9 +11,7 @@ import {
   ListChecks,
   Settings,
   TrendingDown,
-  LogOut,
 } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -24,6 +22,12 @@ const navigation = [
   { name: 'Watchlist', href: '/watchlist', icon: Bell },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
+
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/';
+  // Settings sub-routes should highlight the Settings nav item
+  return pathname === href || pathname.startsWith(href + '/');
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -46,7 +50,7 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
           {navigation.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = isNavActive(pathname, item.href);
             return (
               <Link
                 key={item.name}
@@ -65,22 +69,10 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border flex items-center justify-between">
+        <div className="p-4 border-t border-border">
           <p className="text-xs text-muted-foreground">
             Hoard v0.1.0
           </p>
-          <button
-            onClick={() => authClient.signOut({
-              fetchOptions: {
-                onSuccess: () => { window.location.href = '/login'; },
-              },
-            })}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            title="Sign out"
-          >
-            <LogOut className="h-3 w-3" />
-            Sign Out
-          </button>
         </div>
       </aside>
 
@@ -88,7 +80,7 @@ export function Sidebar() {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
         <div className="flex items-center justify-around h-16">
           {navigation.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = isNavActive(pathname, item.href);
             return (
               <Link
                 key={item.name}
