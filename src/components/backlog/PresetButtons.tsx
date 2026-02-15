@@ -1,6 +1,6 @@
 'use client';
 
-import { Heart, Zap, Compass, Gem } from 'lucide-react';
+import { Heart, Zap, Compass, Gem, RotateCcw } from 'lucide-react';
 import { BACKLOG_PRESETS } from '@/lib/backlog/presets';
 import type { GameFilters } from '@/types';
 
@@ -9,6 +9,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   zap: <Zap className="h-4 w-4" />,
   compass: <Compass className="h-4 w-4" />,
   gem: <Gem className="h-4 w-4" />,
+  'rotate-ccw': <RotateCcw className="h-4 w-4" />,
 };
 
 interface PresetButtonsProps {

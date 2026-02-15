@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check } from 'lucide-react';
+import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check, Ban } from 'lucide-react';
 import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface GameUserControlsProps {
   gameId: number;
   interest: number;
   isWatchlisted: boolean;
+  isIgnored: boolean;
   notes?: string;
   priceThreshold?: number;
   notifyOnAllTimeLow?: boolean;
@@ -20,6 +21,7 @@ export function GameUserControls({
   gameId,
   interest: initialInterest,
   isWatchlisted: initialWatchlisted,
+  isIgnored: initialIgnored,
   notes: initialNotes,
   priceThreshold: initialThreshold,
   notifyOnAllTimeLow: initialAtl = true,
@@ -29,6 +31,7 @@ export function GameUserControls({
 }: GameUserControlsProps) {
   const [interest, setInterest] = useState(initialInterest);
   const [isWatchlisted, setIsWatchlisted] = useState(initialWatchlisted);
+  const [isIgnored, setIsIgnored] = useState(initialIgnored);
   const [notes, setNotes] = useState(initialNotes || '');
   const [notifyAtl, setNotifyAtl] = useState(initialAtl);
   const [notifyThreshold, setNotifyThreshold] = useState(initialThresholdNotify);
@@ -61,6 +64,12 @@ export function GameUserControls({
     const newValue = !isWatchlisted;
     setIsWatchlisted(newValue);
     save({ isWatchlisted: newValue });
+  };
+
+  const toggleIgnored = () => {
+    const newValue = !isIgnored;
+    setIsIgnored(newValue);
+    save({ isIgnored: newValue });
   };
 
   const handleNotesBlur = () => {
@@ -135,6 +144,19 @@ export function GameUserControls({
             Add to Watchlist
           </>
         )}
+      </button>
+
+      {/* Ignore Toggle (excludes from backlog & play again) */}
+      <button
+        onClick={toggleIgnored}
+        className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+          isIgnored
+            ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
+            : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+        }`}
+      >
+        <Ban className="h-4 w-4" />
+        {isIgnored ? 'Excluded from Backlog' : 'Exclude from Backlog'}
       </button>
 
       {/* Alert Controls (shown when watchlisted) */}

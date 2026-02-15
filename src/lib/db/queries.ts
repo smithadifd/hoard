@@ -130,6 +130,38 @@ export function getBacklogThreshold(): number {
   return DEFAULT_BACKLOG_THRESHOLD_PERCENT;
 }
 
+// Play Again defaults
+const DEFAULT_PLAY_AGAIN_COMPLETION_PCT = 50;
+const DEFAULT_PLAY_AGAIN_DORMANT_MONTHS = 24;
+// Absolute hours fallback when HLTB is unavailable
+const PLAY_AGAIN_FALLBACK_HOURS = 10;
+
+export function getPlayAgainCompletionPct(): number {
+  try {
+    const val = getSetting('play_again_completion_pct');
+    if (val) {
+      const parsed = parseInt(val, 10);
+      if (parsed >= 10 && parsed <= 100) return parsed;
+    }
+  } catch {
+    // Use default
+  }
+  return DEFAULT_PLAY_AGAIN_COMPLETION_PCT;
+}
+
+export function getPlayAgainDormantMonths(): number {
+  try {
+    const val = getSetting('play_again_dormant_months');
+    if (val) {
+      const parsed = parseInt(val, 10);
+      if (parsed >= 1 && parsed <= 120) return parsed;
+    }
+  } catch {
+    // Use default
+  }
+  return DEFAULT_PLAY_AGAIN_DORMANT_MONTHS;
+}
+
 // ============================================
 // Game Upserts (used by sync)
 // ============================================
@@ -413,6 +445,29 @@ export function getEnrichedGames(
         AND ${userGames.playtimeMinutes} < ${BACKLOG_FALLBACK_MINUTES}
       )
     )`);
+  } else if (filters.playtimeStatus === 'play-again') {
+    // Play Again: played significantly (>X% of HLTB or >Y hours) AND dormant (last played >Z months ago)
+    const completionPct = getPlayAgainCompletionPct() / 100.0;
+    const dormantMonths = getPlayAgainDormantMonths();
+    conditions.push(sql`(
+      ${userGames.lastPlayed} IS NOT NULL
+      AND ${userGames.lastPlayed} < datetime('now', '-' || ${dormantMonths} || ' months')
+      AND (
+        (
+          ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0
+          AND (CAST(${userGames.playtimeMinutes} AS REAL) / 60.0) / ${games.hltbMain} >= ${completionPct}
+        )
+        OR (
+          (${games.hltbMain} IS NULL OR ${games.hltbMain} = 0)
+          AND ${userGames.playtimeMinutes} >= ${PLAY_AGAIN_FALLBACK_HOURS * 60}
+        )
+      )
+    )`);
+  }
+
+  // Exclude ignored games from backlog and play-again views
+  if (filters.playtimeStatus === 'backlog' || filters.playtimeStatus === 'play-again') {
+    conditions.push(sql`(${userGames.isIgnored} IS NULL OR ${userGames.isIgnored} = 0)`);
   }
 
   if (filters.genres && filters.genres.length > 0) {
@@ -469,6 +524,7 @@ export function getEnrichedGames(
     review: games.reviewScore,
     hltbMain: games.hltbMain,
     releaseDate: games.releaseDate,
+    lastPlayed: userGames.lastPlayed,
     price: sql`(SELECT ps.price_current FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
     dealScore: sql`(SELECT ps.deal_score FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
   } as const;
@@ -503,6 +559,7 @@ export function getEnrichedGames(
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
+      isIgnored: userGames.isIgnored,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
@@ -598,8 +655,10 @@ export function getEnrichedGames(
       isOwned: r.isOwned ?? false,
       isWishlisted: r.isWishlisted ?? false,
       isWatchlisted: r.isWatchlisted ?? false,
+      isIgnored: r.isIgnored ?? false,
       playtimeMinutes: r.playtimeMinutes ?? 0,
       personalInterest: r.personalInterest ?? 3,
+      lastPlayed: r.lastPlayed ?? undefined,
       tags: tagsByGame.get(r.id)?.tags ?? [],
       genres: tagsByGame.get(r.id)?.genres ?? [],
       isCoop: r.isCoop ?? false,
@@ -708,6 +767,27 @@ export function countGames(filters: GameFilters, userId: string): number {
         AND ${userGames.playtimeMinutes} < ${BACKLOG_FALLBACK_MINUTES}
       )
     )`);
+  } else if (filters.playtimeStatus === 'play-again') {
+    const completionPct = getPlayAgainCompletionPct() / 100.0;
+    const dormantMonths = getPlayAgainDormantMonths();
+    conditions.push(sql`(
+      ${userGames.lastPlayed} IS NOT NULL
+      AND ${userGames.lastPlayed} < datetime('now', '-' || ${dormantMonths} || ' months')
+      AND (
+        (
+          ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0
+          AND (CAST(${userGames.playtimeMinutes} AS REAL) / 60.0) / ${games.hltbMain} >= ${completionPct}
+        )
+        OR (
+          (${games.hltbMain} IS NULL OR ${games.hltbMain} = 0)
+          AND ${userGames.playtimeMinutes} >= ${PLAY_AGAIN_FALLBACK_HOURS * 60}
+        )
+      )
+    )`);
+  }
+  // Exclude ignored games from backlog and play-again views
+  if (filters.playtimeStatus === 'backlog' || filters.playtimeStatus === 'play-again') {
+    conditions.push(sql`(${userGames.isIgnored} IS NULL OR ${userGames.isIgnored} = 0)`);
   }
   if (filters.genres && filters.genres.length > 0) {
     conditions.push(
@@ -766,6 +846,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
+      isIgnored: userGames.isIgnored,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
@@ -818,8 +899,10 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     isOwned: row.isOwned ?? false,
     isWishlisted: row.isWishlisted ?? false,
     isWatchlisted: row.isWatchlisted ?? false,
+    isIgnored: row.isIgnored ?? false,
     playtimeMinutes: row.playtimeMinutes ?? 0,
     personalInterest: row.personalInterest ?? 3,
+    lastPlayed: row.lastPlayed ?? undefined,
     tags: gameTags_,
     genres: gameGenres,
     isCoop: row.isCoop ?? false,
