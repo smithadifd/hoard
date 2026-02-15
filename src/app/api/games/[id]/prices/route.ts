@@ -24,7 +24,11 @@ export async function GET(
       return apiValidationError('Invalid game ID');
     }
 
-    const history = getPriceHistory(idResult.data.id);
+    const url = new URL(request.url);
+    const limitParam = parseInt(url.searchParams.get('limit') ?? '90', 10);
+    const limit = Math.min(Math.max(limitParam || 90, 1), 365);
+
+    const history = getPriceHistory(idResult.data.id, limit);
     return apiSuccess(history);
   } catch (error) {
     console.error('[GET /api/games/:id/prices]', error);

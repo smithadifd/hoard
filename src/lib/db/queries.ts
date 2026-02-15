@@ -1093,16 +1093,51 @@ export function getLatestPriceSnapshots(gameIds: number[]): Map<number, PriceSna
   return result;
 }
 
-export function getPriceHistory(gameId: number, limit: number = 30): PriceSnapshotRow[] {
+export function getPriceHistory(gameId: number, limit: number = 90): PriceSnapshotRow[] {
   const db = getDb();
 
-  const rows = db
-    .select()
-    .from(priceSnapshots)
-    .where(eq(priceSnapshots.gameId, gameId))
-    .orderBy(desc(priceSnapshots.snapshotDate))
-    .limit(limit)
-    .all();
+  // Aggregate best (lowest) price per snapshot date across all stores
+  interface RawRow {
+    id: number;
+    gameId: number;
+    store: string;
+    priceCurrent: number;
+    priceRegular: number;
+    discountPercent: number;
+    currency: string;
+    url: string | null;
+    isHistoricalLow: number;
+    historicalLowPrice: number | null;
+    dealScore: number | null;
+    snapshotDate: string;
+  }
+
+  const rows = db.all(sql`
+    SELECT
+      ps.id,
+      ps.game_id as gameId,
+      ps.store,
+      ps.price_current as priceCurrent,
+      ps.price_regular as priceRegular,
+      ps.discount_percent as discountPercent,
+      ps.currency,
+      ps.url,
+      ps.is_historical_low as isHistoricalLow,
+      ps.historical_low_price as historicalLowPrice,
+      ps.deal_score as dealScore,
+      ps.snapshot_date as snapshotDate
+    FROM price_snapshots ps
+    WHERE ps.game_id = ${gameId}
+      AND ps.id = (
+        SELECT ps2.id FROM price_snapshots ps2
+        WHERE ps2.game_id = ${gameId}
+          AND ps2.snapshot_date = ps.snapshot_date
+        ORDER BY ps2.price_current ASC
+        LIMIT 1
+      )
+    ORDER BY ps.snapshot_date DESC
+    LIMIT ${limit}
+  `) as RawRow[];
 
   return rows.map((row) => ({
     id: row.id,
@@ -1113,7 +1148,7 @@ export function getPriceHistory(gameId: number, limit: number = 30): PriceSnapsh
     discountPercent: row.discountPercent ?? 0,
     currency: row.currency ?? 'USD',
     url: row.url,
-    isHistoricalLow: row.isHistoricalLow ?? false,
+    isHistoricalLow: Boolean(row.isHistoricalLow),
     historicalLowPrice: row.historicalLowPrice,
     dealScore: row.dealScore,
     snapshotDate: row.snapshotDate,

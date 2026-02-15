@@ -9,6 +9,7 @@ import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
+import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
 import { DataStatus } from '@/components/games/DataStatus';
 
 export const dynamic = 'force-dynamic';
@@ -184,6 +185,12 @@ export default async function GameDetailPage({
                   )}
                 </p>
               )}
+              <div className="mt-4 pt-3 border-t border-border">
+                <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                  Price History
+                </h3>
+                <PriceHistoryChart gameId={game.id} />
+              </div>
             </section>
           )}
 
