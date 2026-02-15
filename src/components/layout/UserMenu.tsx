@@ -64,7 +64,7 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
             {userName.charAt(0).toUpperCase()}
           </span>
         </div>
-        <span className="hidden md:block text-sm font-medium truncate max-w-[120px]">
+        <span className="hidden lg:block text-sm font-medium truncate max-w-[120px]">
           {userName}
         </span>
       </button>

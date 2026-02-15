@@ -29,6 +29,7 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       hltb_main_extra REAL,
       hltb_completionist REAL,
       hltb_last_updated TEXT,
+      hltb_manual INTEGER DEFAULT 0,
       is_coop INTEGER DEFAULT 0,
       is_multiplayer INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -164,6 +165,12 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
   // Schema migrations for existing databases
   try {
     sqlite.exec(`ALTER TABLE price_snapshots ADD COLUMN deal_score INTEGER`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  try {
+    sqlite.exec(`ALTER TABLE games ADD COLUMN hltb_manual INTEGER DEFAULT 0`);
   } catch {
     // Column already exists — safe to ignore
   }

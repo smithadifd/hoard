@@ -69,6 +69,10 @@ export const gameUpdateSchema = z.object({
   isWatchlisted: z.boolean().optional(),
   isIgnored: z.boolean().optional(),
   priceThreshold: z.number().min(0).max(10000).optional(),
+  // Manual HLTB data entry (null to clear)
+  hltbMain: z.number().min(0).max(10000).nullable().optional(),
+  hltbMainExtra: z.number().min(0).max(10000).nullable().optional(),
+  hltbCompletionist: z.number().min(0).max(10000).nullable().optional(),
 });
 
 export const interestSchema = z.object({

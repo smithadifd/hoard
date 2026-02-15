@@ -1,4 +1,4 @@
-import { getEnrichedGameById, updateUserGame } from '@/lib/db/queries';
+import { getEnrichedGameById, updateUserGame, updateManualHltbData } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
@@ -69,9 +69,23 @@ export async function PATCH(
       return apiValidationError('No valid fields to update');
     }
 
-    const updated = updateUserGame(idResult.data.id, parsed.data, userId);
-    if (!updated) {
-      return apiNotFound('Game');
+    // Separate HLTB fields (games table) from user fields (user_games table)
+    const { hltbMain, hltbMainExtra, hltbCompletionist, ...userFields } = parsed.data;
+    const hasHltbFields = hltbMain !== undefined || hltbMainExtra !== undefined || hltbCompletionist !== undefined;
+
+    if (hasHltbFields) {
+      updateManualHltbData(idResult.data.id, {
+        hltbMain: hltbMain ?? null,
+        hltbMainExtra: hltbMainExtra ?? null,
+        hltbCompletionist: hltbCompletionist ?? null,
+      });
+    }
+
+    if (Object.keys(userFields).length > 0) {
+      const updated = updateUserGame(idResult.data.id, userFields, userId);
+      if (!updated) {
+        return apiNotFound('Game');
+      }
     }
 
     return apiSuccess({ message: 'Updated' });

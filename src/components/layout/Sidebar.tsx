@@ -35,7 +35,7 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-64 border-r border-border bg-card flex-col">
+      <aside className="hidden lg:flex w-64 border-r border-border bg-card flex-col">
         {/* Logo */}
         <div className="p-6 border-b border-border">
           <Link href="/" className="flex items-center gap-2">
@@ -77,7 +77,7 @@ export function Sidebar() {
       </aside>
 
       {/* Mobile bottom tab bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
         <div className="flex items-center justify-around h-16">
           {navigation.map((item) => {
             const isActive = isNavActive(pathname, item.href);

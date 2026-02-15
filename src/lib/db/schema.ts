@@ -26,6 +26,7 @@ export const games = sqliteTable('games', {
   hltbMainExtra: real('hltb_main_extra'), // hours - main + extras
   hltbCompletionist: real('hltb_completionist'), // hours - completionist
   hltbLastUpdated: text('hltb_last_updated'), // ISO date
+  hltbManual: integer('hltb_manual', { mode: 'boolean' }).default(false), // User-entered HLTB data
   // Review metadata tracking
   reviewLastUpdated: text('review_last_updated'), // ISO date — tracks when reviews were fetched
   // Metadata
