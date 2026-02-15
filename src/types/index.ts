@@ -32,8 +32,10 @@ export interface EnrichedGame {
   isOwned: boolean;
   isWishlisted: boolean;
   isWatchlisted: boolean;
+  isIgnored: boolean;
   playtimeMinutes: number;
   personalInterest: number;
+  lastPlayed?: string;
 
   // Tags
   tags: string[];
@@ -76,7 +78,7 @@ export interface GameFilters {
   view?: 'library' | 'wishlist' | 'watchlist';
   owned?: boolean;
   played?: boolean; // Has any playtime
-  playtimeStatus?: 'unplayed' | 'underplayed' | 'backlog'; // unplayed=0min, underplayed=1-60min, backlog=unplayed OR barely started (<X% of HLTB)
+  playtimeStatus?: 'unplayed' | 'underplayed' | 'backlog' | 'play-again'; // unplayed=0min, underplayed=1-60min, backlog=unplayed OR barely started (<X% of HLTB), play-again=played significantly + dormant
   maxHours?: number; // Max HLTB main hours
   minHours?: number;
   genres?: string[];
@@ -91,7 +93,7 @@ export interface GameFilters {
   excludeTags?: string[]; // Exclude games with these tags
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
-  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate';
+  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed';
   sortOrder?: 'asc' | 'desc';
 }
 

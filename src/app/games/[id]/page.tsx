@@ -288,6 +288,7 @@ export default async function GameDetailPage({
             gameId={game.id}
             interest={game.personalInterest}
             isWatchlisted={game.isWatchlisted}
+            isIgnored={game.isIgnored}
             priceThreshold={alert?.targetPrice ?? undefined}
             notifyOnAllTimeLow={alert?.notifyOnAllTimeLow}
             notifyOnThreshold={alert?.notifyOnThreshold}

@@ -57,4 +57,16 @@ export const BACKLOG_PRESETS: BacklogPreset[] = [
       strictFilters: true,
     },
   },
+  {
+    id: 'play-again',
+    label: 'Play Again',
+    description: 'Games you played a lot but haven\'t touched in a long time — worth revisiting',
+    icon: 'rotate-ccw',
+    filters: {
+      playtimeStatus: 'play-again',
+      sortBy: 'lastPlayed',
+      sortOrder: 'asc',
+      strictFilters: true,
+    },
+  },
 ];

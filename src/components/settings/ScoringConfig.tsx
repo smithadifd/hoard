@@ -26,12 +26,16 @@ interface ScoringConfigProps {
   initialWeights: ScoringWeights;
   initialThresholds: ScoringThresholds;
   initialBacklogThreshold?: number;
+  initialPlayAgainCompletionPct?: number;
+  initialPlayAgainDormantMonths?: number;
 }
 
-export function ScoringConfig({ initialWeights, initialThresholds, initialBacklogThreshold = 10 }: ScoringConfigProps) {
+export function ScoringConfig({ initialWeights, initialThresholds, initialBacklogThreshold = 10, initialPlayAgainCompletionPct = 50, initialPlayAgainDormantMonths = 24 }: ScoringConfigProps) {
   const [weights, setWeights] = useState<ScoringWeights>(initialWeights);
   const [thresholds, setThresholds] = useState<ScoringThresholds>(initialThresholds);
   const [backlogThreshold, setBacklogThreshold] = useState(initialBacklogThreshold);
+  const [playAgainCompletionPct, setPlayAgainCompletionPct] = useState(initialPlayAgainCompletionPct);
+  const [playAgainDormantMonths, setPlayAgainDormantMonths] = useState(initialPlayAgainDormantMonths);
   const { mutate: saveConfig, isPending: saving, status: saveStatus, reset: resetSaveStatus } = useApiMutation(
     '/api/settings',
     { method: 'PUT' }
@@ -62,10 +66,26 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
     resetSaveStatus();
   };
 
+  const handlePlayAgainCompletionChange = (value: string) => {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 10 || num > 100) return;
+    setPlayAgainCompletionPct(num);
+    resetSaveStatus();
+  };
+
+  const handlePlayAgainDormantChange = (value: string) => {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 1 || num > 120) return;
+    setPlayAgainDormantMonths(num);
+    resetSaveStatus();
+  };
+
   const handleReset = () => {
     setWeights(DEFAULT_WEIGHTS);
     setThresholds(DEFAULT_THRESHOLDS);
     setBacklogThreshold(10);
+    setPlayAgainCompletionPct(50);
+    setPlayAgainDormantMonths(24);
     resetSaveStatus();
   };
 
@@ -76,6 +96,8 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
         scoring_weights: JSON.stringify(weights),
         scoring_thresholds: JSON.stringify(thresholds),
         backlog_threshold_percent: String(backlogThreshold),
+        play_again_completion_pct: String(playAgainCompletionPct),
+        play_again_dormant_months: String(playAgainDormantMonths),
       },
     });
   };
@@ -170,6 +192,53 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
             className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
           />
           <span className="text-sm font-medium w-12 text-right">{backlogThreshold}%</span>
+        </div>
+      </div>
+
+      {/* Play Again Thresholds */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-medium">Play Again</h3>
+        <p className="text-xs text-muted-foreground">
+          Surface games you played significantly but haven&apos;t touched in a long time.
+          Shown as a preset on the Backlog page.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm text-muted-foreground">Min completion</label>
+              <span className="text-sm font-medium w-12 text-right">{playAgainCompletionPct}%</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Minimum percentage of main story (HLTB) played. Games without HLTB data need 10+ hours.
+            </p>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={5}
+              value={playAgainCompletionPct}
+              onChange={(e) => handlePlayAgainCompletionChange(e.target.value)}
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm text-muted-foreground">Dormant period</label>
+              <span className="text-sm font-medium w-16 text-right">{playAgainDormantMonths} mo</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              How long since last played before a game is considered dormant.
+            </p>
+            <input
+              type="range"
+              min={1}
+              max={120}
+              step={1}
+              value={playAgainDormantMonths}
+              onChange={(e) => handlePlayAgainDormantChange(e.target.value)}
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+            />
+          </div>
         </div>
       </div>
 
