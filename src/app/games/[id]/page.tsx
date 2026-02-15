@@ -9,6 +9,7 @@ import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
+import { DataStatus } from '@/components/games/DataStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,7 +150,19 @@ export default async function GameDetailPage({
                 <div className="text-right text-sm">
                   {game.bestStore && (
                     <div className="text-muted-foreground">
-                      Best at <span className="text-foreground font-medium">{game.bestStore}</span>
+                      Best at{' '}
+                      {game.storeUrl ? (
+                        <a
+                          href={game.storeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-steam-blue hover:underline font-medium"
+                        >
+                          {game.bestStore} <ExternalLink className="inline h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-foreground font-medium">{game.bestStore}</span>
+                      )}
                     </div>
                   )}
                   {game.dollarsPerHour !== undefined && (
@@ -236,6 +249,11 @@ export default async function GameDetailPage({
                 Wishlisted
               </span>
             )}
+            {game.isReleased === false && (
+              <span className="px-2 py-1 rounded-md bg-blue-600/10 text-blue-400 text-xs font-medium">
+                Coming Soon
+              </span>
+            )}
             {game.isCoop && (
               <span className="px-2 py-1 rounded-md bg-purple-500/10 text-purple-400 text-xs font-medium">
                 Co-op
@@ -247,6 +265,13 @@ export default async function GameDetailPage({
               </span>
             )}
           </div>
+
+          {/* Data Status */}
+          <DataStatus
+            reviewLastUpdated={game.reviewLastUpdated}
+            hltbLastUpdated={game.hltbLastUpdated}
+            priceLastUpdated={game.priceLastUpdated}
+          />
         </div>
 
         {/* Sidebar */}
@@ -308,3 +333,4 @@ function ExternalLinkItem({ href, label }: { href: string; label: string }) {
     </a>
   );
 }
+

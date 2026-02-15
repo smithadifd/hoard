@@ -130,6 +130,7 @@ export interface UpsertGameData {
   reviewDescription?: string;
   isCoop?: boolean;
   isMultiplayer?: boolean;
+  isReleased?: boolean;
 }
 
 export function upsertGameFromSteam(data: UpsertGameData): number {
@@ -155,6 +156,7 @@ export function upsertGameFromSteam(data: UpsertGameData): number {
       reviewDescription: data.reviewDescription,
       isCoop: data.isCoop,
       isMultiplayer: data.isMultiplayer,
+      isReleased: data.isReleased,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -173,6 +175,7 @@ export function upsertGameFromSteam(data: UpsertGameData): number {
         reviewDescription: data.reviewDescription ?? sql`${games.reviewDescription}`,
         isCoop: data.isCoop ?? sql`${games.isCoop}`,
         isMultiplayer: data.isMultiplayer ?? sql`${games.isMultiplayer}`,
+        isReleased: data.isReleased ?? sql`${games.isReleased}`,
         updatedAt: now,
       },
     })
@@ -304,8 +307,8 @@ export function getEnrichedGames(
   filters: GameFilters,
   page: number = 1,
   pageSize: number = 24,
-  userId: string = 'default'
-): { games: EnrichedGame[]; total: number } {
+  userId: string = 'default',
+): { games: EnrichedGame[]; total: number; totalUnfiltered?: number } {
   const db = getDb();
   const offset = (page - 1) * pageSize;
 
@@ -386,9 +389,21 @@ export function getEnrichedGames(
     );
   }
 
+  if (filters.requireCompleteData) {
+    conditions.push(sql`${games.reviewScore} IS NOT NULL`);
+    conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0`);
+    conditions.push(sql`${games.id} IN (SELECT ps.game_id FROM price_snapshots ps)`);
+  }
+
+  if (filters.hideUnreleased) {
+    conditions.push(sql`(${games.isReleased} IS NULL OR ${games.isReleased} = 1)`);
+  }
+
   const where = and(...conditions);
 
-  // Sort mapping — includes subqueries for price/dealScore from latest snapshots
+  // Sort mapping — includes subqueries for price/dealScore from latest snapshots.
+  // Note: dealScore sort uses the cached snapshot value (can't compute weighted score in SQL).
+  // The displayed badges are always recomputed live, so sort order may slightly differ from badges.
   const sortMap = {
     title: games.title,
     playtime: userGames.playtimeMinutes,
@@ -423,6 +438,9 @@ export function getEnrichedGames(
       hltbCompletionist: games.hltbCompletionist,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
+      isReleased: games.isReleased,
+      reviewLastUpdated: games.reviewLastUpdated,
+      hltbLastUpdated: games.hltbLastUpdated,
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
@@ -439,7 +457,7 @@ export function getEnrichedGames(
     .offset(offset)
     .all();
 
-  // Count query
+  // Count query (filtered)
   const countResult = db
     .select({ count: sql<number>`count(*)` })
     .from(games)
@@ -447,6 +465,28 @@ export function getEnrichedGames(
     .where(where)
     .get();
   const total = countResult?.count ?? 0;
+
+  // Unfiltered count for "X of Y" display when data completeness filter is active
+  let totalUnfiltered: number | undefined;
+  if (filters.requireCompleteData || filters.hideUnreleased) {
+    const baseConditions: SQL[] = [eq(userGames.userId, userId)];
+    if (filters.view === 'library' || filters.owned === true) {
+      baseConditions.push(eq(userGames.isOwned, true));
+    }
+    if (filters.view === 'wishlist') {
+      baseConditions.push(eq(userGames.isWishlisted, true));
+    }
+    if (filters.view === 'watchlist') {
+      baseConditions.push(eq(userGames.isWatchlisted, true));
+    }
+    const unfilteredResult = db
+      .select({ count: sql<number>`count(*)` })
+      .from(games)
+      .innerJoin(userGames, eq(games.id, userGames.gameId))
+      .where(and(...baseConditions))
+      .get();
+    totalUnfiltered = unfilteredResult?.count ?? 0;
+  }
 
   // Batch-fetch tags for returned games
   const gameIds = results.map((r) => r.id);
@@ -505,7 +545,10 @@ export function getEnrichedGames(
       genres: tagsByGame.get(r.id)?.genres ?? [],
       isCoop: r.isCoop ?? false,
       isMultiplayer: r.isMultiplayer ?? false,
+      isReleased: r.isReleased ?? undefined,
       dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
+      reviewLastUpdated: r.reviewLastUpdated ?? undefined,
+      hltbLastUpdated: r.hltbLastUpdated ?? undefined,
     };
 
     if (snapshot) {
@@ -516,11 +559,11 @@ export function getEnrichedGames(
       base.isAtHistoricalLow = snapshot.isHistoricalLow;
       base.bestStore = snapshot.store;
       base.storeUrl = snapshot.url ?? undefined;
+      base.priceLastUpdated = snapshot.snapshotDate;
 
-      // Compute deal score if we have price data
-      if (snapshot.dealScore !== null) {
-        base.dealScore = snapshot.dealScore;
-      } else if (snapshot.priceCurrent > 0) {
+      // Always recompute deal score from current weights (not cached snapshot.dealScore)
+      // so list badges stay consistent with the detail page after weight changes
+      if (snapshot.priceCurrent > 0) {
         const { weights, thresholds } = getScoringConfig();
         const score = calculateDealScore({
           currentPrice: snapshot.priceCurrent,
@@ -535,26 +578,12 @@ export function getEnrichedGames(
         base.dealSummary = score.summary;
         base.dollarsPerHour = score.dollarsPerHour ?? undefined;
       }
-
-      // Map stored dealScore to rating if not yet computed
-      if (base.dealScore !== undefined && !base.dealRating) {
-        if (base.dealScore >= 85) base.dealRating = 'excellent';
-        else if (base.dealScore >= 70) base.dealRating = 'great';
-        else if (base.dealScore >= 55) base.dealRating = 'good';
-        else if (base.dealScore >= 40) base.dealRating = 'okay';
-        else base.dealRating = 'poor';
-      }
-
-      // Compute $/hr if not yet set
-      if (base.dollarsPerHour === undefined && r.hltbMain && r.hltbMain > 0 && snapshot.priceCurrent > 0) {
-        base.dollarsPerHour = snapshot.priceCurrent / r.hltbMain;
-      }
     }
 
     return base;
   });
 
-  return { games: enriched, total };
+  return { games: enriched, total, totalUnfiltered };
 }
 
 export function getEnrichedGameById(gameId: number, userId: string): EnrichedGame | null {
@@ -579,6 +608,9 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       hltbCompletionist: games.hltbCompletionist,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
+      isReleased: games.isReleased,
+      reviewLastUpdated: games.reviewLastUpdated,
+      hltbLastUpdated: games.hltbLastUpdated,
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
@@ -640,7 +672,10 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     genres: gameGenres,
     isCoop: row.isCoop ?? false,
     isMultiplayer: row.isMultiplayer ?? false,
+    isReleased: row.isReleased ?? undefined,
     dataCompleteness: computeDataCompleteness(row.reviewScore, row.hltbMain),
+    reviewLastUpdated: row.reviewLastUpdated ?? undefined,
+    hltbLastUpdated: row.hltbLastUpdated ?? undefined,
   };
 
   if (snapshot) {
@@ -651,6 +686,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     game.isAtHistoricalLow = snapshot.isHistoricalLow;
     game.bestStore = snapshot.store;
     game.storeUrl = snapshot.url ?? undefined;
+    game.priceLastUpdated = snapshot.snapshotDate;
 
     if (snapshot.priceCurrent > 0) {
       const { weights, thresholds } = getScoringConfig();

@@ -26,6 +26,8 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
       if (newFilters.playtimeStatus) params.set('playtime', newFilters.playtimeStatus);
       if (newFilters.genres?.length) params.set('genres', newFilters.genres.join(','));
       if (newFilters.minReview) params.set('minReview', String(newFilters.minReview));
+      if (newFilters.requireCompleteData === false) params.set('showAll', 'true');
+      if (newFilters.hideUnreleased === false) params.set('showUnreleased', 'true');
 
       const qs = params.toString();
       router.push(`${pathname}${qs ? '?' + qs : ''}`);

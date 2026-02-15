@@ -57,7 +57,7 @@ export function GameFilters({
     g.toLowerCase().includes(genreSearch.toLowerCase())
   ) ?? [];
 
-  // Count active advanced filters for indicator
+  // Count active advanced filters for indicator (exclude defaults that are ON by default)
   const advancedFilterCount = [
     filters.maxHours,
     filters.minHours,
@@ -66,6 +66,8 @@ export function GameFilters({
     filters.playtimeStatus,
     filters.genres?.length ? true : undefined,
     filters.minReview,
+    filters.requireCompleteData === false ? true : undefined,
+    filters.hideUnreleased === false ? true : undefined,
   ].filter(Boolean).length;
 
   return (
@@ -201,6 +203,36 @@ export function GameFilters({
             </div>
           )}
 
+          {/* Data Completeness */}
+          {filters.requireCompleteData !== undefined && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Data Quality</label>
+              <select
+                value={filters.requireCompleteData ? 'complete' : 'all'}
+                onChange={(e) => updateFilter('requireCompleteData', e.target.value === 'complete')}
+                className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
+              >
+                <option value="complete">Complete data only</option>
+                <option value="all">Show all</option>
+              </select>
+            </div>
+          )}
+
+          {/* Unreleased */}
+          {filters.hideUnreleased !== undefined && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Release Status</label>
+              <select
+                value={filters.hideUnreleased ? 'released' : 'all'}
+                onChange={(e) => updateFilter('hideUnreleased', e.target.value === 'released')}
+                className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
+              >
+                <option value="released">Released only</option>
+                <option value="all">Include unreleased</option>
+              </select>
+            </div>
+          )}
+
           {/* Genre Multi-Select */}
           {availableGenres && availableGenres.length > 0 && (
             <div className="space-y-1 relative col-span-2" ref={genreRef}>
@@ -296,6 +328,8 @@ export function GameFilters({
                     playtimeStatus: undefined,
                     genres: undefined,
                     minReview: undefined,
+                    requireCompleteData: filters.requireCompleteData !== undefined ? true : undefined,
+                    hideUnreleased: filters.hideUnreleased !== undefined ? true : undefined,
                     sortBy: 'title',
                     sortOrder: 'asc',
                   });
