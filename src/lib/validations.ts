@@ -112,7 +112,7 @@ const settingsKeyEnum = z.enum([
 ]);
 
 export const settingsUpdateSchema = z.object({
-  settings: z.record(settingsKeyEnum, z.string().max(5000)),
+  settings: z.record(settingsKeyEnum, z.string().max(5000).optional()),
 });
 
 // ============================================

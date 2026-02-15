@@ -44,7 +44,7 @@ export async function PUT(request: NextRequest) {
     }
 
     for (const [key, value] of Object.entries(parsed.data.settings)) {
-      setSetting(key, value);
+      if (value !== undefined) setSetting(key, value);
     }
 
     return apiSuccess({ message: 'Settings saved' });
