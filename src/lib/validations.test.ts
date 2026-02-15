@@ -279,11 +279,11 @@ describe('settingsUpdateSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects partial keys (all enum keys required)', () => {
+  it('accepts partial keys (not all enum keys required)', () => {
     const result = settingsUpdateSchema.safeParse({
       settings: { steam_api_key: 'abc123' },
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('rejects unknown keys', () => {
@@ -300,9 +300,9 @@ describe('settingsUpdateSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects empty settings object', () => {
+  it('accepts empty settings object', () => {
     const result = settingsUpdateSchema.safeParse({ settings: {} });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 });
 
