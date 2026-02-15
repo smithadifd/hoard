@@ -551,6 +551,7 @@ export function getEnrichedGames(
       hltbMain: games.hltbMain,
       hltbMainExtra: games.hltbMainExtra,
       hltbCompletionist: games.hltbCompletionist,
+      hltbManual: games.hltbManual,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
@@ -838,6 +839,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       hltbMain: games.hltbMain,
       hltbMainExtra: games.hltbMainExtra,
       hltbCompletionist: games.hltbCompletionist,
+      hltbManual: games.hltbManual,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
@@ -896,6 +898,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     hltbMain: row.hltbMain ?? undefined,
     hltbMainExtra: row.hltbMainExtra ?? undefined,
     hltbCompletionist: row.hltbCompletionist ?? undefined,
+    hltbManual: row.hltbManual ?? undefined,
     isOwned: row.isOwned ?? false,
     isWishlisted: row.isWishlisted ?? false,
     isWatchlisted: row.isWatchlisted ?? false,
@@ -1186,13 +1189,19 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string }> {
     })
     .from(games)
     .where(
-      or(
-        isNull(games.hltbLastUpdated),
-        lt(games.hltbLastUpdated, staleThreshold.toISOString()),
-        // Retry games that were checked but got no match (transient failures)
-        and(
-          isNull(games.hltbId),
-          lt(games.hltbLastUpdated, retryThreshold.toISOString())
+      and(
+        or(
+          isNull(games.hltbManual),
+          eq(games.hltbManual, false),
+        ),
+        or(
+          isNull(games.hltbLastUpdated),
+          lt(games.hltbLastUpdated, staleThreshold.toISOString()),
+          // Retry games that were checked but got no match (transient failures)
+          and(
+            isNull(games.hltbId),
+            lt(games.hltbLastUpdated, retryThreshold.toISOString())
+          )
         )
       )
     )
@@ -1217,6 +1226,29 @@ export function updateGameHltbData(
       hltbMainExtra: data.hltbMainExtra,
       hltbCompletionist: data.hltbCompletionist,
       hltbLastUpdated: new Date().toISOString(),
+    })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+export function updateManualHltbData(
+  gameId: number,
+  data: {
+    hltbMain?: number | null;
+    hltbMainExtra?: number | null;
+    hltbCompletionist?: number | null;
+  }
+): void {
+  const db = getDb();
+  const isClearing = data.hltbMain === null && data.hltbMainExtra === null && data.hltbCompletionist === null;
+
+  db.update(games)
+    .set({
+      hltbMain: data.hltbMain ?? undefined,
+      hltbMainExtra: data.hltbMainExtra ?? undefined,
+      hltbCompletionist: data.hltbCompletionist ?? undefined,
+      hltbManual: !isClearing,
+      hltbLastUpdated: isClearing ? null : new Date().toISOString(),
     })
     .where(eq(games.id, gameId))
     .run();
@@ -1542,18 +1574,9 @@ export interface TriageGame {
   interestRatedAt: string | null;
 }
 
-export function getGamesForTriage(view: 'library' | 'wishlist' | undefined, userId: string): TriageGame[] {
+export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' | undefined, userId: string): TriageGame[] {
   const db = getDb();
 
-  const conditions: SQL[] = [eq(userGames.userId, userId)];
-
-  if (view === 'library') {
-    conditions.push(eq(userGames.isOwned, true));
-  } else if (view === 'wishlist') {
-    conditions.push(eq(userGames.isWishlisted, true));
-  }
-
-  // Get all games, unrated first (interestRatedAt IS NULL), then by title
   interface RawRow {
     id: number;
     steamAppId: number;
@@ -1567,6 +1590,14 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | undefined, user
     interestRatedAt: string | null;
     currentPrice: number | null;
   }
+
+  const viewFilter = view === 'library'
+    ? sql`AND ug.is_owned = 1`
+    : view === 'wishlist'
+      ? sql`AND ug.is_wishlisted = 1`
+      : view === 'missing-hltb'
+        ? sql`AND g.hltb_main IS NULL`
+        : sql``;
 
   const rows = db.all(sql`
     SELECT
@@ -1586,7 +1617,8 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | undefined, user
     FROM user_games ug
     INNER JOIN games g ON ug.game_id = g.id
     WHERE ug.user_id = ${userId}
-      ${view === 'library' ? sql`AND ug.is_owned = 1` : view === 'wishlist' ? sql`AND ug.is_wishlisted = 1` : sql``}
+      AND (ug.is_ignored IS NULL OR ug.is_ignored = 0)
+      ${viewFilter}
     ORDER BY
       CASE WHEN ug.interest_rated_at IS NULL THEN 0 ELSE 1 END,
       g.title ASC
@@ -1605,6 +1637,18 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | undefined, user
     personalInterest: r.personalInterest ?? 3,
     interestRatedAt: r.interestRatedAt,
   }));
+}
+
+export function getMissingHltbCount(userId: string): number {
+  const db = getDb();
+  const result = db.all(sql`
+    SELECT COUNT(*) as count
+    FROM user_games ug
+    INNER JOIN games g ON ug.game_id = g.id
+    WHERE ug.user_id = ${userId}
+      AND g.hltb_main IS NULL
+  `) as Array<{ count: number }>;
+  return result[0]?.count ?? 0;
 }
 
 // ============================================

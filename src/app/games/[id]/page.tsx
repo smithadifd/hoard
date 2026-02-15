@@ -11,6 +11,7 @@ import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
 import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
 import { DataStatus } from '@/components/games/DataStatus';
+import { HltbEditor } from '@/components/games/HltbEditor';
 
 export const dynamic = 'force-dynamic';
 
@@ -294,6 +295,16 @@ export default async function GameDetailPage({
             notifyOnThreshold={alert?.notifyOnThreshold}
             currentPrice={game.currentPrice}
             lastNotifiedAt={alert?.lastNotifiedAt ?? undefined}
+          />
+
+          {/* HLTB Duration Editor */}
+          <HltbEditor
+            gameId={game.id}
+            gameTitle={game.title}
+            hltbMain={game.hltbMain}
+            hltbMainExtra={game.hltbMainExtra}
+            hltbCompletionist={game.hltbCompletionist}
+            hltbManual={game.hltbManual}
           />
 
           {/* External Links */}

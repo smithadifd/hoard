@@ -27,6 +27,7 @@ export interface EnrichedGame {
   hltbMain?: number;
   hltbMainExtra?: number;
   hltbCompletionist?: number;
+  hltbManual?: boolean;
 
   // User relationship
   isOwned: boolean;

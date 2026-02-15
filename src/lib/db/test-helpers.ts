@@ -34,6 +34,7 @@ const SCHEMA_SQL = `
     hltb_main_extra REAL,
     hltb_completionist REAL,
     hltb_last_updated TEXT,
+    hltb_manual INTEGER DEFAULT 0,
     review_last_updated TEXT,
     is_coop INTEGER DEFAULT 0,
     is_multiplayer INTEGER DEFAULT 0,

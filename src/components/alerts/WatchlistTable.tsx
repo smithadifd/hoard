@@ -85,7 +85,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
   return (
     <>
       {/* Mobile card layout */}
-      <div className="md:hidden space-y-3">
+      <div className="lg:hidden space-y-3">
         {alerts.map((alert) => {
           const isLoading = loadingId === alert.id;
           const atTarget = alert.currentPrice !== null && alert.targetPrice !== null
@@ -179,7 +179,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
       </div>
 
       {/* Desktop table layout */}
-      <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+      <div className="hidden lg:block rounded-lg border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-card border-b border-border">
             <tr>

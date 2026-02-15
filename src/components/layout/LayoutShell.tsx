@@ -26,7 +26,7 @@ export function LayoutShell({ children, user }: LayoutShellProps) {
       <div className="flex-1 flex flex-col overflow-hidden">
         {user && <Header userName={user.name} userEmail={user.email} />}
         <StaleDataBanner />
-        <main className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
+        <main className="flex-1 overflow-y-auto p-4 pb-20 lg:p-6 lg:pb-6">
           {children}
         </main>
       </div>

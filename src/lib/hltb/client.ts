@@ -187,63 +187,133 @@ export class HLTBClient {
     if (cached) return cached;
 
     try {
-      const { searchPath, authToken } = await ensureAuth();
-      const searchUrl = `${BASE_URL}${searchPath}`;
-      const payload = buildSearchPayload(title);
-
-      const resp = await fetchWithTimeout(searchUrl, {
-        method: 'POST',
-        headers: getHeaders(authToken),
-        body: payload,
-      });
-
-      if (!resp.ok) {
-        // Auth might be stale — force refresh on next call
-        if (resp.status === 401 || resp.status === 403 || resp.status === 404) {
-          authFetchedAt = 0;
-        }
-        console.warn(`[HLTB] Search returned ${resp.status} for "${title}"`);
-        return null;
-      }
-
-      const json = await resp.json();
-      const results = json.data;
-      if (!Array.isArray(results) || results.length === 0) return null;
-
-      // Find best match by similarity to search title
-      let best: HLTBResult | null = null;
-      let bestSimilarity = 0;
-
-      for (const entry of results) {
-        const nameSim = similarity(title, entry.game_name || '');
-        const aliasSim = similarity(title, entry.game_alias || '');
-        const sim = Math.max(nameSim, aliasSim);
-
-        if (sim > bestSimilarity) {
-          bestSimilarity = sim;
-          best = {
-            id: String(entry.game_id),
-            name: entry.game_name || '',
-            description: '',
-            imageUrl: entry.game_image ? `${BASE_URL}games/${entry.game_image}` : '',
-            // API returns seconds — convert to hours
-            gameplayMain: entry.comp_main ? Math.round((entry.comp_main / 3600) * 100) / 100 : 0,
-            gameplayMainExtra: entry.comp_plus ? Math.round((entry.comp_plus / 3600) * 100) / 100 : 0,
-            gameplayCompletionist: entry.comp_100 ? Math.round((entry.comp_100 / 3600) * 100) / 100 : 0,
-            platforms: entry.profile_platform ? entry.profile_platform.split(', ') : [],
-            similarity: sim,
-          };
-        }
-      }
-
-      if (best) {
-        this.cache.set(title.toLowerCase(), best);
-      }
-
-      return best;
+      return await this._searchInner(title, true);
     } catch (error) {
       console.error(`[HLTB] Search failed for "${title}":`, error);
       return null;
+    }
+  }
+
+  private async _searchInner(title: string, allowRetry: boolean): Promise<HLTBResult | null> {
+    const { searchPath, authToken } = await ensureAuth();
+    const searchUrl = `${BASE_URL}${searchPath}`;
+    const payload = buildSearchPayload(title);
+
+    const resp = await fetchWithTimeout(searchUrl, {
+      method: 'POST',
+      headers: getHeaders(authToken),
+      body: payload,
+    });
+
+    if (!resp.ok) {
+      if ((resp.status === 401 || resp.status === 403 || resp.status === 404) && allowRetry) {
+        authFetchedAt = 0;
+        console.warn(`[HLTB] Search auth failed (${resp.status}) for "${title}", retrying with fresh auth...`);
+        return this._searchInner(title, false);
+      }
+      console.warn(`[HLTB] Search returned ${resp.status} for "${title}"`);
+      return null;
+    }
+
+    const json = await resp.json();
+    const results = json.data;
+    if (!Array.isArray(results) || results.length === 0) return null;
+
+    // Find best match by similarity to search title
+    let best: HLTBResult | null = null;
+    let bestSimilarity = 0;
+
+    for (const entry of results) {
+      const nameSim = similarity(title, entry.game_name || '');
+      const aliasSim = similarity(title, entry.game_alias || '');
+      const sim = Math.max(nameSim, aliasSim);
+
+      if (sim > bestSimilarity) {
+        bestSimilarity = sim;
+        best = {
+          id: String(entry.game_id),
+          name: entry.game_name || '',
+          description: '',
+          imageUrl: entry.game_image ? `${BASE_URL}games/${entry.game_image}` : '',
+          // API returns seconds — convert to hours
+          gameplayMain: entry.comp_main ? Math.round((entry.comp_main / 3600) * 100) / 100 : 0,
+          gameplayMainExtra: entry.comp_plus ? Math.round((entry.comp_plus / 3600) * 100) / 100 : 0,
+          gameplayCompletionist: entry.comp_100 ? Math.round((entry.comp_100 / 3600) * 100) / 100 : 0,
+          platforms: entry.profile_platform ? entry.profile_platform.split(', ') : [],
+          similarity: sim,
+        };
+      }
+    }
+
+    if (best) {
+      this.cache.set(title.toLowerCase(), best);
+    }
+
+    return best;
+  }
+
+  /**
+   * Inner implementation for searchAll with optional retry on auth failure.
+   */
+  private async _searchAllInner(title: string, maxResults: number, allowRetry: boolean): Promise<HLTBResult[]> {
+    const { searchPath, authToken } = await ensureAuth();
+    const searchUrl = `${BASE_URL}${searchPath}`;
+    const payload = buildSearchPayload(title);
+
+    const resp = await fetchWithTimeout(searchUrl, {
+      method: 'POST',
+      headers: getHeaders(authToken),
+      body: payload,
+    });
+
+    if (!resp.ok) {
+      if ((resp.status === 401 || resp.status === 403 || resp.status === 404) && allowRetry) {
+        authFetchedAt = 0;
+        console.warn(`[HLTB] SearchAll auth failed (${resp.status}) for "${title}", retrying with fresh auth...`);
+        return this._searchAllInner(title, maxResults, false);
+      }
+      console.warn(`[HLTB] SearchAll returned ${resp.status} for "${title}"`);
+      return [];
+    }
+
+    const json = await resp.json();
+    const results = json.data;
+    if (!Array.isArray(results) || results.length === 0) return [];
+
+    const mapped: HLTBResult[] = results.map((entry: Record<string, unknown>) => {
+      const nameSim = similarity(title, (entry.game_name as string) || '');
+      const aliasSim = similarity(title, (entry.game_alias as string) || '');
+      const sim = Math.max(nameSim, aliasSim);
+
+      return {
+        id: String(entry.game_id),
+        name: (entry.game_name as string) || '',
+        description: '',
+        imageUrl: entry.game_image ? `${BASE_URL}games/${entry.game_image}` : '',
+        gameplayMain: entry.comp_main ? Math.round(((entry.comp_main as number) / 3600) * 100) / 100 : 0,
+        gameplayMainExtra: entry.comp_plus ? Math.round(((entry.comp_plus as number) / 3600) * 100) / 100 : 0,
+        gameplayCompletionist: entry.comp_100 ? Math.round(((entry.comp_100 as number) / 3600) * 100) / 100 : 0,
+        platforms: entry.profile_platform ? (entry.profile_platform as string).split(', ') : [],
+        similarity: sim,
+      };
+    });
+
+    return mapped
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, maxResults);
+  }
+
+  /**
+   * Search HLTB and return top N results sorted by similarity.
+   * Unlike search() which returns only the best match, this returns multiple
+   * candidates for the user to choose from.
+   */
+  async searchAll(title: string, maxResults: number = 5): Promise<HLTBResult[]> {
+    try {
+      return await this._searchAllInner(title, maxResults, true);
+    } catch (error) {
+      console.error(`[HLTB] SearchAll failed for "${title}":`, error);
+      return [];
     }
   }
 
