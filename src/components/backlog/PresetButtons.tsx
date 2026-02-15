@@ -14,6 +14,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 interface PresetButtonsProps {
   currentFilters: GameFilters;
   onPresetSelect: (filters: GameFilters) => void;
+  presetCounts?: Record<string, number>;
 }
 
 function isPresetActive(presetFilters: Partial<GameFilters>, current: GameFilters): boolean {
@@ -24,18 +25,20 @@ function isPresetActive(presetFilters: Partial<GameFilters>, current: GameFilter
   return true;
 }
 
-export function PresetButtons({ currentFilters, onPresetSelect }: PresetButtonsProps) {
+export function PresetButtons({ currentFilters, onPresetSelect, presetCounts }: PresetButtonsProps) {
   return (
     <div className="flex flex-wrap gap-2">
       {BACKLOG_PRESETS.map((preset) => {
         const active = isPresetActive(preset.filters, currentFilters);
+        const count = presetCounts?.[preset.id];
+        const isEmpty = count === 0;
         return (
           <button
             key={preset.id}
             onClick={() => {
               if (active) {
                 // Deactivate: reset to defaults
-                onPresetSelect({ view: 'library', playtimeStatus: 'unplayed' });
+                onPresetSelect({ view: 'library', playtimeStatus: 'backlog', strictFilters: true });
               } else {
                 onPresetSelect({ view: 'library', ...preset.filters });
               }
@@ -43,12 +46,25 @@ export function PresetButtons({ currentFilters, onPresetSelect }: PresetButtonsP
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               active
                 ? 'bg-steam-blue text-white'
-                : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                : isEmpty
+                  ? 'bg-secondary/50 text-muted-foreground/50 cursor-default'
+                  : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
             }`}
             title={preset.description}
           >
             {ICON_MAP[preset.icon]}
             {preset.label}
+            {count !== undefined && (
+              <span className={`text-xs px-1.5 rounded-full ${
+                active
+                  ? 'bg-white/20'
+                  : isEmpty
+                    ? 'bg-muted/50'
+                    : 'bg-muted'
+              }`}>
+                {count}
+              </span>
+            )}
           </button>
         );
       })}

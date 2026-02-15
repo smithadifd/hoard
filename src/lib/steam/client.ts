@@ -103,7 +103,7 @@ export class SteamClient {
    * Includes price, description, categories, etc.
    */
   async getAppDetails(appId: number): Promise<SteamAppDetails['data'] | null> {
-    const url = `${STEAM_STORE_API}/appdetails?appids=${appId}`;
+    const url = `${STEAM_STORE_API}/appdetails?appids=${appId}&l=english`;
 
     try {
       const response = await fetch(url);

@@ -112,6 +112,24 @@ export function getScoringConfig(): { weights: ScoringWeights; thresholds: Scori
   return { weights, thresholds };
 }
 
+// Default: games with < 10% of HLTB completed count as "barely played"
+const DEFAULT_BACKLOG_THRESHOLD_PERCENT = 10;
+// Absolute fallback for games without HLTB data (minutes)
+const BACKLOG_FALLBACK_MINUTES = 15;
+
+export function getBacklogThreshold(): number {
+  try {
+    const val = getSetting('backlog_threshold_percent');
+    if (val) {
+      const parsed = parseInt(val, 10);
+      if (parsed >= 1 && parsed <= 50) return parsed;
+    }
+  } catch {
+    // Use default
+  }
+  return DEFAULT_BACKLOG_THRESHOLD_PERCENT;
+}
+
 // ============================================
 // Game Upserts (used by sync)
 // ============================================
@@ -342,12 +360,27 @@ export function getEnrichedGames(
   }
 
   if (filters.minReview !== undefined) {
-    // Include games with no review data (NULL) — don't penalize for missing metadata
-    conditions.push(sql`(${games.reviewScore} IS NULL OR ${games.reviewScore} >= ${filters.minReview})`);
+    if (filters.strictFilters) {
+      // Strict: only games with known review score meeting threshold
+      conditions.push(sql`${games.reviewScore} IS NOT NULL AND ${games.reviewScore} >= ${filters.minReview}`);
+    } else {
+      // Lenient: include games with no review data (NULL)
+      conditions.push(sql`(${games.reviewScore} IS NULL OR ${games.reviewScore} >= ${filters.minReview})`);
+    }
+  }
+
+  if (filters.maxReviewCount !== undefined) {
+    conditions.push(sql`${games.reviewCount} IS NOT NULL AND ${games.reviewCount} <= ${filters.maxReviewCount}`);
   }
 
   if (filters.maxHours !== undefined) {
-    conditions.push(sql`(${games.hltbMain} IS NULL OR ${games.hltbMain} <= ${filters.maxHours})`);
+    if (filters.strictFilters) {
+      // Strict: only games with known duration within range
+      conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} <= ${filters.maxHours}`);
+    } else {
+      // Lenient: include games with no HLTB data (NULL)
+      conditions.push(sql`(${games.hltbMain} IS NULL OR ${games.hltbMain} <= ${filters.maxHours})`);
+    }
   }
 
   if (filters.minHours !== undefined) {
@@ -364,6 +397,22 @@ export function getEnrichedGames(
     conditions.push(sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`);
   } else if (filters.playtimeStatus === 'underplayed') {
     conditions.push(sql`${userGames.playtimeMinutes} > 0 AND ${userGames.playtimeMinutes} < 60`);
+  } else if (filters.playtimeStatus === 'backlog') {
+    // Smart backlog: unplayed OR barely started (< X% of HLTB main)
+    // For games without HLTB data, use absolute fallback threshold
+    const thresholdPct = getBacklogThreshold() / 100.0;
+    conditions.push(sql`(
+      ${userGames.playtimeMinutes} IS NULL
+      OR ${userGames.playtimeMinutes} = 0
+      OR (
+        ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0
+        AND (CAST(${userGames.playtimeMinutes} AS REAL) / 60.0) / ${games.hltbMain} < ${thresholdPct}
+      )
+      OR (
+        (${games.hltbMain} IS NULL OR ${games.hltbMain} = 0)
+        AND ${userGames.playtimeMinutes} < ${BACKLOG_FALLBACK_MINUTES}
+      )
+    )`);
   }
 
   if (filters.genres && filters.genres.length > 0) {
@@ -372,6 +421,16 @@ export function getEnrichedGames(
         SELECT gt.game_id FROM game_tags gt
         INNER JOIN tags t ON gt.tag_id = t.id
         WHERE t.type = 'genre' AND t.name IN (${sql.join(filters.genres.map(g => sql`${g}`), sql`, `)})
+      )`
+    );
+  }
+
+  if (filters.excludeTags && filters.excludeTags.length > 0) {
+    conditions.push(
+      sql`${games.id} NOT IN (
+        SELECT gt.game_id FROM game_tags gt
+        INNER JOIN tags t ON gt.tag_id = t.id
+        WHERE t.name IN (${sql.join(filters.excludeTags.map(t => sql`${t}`), sql`, `)})
       )`
     );
   }
@@ -584,6 +643,99 @@ export function getEnrichedGames(
   });
 
   return { games: enriched, total, totalUnfiltered };
+}
+
+/**
+ * Efficient count-only query using the same filter logic as getEnrichedGames.
+ * Used for preset match counts where we don't need actual game data.
+ */
+export function countGames(filters: GameFilters, userId: string): number {
+  const db = getDb();
+  const conditions: SQL[] = [eq(userGames.userId, userId)];
+
+  if (filters.view === 'library' || filters.owned === true) {
+    conditions.push(eq(userGames.isOwned, true));
+  }
+  if (filters.view === 'wishlist') {
+    conditions.push(eq(userGames.isWishlisted, true));
+  }
+  if (filters.view === 'watchlist') {
+    conditions.push(eq(userGames.isWatchlisted, true));
+  }
+  if (filters.search) {
+    conditions.push(like(games.title, `%${filters.search}%`));
+  }
+  if (filters.coop === true) {
+    conditions.push(sql`${games.isCoop} = 1`);
+  } else if (filters.coop === false) {
+    conditions.push(sql`(${games.isCoop} IS NULL OR ${games.isCoop} = 0)`);
+  }
+  if (filters.minReview !== undefined) {
+    if (filters.strictFilters) {
+      conditions.push(sql`${games.reviewScore} IS NOT NULL AND ${games.reviewScore} >= ${filters.minReview}`);
+    } else {
+      conditions.push(sql`(${games.reviewScore} IS NULL OR ${games.reviewScore} >= ${filters.minReview})`);
+    }
+  }
+  if (filters.maxReviewCount !== undefined) {
+    conditions.push(sql`${games.reviewCount} IS NOT NULL AND ${games.reviewCount} <= ${filters.maxReviewCount}`);
+  }
+  if (filters.maxHours !== undefined) {
+    if (filters.strictFilters) {
+      conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} <= ${filters.maxHours}`);
+    } else {
+      conditions.push(sql`(${games.hltbMain} IS NULL OR ${games.hltbMain} <= ${filters.maxHours})`);
+    }
+  }
+  if (filters.minHours !== undefined) {
+    conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} >= ${filters.minHours}`);
+  }
+  if (filters.playtimeStatus === 'unplayed') {
+    conditions.push(sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`);
+  } else if (filters.playtimeStatus === 'underplayed') {
+    conditions.push(sql`${userGames.playtimeMinutes} > 0 AND ${userGames.playtimeMinutes} < 60`);
+  } else if (filters.playtimeStatus === 'backlog') {
+    const thresholdPct = getBacklogThreshold() / 100.0;
+    conditions.push(sql`(
+      ${userGames.playtimeMinutes} IS NULL
+      OR ${userGames.playtimeMinutes} = 0
+      OR (
+        ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0
+        AND (CAST(${userGames.playtimeMinutes} AS REAL) / 60.0) / ${games.hltbMain} < ${thresholdPct}
+      )
+      OR (
+        (${games.hltbMain} IS NULL OR ${games.hltbMain} = 0)
+        AND ${userGames.playtimeMinutes} < ${BACKLOG_FALLBACK_MINUTES}
+      )
+    )`);
+  }
+  if (filters.genres && filters.genres.length > 0) {
+    conditions.push(
+      sql`${games.id} IN (
+        SELECT gt.game_id FROM game_tags gt
+        INNER JOIN tags t ON gt.tag_id = t.id
+        WHERE t.type = 'genre' AND t.name IN (${sql.join(filters.genres.map(g => sql`${g}`), sql`, `)})
+      )`
+    );
+  }
+  if (filters.excludeTags && filters.excludeTags.length > 0) {
+    conditions.push(
+      sql`${games.id} NOT IN (
+        SELECT gt.game_id FROM game_tags gt
+        INNER JOIN tags t ON gt.tag_id = t.id
+        WHERE t.name IN (${sql.join(filters.excludeTags.map(t => sql`${t}`), sql`, `)})
+      )`
+    );
+  }
+
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(and(...conditions))
+    .get();
+
+  return result?.count ?? 0;
 }
 
 export function getEnrichedGameById(gameId: number, userId: string): EnrichedGame | null {

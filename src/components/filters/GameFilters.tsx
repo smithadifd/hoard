@@ -167,6 +167,7 @@ export function GameFilters({
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
             >
               <option value="">Any</option>
+              <option value="backlog">Backlog</option>
               <option value="unplayed">Unplayed</option>
               <option value="underplayed">Under 1 hour</option>
             </select>

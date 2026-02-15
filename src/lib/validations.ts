@@ -43,14 +43,16 @@ export const gameFiltersSchema = z.object({
   view: z.enum(['library', 'wishlist', 'watchlist']).optional(),
   owned: booleanString.optional(),
   played: booleanString.optional(),
-  playtimeStatus: z.enum(['unplayed', 'underplayed']).optional(),
+  playtimeStatus: z.enum(['unplayed', 'underplayed', 'backlog']).optional(),
   maxHours: z.coerce.number().min(0).max(10000).optional(),
   minHours: z.coerce.number().min(0).max(10000).optional(),
   coop: booleanString.optional(),
   multiplayer: booleanString.optional(),
   minReview: z.coerce.number().int().min(0).max(100).optional(),
+  maxReviewCount: z.coerce.number().int().min(0).max(1000000).optional(),
   maxPrice: z.coerce.number().min(0).max(10000).optional(),
   onSale: booleanString.optional(),
+  strictFilters: booleanString.optional(),
   sortBy: z.enum(['title', 'playtime', 'review', 'price', 'dealScore', 'hltbMain', 'releaseDate']).default('title'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),
@@ -109,6 +111,7 @@ const settingsKeyEnum = z.enum([
   'scoring_weights',
   'scoring_thresholds',
   'alert_throttle_hours',
+  'backlog_threshold_percent',
 ]);
 
 export const settingsUpdateSchema = z.object({
