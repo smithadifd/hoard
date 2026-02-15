@@ -4,7 +4,7 @@
 
 Self-hosted web application for tracking game deals, managing a Steam library/backlog, and making informed purchasing decisions based on price history, review scores, and play time estimates. Built for deployment on a Synology NAS via Docker.
 
-**Status**: Phase 1 - Foundation
+**Status**: All phases complete. All 6 polish plans done.
 
 ---
 
@@ -233,11 +233,23 @@ npm run lint
 - [x] Dedicated /watchlist page with table view
 - [x] Settings: alert throttle config + test webhook button
 
+### Phase 6: PWA & Mobile-Responsive ← COMPLETE
+- [x] PWA via @serwist/turbopack with service worker
+- [x] Mobile-responsive layout (bottom tab bar, card layouts)
+- [x] Touch-friendly controls (44px targets, stacked inputs)
+
+### Polish Plans (all complete)
+- [x] Plan 1: Automated Backups (SQLite .backup, retention, cron)
+- [x] Plan 2: Security Hardening (Zod validation, rate limiting, security headers)
+- [x] Plan 3: Testing Infrastructure (11 files, 208+ tests, Vitest)
+- [x] Plan 4: Authentication (Better Auth, credentials-based, setup/login)
+- [x] Plan 5: DRY & Consistency (SSE utility, useApiMutation, API helpers)
+- [x] Plan 6: Observability & Monitoring (health endpoint, Discord ops alerts, sync history, stale data banner)
+
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
 - AI-powered game recommendations
 - Multi-user support
-- PWA / mobile-responsive design
 - SteamDB link integration
 - Game comparison tool
 
@@ -253,7 +265,9 @@ See `.env.example` for the full list. Key variables:
 | `STEAM_API_KEY` | Yes | Steam Web API key |
 | `STEAM_USER_ID` | Yes | Your Steam64 ID |
 | `ITAD_API_KEY` | Phase 2 | IsThereAnyDeal API key |
-| `DISCORD_WEBHOOK_URL` | No | Discord channel webhook for alerts |
+| `DISCORD_WEBHOOK_URL` | No | Discord webhook for deal alerts |
+| `DISCORD_OPS_WEBHOOK_URL` | No | Discord webhook for ops alerts (falls back to deals) |
+| `BETTER_AUTH_SECRET` | Yes | Secret key for session encryption |
 | `CRON_PRICE_CHECK` | No | Price check schedule (default: every 12h) |
 | `CRON_LIBRARY_SYNC` | No | Library sync schedule (default: daily 3am) |
 | `ALERT_THROTTLE_HOURS` | No | Min hours between alerts per game (default: 24) |
@@ -324,3 +338,15 @@ Custom agents in `.claude/agents/` for common development workflows:
 | `db-assistant` | `/agent db-assistant` | Schema changes, queries, migrations |
 | `pre-commit-check` | `/agent pre-commit-check` | Type checking, linting, build verification |
 | `code-reviewer` | `/agent code-reviewer` | Code quality review before merging |
+
+---
+
+## End-of-Session Workflow
+
+When the user says "commit, push, check GH actions, deploy" (or similar), follow this standard sequence:
+
+1. **Commit**: Stage relevant files, write a conventional commit message (`feat:`, `fix:`, `refactor:`, etc.)
+2. **Push**: `git push origin main`
+3. **CI check**: `gh run watch` — wait for both "Lint & Build" and "Docker Build" jobs to pass
+4. **Deploy**: `./scripts/deploy.sh` — builds and deploys to Synology NAS
+5. **Update docs**: Update `MEMORY.md` (and topic files) with anything learned. Update `CLAUDE.md` if project status changed. Update `plans/README.md` if a plan was completed.
