@@ -15,18 +15,7 @@ import {
   completeSyncLog,
   getFirstUserId,
 } from '../db/queries';
-
-export interface SyncResult {
-  gamesProcessed: number;
-  syncLogId: number;
-}
-
-export type ProgressContext = {
-  gameName?: string;
-  status?: 'matched' | 'skipped' | 'error' | 'processing';
-};
-
-export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+import type { SyncResult, ProgressCallback } from './types';
 
 export async function syncWishlist(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const effectiveUserId = userId ?? getFirstUserId();
@@ -37,8 +26,8 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
     const wishlistEntries = await client.getWishlist();
 
     if (wishlistEntries.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0);
-      return { gamesProcessed: 0, syncLogId };
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
     const appIds = wishlistEntries.map((e) => e.appid);
@@ -112,8 +101,8 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
 
-    completeSyncLog(syncLogId, 'success', processed);
-    return { gamesProcessed: processed, syncLogId };
+    completeSyncLog(syncLogId, 'success', processed, undefined, total, 0);
+    return { stats: { attempted: total, succeeded: processed, failed: 0, skipped: 0 }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message);

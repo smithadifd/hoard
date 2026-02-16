@@ -15,6 +15,8 @@ interface SyncLogEntry {
   source: string;
   status: string;
   itemsProcessed: number;
+  itemsAttempted: number | null;
+  itemsFailed: number | null;
   errorMessage: string | null;
   startedAt: string;
   completedAt: string | null;
@@ -188,7 +190,12 @@ export function SyncHistory() {
                           </div>
                         </td>
                         <td className="py-2 pr-4 hidden sm:table-cell text-muted-foreground">
-                          {log.itemsProcessed}
+                          {log.itemsAttempted && log.itemsAttempted > 0
+                            ? `${log.itemsProcessed}/${log.itemsAttempted}`
+                            : log.itemsProcessed}
+                          {log.itemsFailed && log.itemsFailed > 0 && (
+                            <span className="text-yellow-500 ml-1">({log.itemsFailed} failed)</span>
+                          )}
                         </td>
                         <td className="py-2 pr-4 hidden sm:table-cell text-muted-foreground">
                           {formatDuration(log.startedAt, log.completedAt)}

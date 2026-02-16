@@ -14,18 +14,7 @@ import {
   completeSyncLog,
   getFirstUserId,
 } from '../db/queries';
-
-export interface SyncResult {
-  gamesProcessed: number;
-  syncLogId: number;
-}
-
-export type ProgressContext = {
-  gameName?: string;
-  status?: 'matched' | 'skipped' | 'error' | 'processing';
-};
-
-export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+import type { SyncResult, ProgressCallback } from './types';
 
 export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const effectiveUserId = userId ?? getFirstUserId();
@@ -63,8 +52,8 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
       onProgress?.(processed, total, { gameName: steamGame.name });
     }
 
-    completeSyncLog(syncLogId, 'success', processed);
-    return { gamesProcessed: processed, syncLogId };
+    completeSyncLog(syncLogId, 'success', processed, undefined, total, 0);
+    return { stats: { attempted: total, succeeded: processed, failed: 0, skipped: 0 }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message);

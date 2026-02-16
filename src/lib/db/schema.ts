@@ -139,6 +139,8 @@ export const syncLog = sqliteTable('sync_log', {
   source: text('source').notNull(), // 'steam_library', 'steam_wishlist', 'itad_prices', 'hltb'
   status: text('status').notNull(), // 'running', 'success', 'error'
   itemsProcessed: integer('items_processed').default(0),
+  itemsAttempted: integer('items_attempted').default(0),
+  itemsFailed: integer('items_failed').default(0),
   errorMessage: text('error_message'),
   startedAt: text('started_at').notNull().default(sql`(datetime('now'))`),
   completedAt: text('completed_at'),

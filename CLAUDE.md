@@ -246,6 +246,13 @@ npm run lint
 - [x] Plan 5: DRY & Consistency (SSE utility, useApiMutation, API helpers)
 - [x] Plan 6: Observability & Monitoring (health endpoint, Discord ops alerts, sync history, stale data banner)
 
+### UI Overhaul Plans (all complete)
+- [x] Plan 7: Wishlist Revamp (deal score recompute, data completeness filter, isReleased, DataStatus, store links)
+- [x] Plan 8: Price Visualization (Recharts AreaChart, best-price-per-day aggregation, time range selector)
+- [x] Plan 9: Backlog Overhaul (strict filters, smart threshold, mood picker, slot machine animation)
+- [x] Plan 11: User Menu & Settings Split (header user menu, mobile sign-out, settings sub-pages)
+- [x] Plan 12: Enrichment Observability (shared SyncStats types, per-game try-catch, success rate alerts, weekly health summary)
+
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
 - AI-powered game recommendations
@@ -338,6 +345,8 @@ Custom agents in `.claude/agents/` for common development workflows:
 | `db-assistant` | `/agent db-assistant` | Schema changes, queries, migrations |
 | `pre-commit-check` | `/agent pre-commit-check` | Type checking, linting, build verification |
 | `code-reviewer` | `/agent code-reviewer` | Code quality review before merging |
+| `plan-generator` | `/agent plan-generator` | Audits codebase and generates structured plans for quality work |
+| `audit-orchestrator` | `/agent audit-orchestrator` | Post-feature audit — detects changes, scans categories, writes plans |
 
 ---
 
