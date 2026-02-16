@@ -14,6 +14,7 @@ import {
   completeSyncLog,
 } from '../db/queries';
 import type { SyncResult, ProgressCallback } from './types';
+import { SUCCESS_RATE_THRESHOLDS } from './health';
 
 const SIMILARITY_THRESHOLD = 0.4;
 const BATCH_SIZE = 100; // Process up to 100 games per sync run
@@ -82,7 +83,10 @@ export async function syncHltb(onProgress?: ProgressCallback, signal?: AbortSign
     }
 
     console.log(`[HLTBSync] Done: ${succeeded} matched, ${skipped} skipped, ${failed} failed out of ${attempted}`);
-    completeSyncLog(syncLogId, 'success', succeeded, undefined, attempted, failed);
+    const successRate = attempted > 0 ? succeeded / attempted : 1;
+    const threshold = SUCCESS_RATE_THRESHOLDS['hltb'] ?? 0.2;
+    const logStatus = successRate < threshold ? 'partial' : 'success';
+    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, failed);
     return { stats: { attempted, succeeded, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Activity, Loader2, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { Activity, Loader2, CheckCircle, XCircle, Clock, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface TaskStatus {
   name: string;
@@ -58,6 +58,8 @@ function StatusIcon({ status }: { status: string }) {
       return <CheckCircle className="h-4 w-4 text-deal-great" />;
     case 'error':
       return <XCircle className="h-4 w-4 text-destructive" />;
+    case 'partial':
+      return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     case 'running':
       return <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />;
     default:

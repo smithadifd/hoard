@@ -9,7 +9,7 @@ import type { SyncStats } from './types';
 import { getRecentSyncStats, getSyncLogsSince } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
 
-const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
+export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
   hltb: 0.20,        // Normally 60-80% match rate
   reviews: 0.50,     // Two API calls/game, some rate-limiting normal
   itad_prices: 0.50, // Batch API, partial failures rare
@@ -29,7 +29,7 @@ export async function evaluateSyncHealth(source: string, stats: SyncStats): Prom
   // Fetch recent runs for context
   const recentRuns = getRecentSyncStats(source, 5);
   const recentSummary = recentRuns
-    .filter(r => r.status === 'success' && r.itemsAttempted && r.itemsAttempted > 0)
+    .filter(r => (r.status === 'success' || r.status === 'partial') && r.itemsAttempted && r.itemsAttempted > 0)
     .map(r => `${r.itemsProcessed}/${r.itemsAttempted}`)
     .join(', ');
 
@@ -66,6 +66,8 @@ export async function sendWeeklyHealthSummary(): Promise<void> {
     }
 
     const successRuns = logs.filter(l => l.status === 'success');
+    const partialRuns = logs.filter(l => l.status === 'partial');
+    const errorRuns = logs.filter(l => l.status === 'error');
     const totalProcessed = logs.reduce((sum, l) => sum + (l.itemsProcessed ?? 0), 0);
     const totalAttempted = logs.reduce((sum, l) => sum + (l.itemsAttempted ?? 0), 0);
     const totalFailed = logs.reduce((sum, l) => sum + (l.itemsFailed ?? 0), 0);
@@ -75,10 +77,17 @@ export async function sendWeeklyHealthSummary(): Promise<void> {
     if (threshold !== undefined && avgRate < threshold) {
       allHealthy = false;
     }
+    if (partialRuns.length > 0 || errorRuns.length > 0) {
+      allHealthy = false;
+    }
 
     const lastRun = logs[0];
     const parts: string[] = [];
-    parts.push(`${successRuns.length}/${logs.length} runs OK`);
+    if (partialRuns.length > 0) {
+      parts.push(`${successRuns.length}/${logs.length} runs OK, ${partialRuns.length} partial`);
+    } else {
+      parts.push(`${successRuns.length}/${logs.length} runs OK`);
+    }
     if (totalAttempted > 0) {
       parts.push(`${totalProcessed}/${totalAttempted} items (${Math.round(avgRate * 100)}%)`);
     }

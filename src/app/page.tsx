@@ -25,7 +25,7 @@ export default async function DashboardPage() {
     backlogStats = getBacklogStats(session.user.id);
     alertStats = getAlertStats(session.user.id);
     const logs = getRecentSyncLogs(5);
-    const lastSync = logs.find((l) => l.status === 'success');
+    const lastSync = logs.find((l) => l.status === 'success' || l.status === 'partial');
     if (lastSync?.completedAt) {
       lastSyncLabel = new Date(lastSync.completedAt).toLocaleDateString('en-US', {
         month: 'short',

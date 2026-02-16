@@ -137,7 +137,7 @@ export const settings = sqliteTable('settings', {
 export const syncLog = sqliteTable('sync_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   source: text('source').notNull(), // 'steam_library', 'steam_wishlist', 'itad_prices', 'hltb'
-  status: text('status').notNull(), // 'running', 'success', 'error'
+  status: text('status').notNull(), // 'running', 'success', 'partial', 'error'
   itemsProcessed: integer('items_processed').default(0),
   itemsAttempted: integer('items_attempted').default(0),
   itemsFailed: integer('items_failed').default(0),

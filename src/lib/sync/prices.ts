@@ -18,6 +18,7 @@ import {
   getFirstUserId,
 } from '../db/queries';
 import type { SyncResult, ProgressCallback } from './types';
+import { SUCCESS_RATE_THRESHOLDS } from './health';
 
 export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const config = getEffectiveConfig();
@@ -146,7 +147,10 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       onProgress?.(succeeded, attempted, { gameName: game.title });
     }
 
-    completeSyncLog(syncLogId, 'success', succeeded, undefined, attempted, 0);
+    const successRate = attempted > 0 ? succeeded / attempted : 1;
+    const threshold = SUCCESS_RATE_THRESHOLDS['itad_prices'] ?? 0.5;
+    const logStatus = successRate < threshold ? 'partial' : 'success';
+    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, 0);
 
     // Chain alert checking after successful price sync
     try {

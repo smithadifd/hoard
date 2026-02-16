@@ -1008,7 +1008,7 @@ export function createSyncLog(source: string): number {
 
 export function completeSyncLog(
   id: number,
-  status: 'success' | 'error',
+  status: 'success' | 'partial' | 'error',
   itemsProcessed: number,
   errorMessage?: string,
   itemsAttempted?: number,
@@ -1047,7 +1047,7 @@ export function getLastSuccessfulSyncBySource(): Record<string, string> {
       lastSuccess: sql<string>`MAX(${syncLog.completedAt})`,
     })
     .from(syncLog)
-    .where(eq(syncLog.status, 'success'))
+    .where(inArray(syncLog.status, ['success', 'partial']))
     .groupBy(syncLog.source)
     .all();
 

@@ -15,6 +15,7 @@ import {
   completeSyncLog,
 } from '../db/queries';
 import type { SyncResult, ProgressCallback } from './types';
+import { SUCCESS_RATE_THRESHOLDS } from './health';
 
 const BATCH_SIZE = 100;
 const DELAY_MS = 3000; // 3s between games (2 API calls per game)
@@ -134,7 +135,10 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
     }
 
     console.log(`[ReviewSync] Done: ${succeeded} enriched, ${skipped} skipped, ${failed} failed out of ${attempted}`);
-    completeSyncLog(syncLogId, 'success', succeeded, undefined, attempted, failed);
+    const successRate = attempted > 0 ? succeeded / attempted : 1;
+    const threshold = SUCCESS_RATE_THRESHOLDS['reviews'] ?? 0.5;
+    const logStatus = successRate < threshold ? 'partial' : 'success';
+    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, failed);
     return { stats: { attempted, succeeded, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
