@@ -15,7 +15,7 @@ import {
   completeSyncLog,
   getFirstUserId,
 } from '../db/queries';
-import type { ProgressCallback, SyncResult } from './prices';
+import type { SyncResult, ProgressCallback } from './types';
 
 export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: string): Promise<SyncResult> {
   const syncLogId = createSyncLog('alert_check');
@@ -27,12 +27,13 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     const discord = getDiscordClient();
     const now = new Date();
     let notifiedCount = 0;
+    let throttled = 0;
 
     console.log(`[AlertCheck] ${activeAlerts.length} active alerts to evaluate`);
 
     if (activeAlerts.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0);
-      return { gamesProcessed: 0, syncLogId };
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
     for (const alert of activeAlerts) {
@@ -42,7 +43,10 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       if (alert.lastNotifiedAt) {
         const lastNotified = new Date(alert.lastNotifiedAt);
         const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
-        if (hoursSince < config.alertThrottleHours) continue;
+        if (hoursSince < config.alertThrottleHours) {
+          throttled++;
+          continue;
+        }
       }
 
       // Check trigger conditions
@@ -92,9 +96,9 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       }
     }
 
-    console.log(`[AlertCheck] Sent ${notifiedCount} notifications`);
-    completeSyncLog(syncLogId, 'success', notifiedCount);
-    return { gamesProcessed: notifiedCount, syncLogId };
+    console.log(`[AlertCheck] Sent ${notifiedCount} notifications, ${throttled} throttled`);
+    completeSyncLog(syncLogId, 'success', notifiedCount, undefined, activeAlerts.length, 0);
+    return { stats: { attempted: activeAlerts.length, succeeded: notifiedCount, failed: 0, skipped: throttled }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[AlertCheck] Failed:', error);

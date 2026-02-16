@@ -9,17 +9,13 @@ import { getTaskStatus } from '@/lib/scheduler';
 import { syncTriggerSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
-
-type ProgressContext = {
-  gameName?: string;
-  status?: string;
-};
+import type { SyncResult, ProgressCallback } from '@/lib/sync/types';
 
 type SyncFn = (
-  onProgress: (processed: number, total: number, context?: ProgressContext) => void,
+  onProgress: ProgressCallback,
   signal?: AbortSignal,
   userId?: string
-) => Promise<{ gamesProcessed: number; message?: string }>;
+) => Promise<SyncResult>;
 
 /**
  * Helper: wrap a sync function with SSE progress streaming.
@@ -50,9 +46,9 @@ function streamSync(syncFn: SyncFn, label: string, request: NextRequest, userId:
         }, abortController.signal, userId);
 
         if (abortController.signal.aborted) {
-          send('done', { gamesProcessed: result.gamesProcessed, cancelled: true });
+          send('done', { gamesProcessed: result.stats.succeeded, cancelled: true });
         } else {
-          send('done', { gamesProcessed: result.gamesProcessed, message: result.message });
+          send('done', { gamesProcessed: result.stats.succeeded, message: result.message });
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : `${label} sync failed`;

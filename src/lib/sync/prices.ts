@@ -17,18 +17,7 @@ import {
   completeSyncLog,
   getFirstUserId,
 } from '../db/queries';
-
-export interface SyncResult {
-  gamesProcessed: number;
-  syncLogId: number;
-}
-
-export type ProgressContext = {
-  gameName?: string;
-  status?: 'matched' | 'skipped' | 'error' | 'processing';
-};
-
-export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+import type { SyncResult, ProgressCallback } from './types';
 
 export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const config = getEffectiveConfig();
@@ -47,8 +36,8 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     console.log(`[PriceSync] ${gamesToSync.length} games for price sync`);
 
     if (gamesToSync.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0);
-      return { gamesProcessed: 0, syncLogId };
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
     // Step 1: Resolve missing ITAD game IDs
@@ -86,18 +75,19 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     console.log(`[PriceSync] Fetching prices for ${itadToGame.size} games`);
 
     if (itadToGame.size === 0) {
-      completeSyncLog(syncLogId, 'success', 0);
-      return { gamesProcessed: 0, syncLogId };
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
     // Step 3: Fetch overviews (best price + historical low per game)
     const itadIds = [...itadToGame.keys()];
     const overviews = await client.getOverview(itadIds);
-    const total = overviews.length;
-    let processed = 0;
+    const attempted = itadToGame.size;
+    let succeeded = 0;
+    let skipped = 0;
     for (const overview of overviews) {
       if (signal?.aborted) {
-        console.log(`[PriceSync] Cancelled after ${processed} games`);
+        console.log(`[PriceSync] Cancelled after ${succeeded} games`);
         break;
       }
 
@@ -116,7 +106,10 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       const storeName = current?.shop?.name;
 
       // Skip if no price data available
-      if (currentPrice === undefined || regularPrice === undefined) continue;
+      if (currentPrice === undefined || regularPrice === undefined) {
+        skipped++;
+        continue;
+      }
 
       const isAtATL = historicalLowPrice !== undefined && currentPrice <= historicalLowPrice;
 
@@ -149,11 +142,11 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
         dealScore: dealScoreValue,
       });
 
-      processed++;
-      onProgress?.(processed, total, { gameName: game.title });
+      succeeded++;
+      onProgress?.(succeeded, attempted, { gameName: game.title });
     }
 
-    completeSyncLog(syncLogId, 'success', processed);
+    completeSyncLog(syncLogId, 'success', succeeded, undefined, attempted, 0);
 
     // Chain alert checking after successful price sync
     try {
@@ -163,7 +156,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       console.error('[PriceSync] Alert check failed:', alertError);
     }
 
-    return { gamesProcessed: processed, syncLogId };
+    return { stats: { attempted, succeeded, failed: 0, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message);

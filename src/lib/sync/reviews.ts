@@ -14,19 +14,7 @@ import {
   createSyncLog,
   completeSyncLog,
 } from '../db/queries';
-
-export interface SyncResult {
-  gamesProcessed: number;
-  syncLogId: number;
-  message?: string;
-}
-
-export type ProgressContext = {
-  gameName?: string;
-  status?: 'enriched' | 'skipped' | 'error' | 'processing';
-};
-
-export type ProgressCallback = (processed: number, total: number, context?: ProgressContext) => void;
+import type { SyncResult, ProgressCallback } from './types';
 
 const BATCH_SIZE = 100;
 const DELAY_MS = 3000; // 3s between games (2 API calls per game)
@@ -41,21 +29,28 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
     console.log(`[ReviewSync] ${allGames.length} games need review data, processing batch of ${gamesToSync.length}`);
 
     if (gamesToSync.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0);
-      return { gamesProcessed: 0, syncLogId, message: 'All games already have review data (refreshes after 30 days)' };
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      return {
+        stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 },
+        syncLogId,
+        message: 'All games already have review data (refreshes after 30 days)',
+      };
     }
 
     const client = getSteamClient();
-    let processed = 0;
-    let enriched = 0;
+    let attempted = 0;
+    let succeeded = 0;
+    let failed = 0;
+    let skipped = 0;
 
     for (const game of gamesToSync) {
       if (signal?.aborted) {
-        console.log(`[ReviewSync] Cancelled after ${processed} games`);
+        console.log(`[ReviewSync] Cancelled after ${attempted} games`);
         break;
       }
 
-      onProgress?.(processed, gamesToSync.length, { gameName: game.title, status: 'processing' });
+      onProgress?.(attempted, gamesToSync.length, { gameName: game.title, status: 'processing' });
+      attempted++;
 
       try {
         // Fetch app details (description, developer, publisher, categories, genres)
@@ -64,16 +59,16 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
         // Fetch review summary
         const reviews = await client.getReviewSummary(game.steamAppId);
 
-        if (processed < 3) {
+        if (attempted <= 3) {
           console.log(`[ReviewSync] ${game.title} (${game.steamAppId}): details=${!!details}, reviews=${!!reviews}`);
         }
 
         if (!details && !reviews) {
           // Both calls failed (rate-limited or delisted) — mark as checked so we skip next time
           updateGameReviewData(game.id, {});
-          onProgress?.(processed + 1, gamesToSync.length, { gameName: game.title, status: 'skipped' });
-          processed++;
-          if (processed < gamesToSync.length) {
+          skipped++;
+          onProgress?.(attempted, gamesToSync.length, { gameName: game.title, status: 'skipped' });
+          if (attempted < gamesToSync.length) {
             await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
           }
           continue;
@@ -122,26 +117,25 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
           upsertTags(game.id, categoryNames, 'category');
         }
 
-        enriched++;
-        onProgress?.(processed + 1, gamesToSync.length, { gameName: game.title, status: 'enriched' });
+        succeeded++;
+        onProgress?.(attempted, gamesToSync.length, { gameName: game.title, status: 'enriched' });
       } catch (error) {
         console.error(`[ReviewSync] Error enriching ${game.title}:`, error);
         // Mark as checked to avoid retrying immediately
         updateGameReviewData(game.id, {});
-        onProgress?.(processed + 1, gamesToSync.length, { gameName: game.title, status: 'error' });
+        failed++;
+        onProgress?.(attempted, gamesToSync.length, { gameName: game.title, status: 'error' });
       }
 
-      processed++;
-
       // Rate limiting: 3s between games
-      if (processed < gamesToSync.length) {
+      if (attempted < gamesToSync.length) {
         await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
       }
     }
 
-    console.log(`[ReviewSync] Done: ${enriched} enriched, ${processed - enriched} skipped`);
-    completeSyncLog(syncLogId, 'success', enriched);
-    return { gamesProcessed: enriched, syncLogId };
+    console.log(`[ReviewSync] Done: ${succeeded} enriched, ${skipped} skipped, ${failed} failed out of ${attempted}`);
+    completeSyncLog(syncLogId, 'success', succeeded, undefined, attempted, failed);
+    return { stats: { attempted, succeeded, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message);

@@ -19,10 +19,10 @@ export async function register() {
 
     const config = getEffectiveConfig();
 
-    registerTask('price-check', config.cronPriceCheck, async () => { await syncPrices(); });
-    registerTask('library-sync', config.cronLibrarySync, async () => { await syncLibrary(); });
-    registerTask('hltb-sync', config.cronHltbSync, async () => { await syncHltb(); });
-    registerTask('review-enrichment', config.cronReviewSync, async () => { await syncReviews(); });
+    registerTask('price-check', config.cronPriceCheck, async () => syncPrices());
+    registerTask('library-sync', config.cronLibrarySync, async () => syncLibrary());
+    registerTask('hltb-sync', config.cronHltbSync, async () => syncHltb());
+    registerTask('review-enrichment', config.cronReviewSync, async () => syncReviews());
 
     registerTask('database-backup', config.cronBackup, async () => {
       try {
@@ -38,6 +38,11 @@ export async function register() {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+    });
+
+    registerTask('health-summary', '0 9 * * 1', async () => {
+      const { sendWeeklyHealthSummary } = await import('@/lib/sync/health');
+      await sendWeeklyHealthSummary();
     });
 
     startScheduler();

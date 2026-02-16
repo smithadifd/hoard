@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         const result = await syncLibrary((processed, total, context) => {
           send('progress', { processed, total, ...context });
         }, abortController.signal, userId);
-        send('done', { gamesProcessed: result.gamesProcessed, cancelled: abortController.signal.aborted });
+        send('done', { gamesProcessed: result.stats.succeeded, cancelled: abortController.signal.aborted });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Library sync failed';
         console.error('[POST /api/steam/library] Library sync failed:', error);

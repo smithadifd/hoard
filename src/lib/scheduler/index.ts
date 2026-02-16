@@ -11,9 +11,9 @@
  */
 
 import cron, { type ScheduledTask as CronTask } from 'node-cron';
-// TODO: import { getConfig } from '../config'; — will be used for reading cron schedules
+import type { SyncResult } from '../sync/types';
 
-type TaskFn = () => Promise<void>;
+type TaskFn = () => Promise<SyncResult | void>;
 
 interface ScheduledTask {
   name: string;
@@ -46,17 +46,39 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
     console.log(`[Scheduler] Starting task: ${name}`);
 
     try {
-      await fn();
+      const result = await fn();
       taskInfo.lastRun = new Date();
       console.log(`[Scheduler] Completed task: ${name}`);
+
+      // Evaluate sync health if the task returned stats
+      if (result?.stats) {
+        try {
+          const { evaluateSyncHealth } = await import('../sync/health');
+          await evaluateSyncHealth(name === 'price-check' ? 'itad_prices' : name === 'hltb-sync' ? 'hltb' : name === 'review-enrichment' ? 'reviews' : name, result.stats);
+        } catch {
+          // Don't let health eval crash the scheduler
+        }
+      }
     } catch (error) {
       console.error(`[Scheduler] Task "${name}" failed:`, error);
       try {
         const { getDiscordClient } = await import('../discord/client');
+        const { getRecentSyncStats } = await import('../db/queries');
         const msg = error instanceof Error ? error.message : 'Unknown error';
+
+        // Build context from recent runs
+        const sourceName = name === 'price-check' ? 'itad_prices' : name === 'hltb-sync' ? 'hltb' : name === 'review-enrichment' ? 'reviews' : name;
+        const recentRuns = getRecentSyncStats(sourceName, 3);
+        const contextLines = recentRuns
+          .filter(r => r.itemsAttempted && r.itemsAttempted > 0)
+          .map(r => `${r.itemsProcessed}/${r.itemsAttempted} (${r.status})`);
+
         await getDiscordClient().sendOperationalAlert({
           title: `Sync Failed: ${name}`,
           description: msg,
+          fields: contextLines.length > 0
+            ? [{ name: 'Recent Runs', value: contextLines.join(', '), inline: false }]
+            : undefined,
         });
       } catch {
         // Don't let notification failure crash the scheduler

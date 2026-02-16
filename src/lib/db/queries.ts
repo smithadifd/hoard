@@ -1010,7 +1010,9 @@ export function completeSyncLog(
   id: number,
   status: 'success' | 'error',
   itemsProcessed: number,
-  errorMessage?: string
+  errorMessage?: string,
+  itemsAttempted?: number,
+  itemsFailed?: number,
 ): void {
   const db = getDb();
   const now = new Date().toISOString();
@@ -1018,6 +1020,8 @@ export function completeSyncLog(
     .set({
       status,
       itemsProcessed,
+      ...(itemsAttempted !== undefined && { itemsAttempted }),
+      ...(itemsFailed !== undefined && { itemsFailed }),
       errorMessage,
       completedAt: now,
     })
@@ -1054,6 +1058,45 @@ export function getLastSuccessfulSyncBySource(): Record<string, string> {
     }
   }
   return result;
+}
+
+export function getRecentSyncStats(source: string, limit: number = 5) {
+  const db = getDb();
+  return db
+    .select({
+      id: syncLog.id,
+      source: syncLog.source,
+      status: syncLog.status,
+      itemsProcessed: syncLog.itemsProcessed,
+      itemsAttempted: syncLog.itemsAttempted,
+      itemsFailed: syncLog.itemsFailed,
+      startedAt: syncLog.startedAt,
+      completedAt: syncLog.completedAt,
+    })
+    .from(syncLog)
+    .where(eq(syncLog.source, source))
+    .orderBy(desc(syncLog.startedAt))
+    .limit(limit)
+    .all();
+}
+
+export function getSyncLogsSince(source: string, sinceDate: string) {
+  const db = getDb();
+  return db
+    .select({
+      id: syncLog.id,
+      source: syncLog.source,
+      status: syncLog.status,
+      itemsProcessed: syncLog.itemsProcessed,
+      itemsAttempted: syncLog.itemsAttempted,
+      itemsFailed: syncLog.itemsFailed,
+      startedAt: syncLog.startedAt,
+      completedAt: syncLog.completedAt,
+    })
+    .from(syncLog)
+    .where(and(eq(syncLog.source, source), sql`${syncLog.startedAt} >= ${sinceDate}`))
+    .orderBy(desc(syncLog.startedAt))
+    .all();
 }
 
 // ============================================
