@@ -281,6 +281,12 @@ See `.env.example` for the full list. Key variables:
 
 ---
 
+## Known Issues
+
+- **esbuild vulnerability (GHSA-67mh-4wv8-2f99)**: Dev-only vulnerability inherited from better-auth → drizzle-kit → @esbuild-kit/esm-loader. Affects development server only (allows any website to send requests to `localhost:3000` and read responses). Does NOT affect production builds. Mitigation: only run dev server on trusted networks, use firewall rules to block external access to port 3000. Upstream fix pending.
+
+---
+
 ## Working with This Project
 
 ### When starting a new phase:
