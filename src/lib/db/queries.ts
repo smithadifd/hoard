@@ -503,6 +503,9 @@ export function getEnrichedGames(
     );
   }
 
+  // Snapshot conditions before data-quality filters so totalUnfiltered still applies search/genre/etc.
+  const conditionsWithoutDataFilters = [...conditions];
+
   if (filters.requireCompleteData) {
     conditions.push(sql`${games.reviewScore} IS NOT NULL`);
     conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0`);
@@ -583,24 +586,15 @@ export function getEnrichedGames(
     .get();
   const total = countResult?.count ?? 0;
 
-  // Unfiltered count for "X of Y" display when data completeness filter is active
+  // Unfiltered count for "X of Y" display when data completeness filter is active.
+  // Uses the pre-data-filter conditions so search/genre/etc. are still applied.
   let totalUnfiltered: number | undefined;
   if (filters.requireCompleteData || filters.hideUnreleased) {
-    const baseConditions: SQL[] = [eq(userGames.userId, userId)];
-    if (filters.view === 'library' || filters.owned === true) {
-      baseConditions.push(eq(userGames.isOwned, true));
-    }
-    if (filters.view === 'wishlist') {
-      baseConditions.push(eq(userGames.isWishlisted, true));
-    }
-    if (filters.view === 'watchlist') {
-      baseConditions.push(eq(userGames.isWatchlisted, true));
-    }
     const unfilteredResult = db
       .select({ count: sql<number>`count(*)` })
       .from(games)
       .innerJoin(userGames, eq(games.id, userGames.gameId))
-      .where(and(...baseConditions))
+      .where(and(...conditionsWithoutDataFilters))
       .get();
     totalUnfiltered = unfilteredResult?.count ?? 0;
   }
