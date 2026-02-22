@@ -44,11 +44,16 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
   const hiddenCount = totalUnfiltered !== undefined ? totalUnfiltered - total : 0;
 
   const paginationParams: Record<string, string> = {};
+  const showAllSearchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (key !== 'page' && typeof value === 'string') {
       paginationParams[key] = value;
+      if (key !== 'showAll' && key !== 'showUnreleased') showAllSearchParams.set(key, value);
     }
   }
+  showAllSearchParams.set('showAll', 'true');
+  showAllSearchParams.set('showUnreleased', 'true');
+  const showAllHref = `/wishlist?${showAllSearchParams.toString()}`;
 
   return (
     <div className="space-y-6">
@@ -57,7 +62,13 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
         <p className="text-muted-foreground mt-1">
           {total > 0
             ? hiddenCount > 0
-              ? `${total} of ${totalUnfiltered} wishlisted games (${hiddenCount} hidden)`
+              ? <>
+                  {total} of {totalUnfiltered} wishlisted games (
+                  <a href={showAllHref} className="text-primary underline-offset-4 hover:underline">
+                    {hiddenCount} hidden
+                  </a>
+                  )
+                </>
               : `${total} wishlisted games`
             : 'Your wishlisted games — see deals at a glance'}
         </p>
@@ -65,10 +76,25 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
 
       <GameListFilters currentFilters={filters} />
 
-      <GameGrid
-        games={games}
-        emptyMessage="No games found. Sync your Steam wishlist from Settings to get started."
-      />
+      {total === 0 && hiddenCount > 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-12 text-center space-y-3">
+          <p className="text-muted-foreground">
+            {hiddenCount} {hiddenCount === 1 ? 'game matches' : 'games match'}{filters.search ? ' your search' : ''} but {hiddenCount === 1 ? 'is' : 'are'} hidden by active filters (incomplete data or unreleased).
+          </p>
+          <a href={showAllHref} className="inline-block text-sm font-medium text-primary hover:underline">
+            Show all matching games
+          </a>
+        </div>
+      ) : (
+        <GameGrid
+          games={games}
+          emptyMessage={
+            filters.search
+              ? 'No games found matching your search.'
+              : 'No games found. Sync your Steam wishlist from Settings to get started.'
+          }
+        />
+      )}
 
       <Pagination
         current={page}
