@@ -308,30 +308,62 @@ export default async function GameDetailPage({
           />
 
           {/* External Links */}
-          <div className="rounded-lg border border-border bg-card p-4 space-y-2">
-            <h3 className="text-sm font-semibold mb-2">Links</h3>
-            <ExternalLinkItem
-              href={`https://store.steampowered.com/app/${game.steamAppId}`}
-              label="Steam Store"
-            />
-            <ExternalLinkItem
-              href={`https://steamdb.info/app/${game.steamAppId}/`}
-              label="SteamDB"
-            />
-            <ExternalLinkItem
-              href={`https://www.protondb.com/app/${game.steamAppId}`}
-              label="ProtonDB"
-            />
-            {game.storeUrl && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="text-sm font-semibold mb-3">Links</h3>
+
+            <div className="space-y-1">
               <ExternalLinkItem
-                href={game.storeUrl}
-                label="IsThereAnyDeal"
+                href={`https://store.steampowered.com/app/${game.steamAppId}`}
+                label="Steam Store"
               />
-            )}
-            <ExternalLinkItem
-              href={`https://www.eneba.com/store?text=${encodeURIComponent(game.title)}`}
-              label="Eneba (grey market)"
-            />
+              <ExternalLinkItem
+                href={`https://steamdb.info/app/${game.steamAppId}/`}
+                label="SteamDB"
+              />
+              <ExternalLinkItem
+                href={`https://www.protondb.com/app/${game.steamAppId}`}
+                label="ProtonDB"
+              />
+            </div>
+
+            <p className="text-xs font-medium text-muted-foreground mt-3 mb-1">Prices</p>
+            <div className="space-y-1">
+              {game.storeUrl && (
+                <ExternalLinkItem href={game.storeUrl} label="IsThereAnyDeal" />
+              )}
+              <ExternalLinkItem
+                href={`https://gg.deals/games/?title=${encodeURIComponent(game.title)}`}
+                label="GG.deals"
+              />
+            </div>
+
+            <p className="text-xs font-medium text-muted-foreground mt-3 mb-1">Stores</p>
+            <div className="space-y-1">
+              <ExternalLinkItem
+                href={`https://www.gog.com/en/games?query=${encodeURIComponent(game.title)}`}
+                label="GOG"
+              />
+              <ExternalLinkItem
+                href={`https://www.greenmangaming.com/search?query=${encodeURIComponent(game.title)}`}
+                label="Green Man Gaming"
+              />
+              <ExternalLinkItem
+                href={`https://www.fanatical.com/en/search?search=${encodeURIComponent(game.title)}`}
+                label="Fanatical"
+              />
+            </div>
+
+            <p className="text-xs font-medium text-muted-foreground mt-3 mb-1">Grey Market</p>
+            <div className="space-y-1">
+              <ExternalLinkItem
+                href={`https://www.eneba.com/store?text=${encodeURIComponent(game.title)}`}
+                label="Eneba"
+              />
+              <ExternalLinkItem
+                href={`https://www.loaded.com/customsearch?q=${encodeURIComponent(game.title)}`}
+                label="loaded.com"
+              />
+            </div>
           </div>
         </div>
       </div>
