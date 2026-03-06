@@ -277,6 +277,7 @@ See `.env.example` for the full list. Key variables:
 | `BETTER_AUTH_SECRET` | Yes | Secret key for session encryption |
 | `CRON_PRICE_CHECK` | No | Price check schedule (default: every 12h) |
 | `CRON_LIBRARY_SYNC` | No | Library sync schedule (default: daily 3am) |
+| `TRUSTED_ORIGINS` | No | Comma-separated additional trusted origins for auth |
 | `ALERT_THROTTLE_HOURS` | No | Min hours between alerts per game (default: 24) |
 
 ---

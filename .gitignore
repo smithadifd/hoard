@@ -25,6 +25,7 @@ yarn-error.log*
 
 # local env files
 .env*.local
+.deploy.env
 
 # vercel
 .vercel
@@ -52,6 +53,9 @@ CLAUDE.local.md
 # Serwist (generated service worker files)
 public/sw*
 public/swe-worker*
+
+# Claude Code local state
+.claude/worktrees/
 
 # IDE
 .idea/
