@@ -15,12 +15,17 @@ set -euo pipefail
 #   - .env.production on NAS at /volume3/docker/hoard/.env.production
 #   - Git installed on NAS (via Synology package or entware)
 
-REMOTE="synology"
-REMOTE_PATH="/volume3/docker/hoard"
-REMOTE_DOCKER_PATH="export PATH=/usr/local/bin:/usr/syno/bin:\$PATH"
-REPO_URL="git@github.com:smithadifd/hoard.git"
-COMPOSE_FILE="docker-compose.prod.yml"
-APP_PORT=3001
+# Configuration — override via environment or .deploy.env
+if [ -f "$(dirname "$0")/../.deploy.env" ]; then
+    # shellcheck disable=SC1091
+    source "$(dirname "$0")/../.deploy.env"
+fi
+REMOTE="${DEPLOY_REMOTE:-synology}"
+REMOTE_PATH="${DEPLOY_REMOTE_PATH:-/volume3/docker/hoard}"
+REMOTE_DOCKER_PATH="${DEPLOY_DOCKER_PATH:-export PATH=/usr/local/bin:/usr/syno/bin:\$PATH}"
+REPO_URL="${DEPLOY_REPO_URL:-$(git remote get-url origin 2>/dev/null || echo 'git@github.com:user/hoard.git')}"
+COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.prod.yml}"
+APP_PORT="${DEPLOY_APP_PORT:-3001}"
 
 # Colors
 RED='\033[0;31m'
@@ -233,7 +238,7 @@ main() {
     info "Deployment successful!"
     local nas_host
     nas_host=$(ssh -G "$REMOTE" | awk '/^hostname / {print $2}')
-    info "App available at: https://hoard.home (direct: http://${nas_host}:${APP_PORT})"
+    info "App available at: http://${nas_host}:${APP_PORT}"
     echo ""
 }
 
