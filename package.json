@@ -40,7 +40,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.3",
+    "@eslint/eslintrc": "^3.3.4",
     "@serwist/turbopack": "^9.5.5",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^25.3.3",
