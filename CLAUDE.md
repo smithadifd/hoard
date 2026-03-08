@@ -253,6 +253,9 @@ npm run lint
 - [x] Plan 11: User Menu & Settings Split (header user menu, mobile sign-out, settings sub-pages)
 - [x] Plan 12: Enrichment Observability (shared SyncStats types, per-game try-catch, success rate alerts, weekly health summary)
 
+### Feature Plans
+- [x] Plan 15: Wishlist Game Removal (local removal, sync guard, Steam source-of-truth auto-removal, cascade deactivation)
+
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
 - AI-powered game recommendations
@@ -361,8 +364,12 @@ Custom agents in `.claude/agents/` for common development workflows:
 
 When the user says "commit, push, check GH actions, deploy" (or similar), follow this standard sequence:
 
-1. **Commit**: Stage relevant files, write a conventional commit message (`feat:`, `fix:`, `refactor:`, etc.)
-2. **Push**: `git push origin main`
-3. **CI check**: `gh run watch` — wait for both "Lint & Build" and "Docker Build" jobs to pass
-4. **Deploy**: `./scripts/deploy.sh` — builds and deploys to Synology NAS
-5. **Update docs**: Update `MEMORY.md` (and topic files) with anything learned. Update `CLAUDE.md` if project status changed. Update `plans/README.md` if a plan was completed.
+1. **Branch**: Create a feature branch (`feat/...`, `fix/...`) from `main` — repo is public with branch protection, no direct push to main
+2. **Commit**: Stage relevant files, write a conventional commit message (`feat:`, `fix:`, `refactor:`, etc.)
+3. **Push**: `git push -u origin <branch>`
+4. **PR**: `gh pr create` with summary and test plan
+5. **CI check**: `gh run watch <run-id> --exit-status` — wait for both "Lint & Build" and "Docker Build" jobs to pass
+6. **Merge**: `gh pr merge <number> --squash --delete-branch` then `git checkout main && git pull`
+7. **Deploy**: Wait for main CI to pass, then `./scripts/deploy.sh` — builds and deploys to Synology NAS
+8. **Migrations**: Apply any pending DB migrations on prod (via `docker exec` if schema changed)
+9. **Update docs**: Update `MEMORY.md` (and topic files) with anything learned. Update `CLAUDE.md` if project status changed. Update `plans/README.md` if a plan was completed.
