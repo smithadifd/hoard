@@ -65,6 +65,7 @@ const SCHEMA_SQL = `
     is_wishlisted INTEGER DEFAULT 0,
     is_watchlisted INTEGER DEFAULT 0,
     is_ignored INTEGER DEFAULT 0,
+    wishlist_removed_at TEXT,
     playtime_minutes INTEGER DEFAULT 0,
     playtime_recent_minutes INTEGER DEFAULT 0,
     last_played TEXT,

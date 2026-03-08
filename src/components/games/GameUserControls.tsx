@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check, Ban } from 'lucide-react';
+import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check, Ban, ListMinus, ListPlus } from 'lucide-react';
 import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface GameUserControlsProps {
   gameId: number;
+  steamAppId: number;
+  isWishlisted: boolean;
   interest: number;
   isWatchlisted: boolean;
   isIgnored: boolean;
@@ -19,6 +21,8 @@ interface GameUserControlsProps {
 
 export function GameUserControls({
   gameId,
+  steamAppId,
+  isWishlisted: initialWishlisted,
   interest: initialInterest,
   isWatchlisted: initialWatchlisted,
   isIgnored: initialIgnored,
@@ -29,6 +33,8 @@ export function GameUserControls({
   currentPrice,
   lastNotifiedAt,
 }: GameUserControlsProps) {
+  const [isWishlisted, setIsWishlisted] = useState(initialWishlisted);
+  const [showSteamHint, setShowSteamHint] = useState(false);
   const [interest, setInterest] = useState(initialInterest);
   const [isWatchlisted, setIsWatchlisted] = useState(initialWatchlisted);
   const [isIgnored, setIsIgnored] = useState(initialIgnored);
@@ -54,6 +60,19 @@ export function GameUserControls({
 
   const saveAlert = (updates: Record<string, unknown>) =>
     alertMutation.mutate({ gameId, ...updates });
+
+  const removeFromWishlist = () => {
+    setIsWishlisted(false);
+    setShowSteamHint(true);
+    save({ isWishlisted: false });
+    setTimeout(() => setShowSteamHint(false), 8000);
+  };
+
+  const addToWishlist = () => {
+    setIsWishlisted(true);
+    setShowSteamHint(false);
+    save({ isWishlisted: true });
+  };
 
   const handleInterestChange = (value: number) => {
     setInterest(value);
@@ -122,6 +141,40 @@ export function GameUserControls({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Wishlist Toggle */}
+      <div className="space-y-1">
+        {isWishlisted ? (
+          <button
+            onClick={removeFromWishlist}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-secondary text-secondary-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <ListMinus className="h-4 w-4" />
+            Remove from Wishlist
+          </button>
+        ) : (
+          <button
+            onClick={addToWishlist}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-secondary text-secondary-foreground hover:bg-steam-blue/10 hover:text-steam-blue"
+          >
+            <ListPlus className="h-4 w-4" />
+            Add to Wishlist
+          </button>
+        )}
+        {showSteamHint && (
+          <p className="text-xs text-muted-foreground text-center">
+            Removed.{' '}
+            <a
+              href={`https://store.steampowered.com/app/${steamAppId}/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-steam-blue hover:underline"
+            >
+              Remove from Steam too
+            </a>
+          </p>
+        )}
       </div>
 
       {/* Watchlist Toggle */}

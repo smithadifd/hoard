@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getEnrichedGames } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
-import { GameGrid } from '@/components/games/GameGrid';
+import { WishlistGrid } from './WishlistGrid';
 import { GameListFilters } from '@/components/filters/GameListFilters';
 import { Pagination } from '@/components/ui/Pagination';
 import type { GameFilters } from '@/types';
@@ -86,7 +86,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
           </a>
         </div>
       ) : (
-        <GameGrid
+        <WishlistGrid
           games={games}
           emptyMessage={
             filters.search

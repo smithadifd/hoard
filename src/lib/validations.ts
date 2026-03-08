@@ -68,6 +68,7 @@ export const gameUpdateSchema = z.object({
   notes: z.string().max(2000).optional(),
   isWatchlisted: z.boolean().optional(),
   isIgnored: z.boolean().optional(),
+  isWishlisted: z.boolean().optional(),
   priceThreshold: z.number().min(0).max(10000).optional(),
   // Manual HLTB data entry (null to clear)
   hltbMain: z.number().min(0).max(10000).nullable().optional(),
