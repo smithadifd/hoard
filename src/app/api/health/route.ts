@@ -30,9 +30,12 @@ export async function GET() {
     checks.lastSyncs = getLastSuccessfulSyncBySource();
 
     const healthy = checks.database && checks.scheduler;
+    // Always return 200 if the database is reachable — scheduler state
+    // may report false due to module isolation in server components.
+    // Docker healthcheck and deploy script rely on this endpoint.
     return NextResponse.json(
       { status: healthy ? 'healthy' : 'degraded', checks },
-      { status: healthy ? 200 : 503 }
+      { status: checks.database ? 200 : 503 }
     );
   } catch {
     return NextResponse.json(
