@@ -370,6 +370,7 @@ export function getEnrichedGames(
   }
   if (filters.view === 'wishlist') {
     conditions.push(eq(userGames.isWishlisted, true));
+    conditions.push(sql`${userGames.wishlistRemovedAt} IS NULL`);
   }
   if (filters.view === 'watchlist') {
     conditions.push(eq(userGames.isWatchlisted, true));
@@ -712,6 +713,7 @@ export function countGames(filters: GameFilters, userId: string): number {
   }
   if (filters.view === 'wishlist') {
     conditions.push(eq(userGames.isWishlisted, true));
+    conditions.push(sql`${userGames.wishlistRemovedAt} IS NULL`);
   }
   if (filters.view === 'watchlist') {
     conditions.push(eq(userGames.isWatchlisted, true));
@@ -961,7 +963,11 @@ export function getDashboardStats(userId: string): {
   const wishlistRow = db
     .select({ count: sql<number>`count(*)` })
     .from(userGames)
-    .where(and(eq(userGames.userId, userId), eq(userGames.isWishlisted, true)))
+    .where(and(
+      eq(userGames.userId, userId),
+      eq(userGames.isWishlisted, true),
+      sql`${userGames.wishlistRemovedAt} IS NULL`
+    ))
     .get();
 
   const watchlistRow = db
@@ -1489,24 +1495,62 @@ export function updateUserGame(
     isWatchlisted: boolean;
     isIgnored: boolean;
     priceThreshold: number;
+    isWishlisted: boolean;
   }>,
   userId: string
 ): boolean {
   const db = getDb();
   const now = new Date().toISOString();
 
+  // Derive wishlistRemovedAt stamp from isWishlisted changes
+  const wishlistRemovedAt =
+    updates.isWishlisted === false
+      ? new Date().toISOString()
+      : updates.isWishlisted === true
+        ? null
+        : undefined;
+
+  // Only spread known user_games columns to prevent unexpected fields leaking through
+  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted } = updates;
+
   const result = db
     .update(userGames)
     .set({
-      ...updates,
+      ...(personalInterest !== undefined && { personalInterest }),
+      ...(notes !== undefined && { notes }),
+      ...(isWatchlisted !== undefined && { isWatchlisted }),
+      ...(isIgnored !== undefined && { isIgnored }),
+      ...(priceThreshold !== undefined && { priceThreshold }),
+      ...(isWishlisted !== undefined && { isWishlisted }),
       updatedAt: now,
       // Track when interest was explicitly rated
-      ...(updates.personalInterest !== undefined && { interestRatedAt: now }),
+      ...(personalInterest !== undefined && { interestRatedAt: now }),
+      // Auto-stamp removal time when unwishlisting; clear when re-wishlisting
+      ...(wishlistRemovedAt !== undefined && { wishlistRemovedAt }),
     })
     .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
     .run();
 
   if (result.changes === 0) return false;
+
+  // Deactivate watchlist and price alert when unwishlisting
+  if (updates.isWishlisted === false) {
+    db.update(userGames)
+      .set({ isWatchlisted: false, updatedAt: now })
+      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+      .run();
+    const existingAlert = db
+      .select({ id: priceAlerts.id })
+      .from(priceAlerts)
+      .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
+      .get();
+    if (existingAlert) {
+      db.update(priceAlerts)
+        .set({ isActive: false })
+        .where(eq(priceAlerts.id, existingAlert.id))
+        .run();
+    }
+  }
 
   // Auto-manage price alert when watchlist/threshold changes
   if (updates.isWatchlisted === false) {

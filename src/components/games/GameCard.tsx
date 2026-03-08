@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Clock, Star, DollarSign } from 'lucide-react';
+import { Clock, Star, DollarSign, X } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 
@@ -12,9 +12,10 @@ import { DealIndicator } from '@/components/prices/DealIndicator';
  */
 interface GameCardProps {
   game: EnrichedGame;
+  onRemove?: (gameId: number) => void;
 }
 
-export function GameCard({ game }: GameCardProps) {
+export function GameCard({ game, onRemove }: GameCardProps) {
   return (
     <Link
       href={`/games/${game.id}`}
@@ -34,6 +35,20 @@ export function GameCard({ game }: GameCardProps) {
           <div className="flex items-center justify-center h-full text-muted-foreground">
             No Image
           </div>
+        )}
+
+        {/* Remove Button (wishlist context only) */}
+        {onRemove && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              onRemove(game.id);
+            }}
+            aria-label="Remove from wishlist"
+            className="absolute top-2 left-2 p-1 rounded bg-black/60 text-white hover:bg-destructive/80 transition-colors z-10"
+          >
+            <X className="h-3 w-3" />
+          </button>
         )}
 
         {/* Deal Badge */}

@@ -287,6 +287,8 @@ export default async function GameDetailPage({
           {/* User Controls */}
           <GameUserControls
             gameId={game.id}
+            steamAppId={game.steamAppId}
+            isWishlisted={game.isWishlisted}
             interest={game.personalInterest}
             isWatchlisted={game.isWatchlisted}
             isIgnored={game.isIgnored}

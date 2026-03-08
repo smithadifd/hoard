@@ -69,6 +69,7 @@ export const userGames = sqliteTable('user_games', {
   isWishlisted: integer('is_wishlisted', { mode: 'boolean' }).default(false),
   isWatchlisted: integer('is_watchlisted', { mode: 'boolean' }).default(false),
   isIgnored: integer('is_ignored', { mode: 'boolean' }).default(false),
+  wishlistRemovedAt: text('wishlist_removed_at'), // ISO timestamp; non-null = removed locally
   // Playtime from Steam
   playtimeMinutes: integer('playtime_minutes').default(0),
   playtimeRecentMinutes: integer('playtime_recent_minutes').default(0), // last 2 weeks
