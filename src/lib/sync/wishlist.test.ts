@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../steam/client', () => ({
   getSteamClient: vi.fn(),
@@ -11,6 +11,33 @@ vi.mock('../db/queries', () => ({
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
+  updateUserGame: vi.fn(),
+}));
+
+// Mock getDb to return a fake DB with chainable query builder
+const mockDbAll = vi.fn().mockReturnValue([]);
+vi.mock('../db/index', () => ({
+  getDb: vi.fn(() => ({
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            all: mockDbAll,
+          }),
+        }),
+      }),
+    }),
+  })),
+}));
+
+vi.mock('../db/schema', () => ({
+  games: { id: 'games.id', steamAppId: 'games.steam_app_id' },
+  userGames: {
+    gameId: 'user_games.game_id',
+    userId: 'user_games.user_id',
+    isWishlisted: 'user_games.is_wishlisted',
+    wishlistRemovedAt: 'user_games.wishlist_removed_at',
+  },
 }));
 
 import { syncWishlist } from './wishlist';
@@ -22,6 +49,7 @@ import {
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
+  updateUserGame,
 } from '../db/queries';
 
 const mockGetSteamClient = vi.mocked(getSteamClient);
@@ -31,6 +59,7 @@ const mockGetExisting = vi.mocked(getExistingGamesByAppIds);
 const mockCreateSyncLog = vi.mocked(createSyncLog);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
+const _mockUpdateUserGame = vi.mocked(updateUserGame);
 
 function makeWishlistEntry(appid: number, priority = 0) {
   return { appid, priority, date_added: 1700000000 };
