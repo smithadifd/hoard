@@ -1654,7 +1654,6 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       steamAppId: games.steamAppId,
       title: games.title,
       description: games.description,
-      shortDescription: games.shortDescription,
       headerImageUrl: games.headerImageUrl,
       releaseDate: games.releaseDate,
       developer: games.developer,
