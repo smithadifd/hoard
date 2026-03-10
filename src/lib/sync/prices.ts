@@ -160,6 +160,14 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       console.error('[PriceSync] Alert check failed:', alertError);
     }
 
+    // Chain release status checking (detects newly released games)
+    try {
+      const { checkReleaseStatus } = await import('./releases');
+      await checkReleaseStatus();
+    } catch (releaseError) {
+      console.error('[PriceSync] Release check failed:', releaseError);
+    }
+
     return { stats: { attempted, succeeded, failed: 0, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
