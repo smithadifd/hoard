@@ -113,10 +113,19 @@ function getHeaders(authToken?: string | null): Record<string, string> {
   return headers;
 }
 
+function cleanSearchTitle(title: string): string {
+  return title
+    .replace(/[™®©]/g, '')           // Strip trademark/copyright symbols
+    .replace(/[^\w\s'-]/g, ' ')       // Replace other special chars with space (keep apostrophes, hyphens within words)
+    .replace(/\s+/g, ' ')            // Normalize whitespace
+    .trim();
+}
+
 function buildSearchPayload(gameName: string): string {
+  const cleaned = cleanSearchTitle(gameName);
   return JSON.stringify({
     searchType: 'games',
-    searchTerms: gameName.split(/\s+/).filter(Boolean),
+    searchTerms: cleaned.split(/\s+/).filter(t => t.length > 0 && !/^[-–—]+$/.test(t)),
     searchPage: 1,
     size: 20,
     searchOptions: {
@@ -223,9 +232,11 @@ export class HLTBClient {
     let best: HLTBResult | null = null;
     let bestSimilarity = 0;
 
+    const cleanedTitle = cleanSearchTitle(title);
+
     for (const entry of results) {
-      const nameSim = similarity(title, entry.game_name || '');
-      const aliasSim = similarity(title, entry.game_alias || '');
+      const nameSim = similarity(cleanedTitle, entry.game_name || '');
+      const aliasSim = similarity(cleanedTitle, entry.game_alias || '');
       const sim = Math.max(nameSim, aliasSim);
 
       if (sim > bestSimilarity) {
@@ -280,9 +291,10 @@ export class HLTBClient {
     const results = json.data;
     if (!Array.isArray(results) || results.length === 0) return [];
 
+    const cleanedTitle = cleanSearchTitle(title);
     const mapped: HLTBResult[] = results.map((entry: Record<string, unknown>) => {
-      const nameSim = similarity(title, (entry.game_name as string) || '');
-      const aliasSim = similarity(title, (entry.game_alias as string) || '');
+      const nameSim = similarity(cleanedTitle, (entry.game_name as string) || '');
+      const aliasSim = similarity(cleanedTitle, (entry.game_alias as string) || '');
       const sim = Math.max(nameSim, aliasSim);
 
       return {

@@ -255,6 +255,7 @@ npm run lint
 
 ### Feature Plans
 - [x] Plan 15: Wishlist Game Removal (local removal, sync guard, Steam source-of-truth auto-removal, cascade deactivation)
+- [x] Plan 16: Separate Releases from Wishlist (/releases page, nav overhaul, release date parsing, release status sync, Discord notifications)
 
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
