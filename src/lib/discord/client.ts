@@ -181,6 +181,54 @@ export class DiscordClient {
   }
 
   /**
+   * Send a release notification when a tracked game launches.
+   */
+  async sendReleaseNotification(game: {
+    title: string;
+    steamAppId: number;
+    headerImageUrl?: string;
+    releaseDate?: string;
+    reviewDescription?: string;
+  }): Promise<boolean> {
+    const storeUrl = `https://store.steampowered.com/app/${game.steamAppId}`;
+
+    const embed: DiscordEmbed = {
+      title: `🎮 Released: ${game.title}`,
+      description: `**${game.title}** is now available!`,
+      url: storeUrl,
+      color: 0x3b82f6, // Blue for releases
+      fields: [
+        {
+          name: 'Store Page',
+          value: `[Steam](${storeUrl})`,
+          inline: true,
+        },
+      ],
+      thumbnail: game.headerImageUrl ? { url: game.headerImageUrl } : undefined,
+      footer: { text: 'Hoard - Game Deal Tracker' },
+      timestamp: new Date().toISOString(),
+    };
+
+    if (game.releaseDate) {
+      embed.fields!.push({
+        name: 'Release Date',
+        value: game.releaseDate,
+        inline: true,
+      });
+    }
+
+    if (game.reviewDescription) {
+      embed.fields!.push({
+        name: 'Reviews',
+        value: game.reviewDescription,
+        inline: true,
+      });
+    }
+
+    return this.send('', [embed]);
+  }
+
+  /**
    * Send a backup status notification.
    * Only sends on failure by default to avoid notification fatigue.
    */

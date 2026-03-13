@@ -1638,6 +1638,168 @@ export function getBacklogStats(userId: string): { unplayedCount: number; totalO
 }
 
 // ============================================
+// Releases (Upcoming Games)
+// ============================================
+
+/**
+ * Get unreleased wishlisted games for the Releases page.
+ * Only includes games explicitly marked as unreleased by Steam (isReleased = false).
+ */
+export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
+  const db = getDb();
+
+  const results = db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+      description: games.description,
+      headerImageUrl: games.headerImageUrl,
+      releaseDate: games.releaseDate,
+      developer: games.developer,
+      publisher: games.publisher,
+      reviewScore: games.reviewScore,
+      reviewCount: games.reviewCount,
+      reviewDescription: games.reviewDescription,
+      hltbMain: games.hltbMain,
+      hltbMainExtra: games.hltbMainExtra,
+      hltbCompletionist: games.hltbCompletionist,
+      hltbManual: games.hltbManual,
+      isCoop: games.isCoop,
+      isMultiplayer: games.isMultiplayer,
+      isReleased: games.isReleased,
+      reviewLastUpdated: games.reviewLastUpdated,
+      hltbLastUpdated: games.hltbLastUpdated,
+      isOwned: userGames.isOwned,
+      isWishlisted: userGames.isWishlisted,
+      isWatchlisted: userGames.isWatchlisted,
+      isIgnored: userGames.isIgnored,
+      playtimeMinutes: userGames.playtimeMinutes,
+      personalInterest: userGames.personalInterest,
+      lastPlayed: userGames.lastPlayed,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isWishlisted, true),
+        eq(games.isReleased, false),
+      )
+    )
+    .orderBy(asc(games.title))
+    .all();
+
+  const gameIds = results.map((r) => r.id);
+
+  // Batch-fetch tags
+  const tagRows =
+    gameIds.length > 0
+      ? db
+          .select({ gameId: gameTags.gameId, name: tags.name, type: tags.type })
+          .from(gameTags)
+          .innerJoin(tags, eq(gameTags.tagId, tags.id))
+          .where(inArray(gameTags.gameId, gameIds))
+          .all()
+      : [];
+
+  const tagsByGame = new Map<number, { tags: string[]; genres: string[] }>();
+  for (const t of tagRows) {
+    if (!tagsByGame.has(t.gameId)) tagsByGame.set(t.gameId, { tags: [], genres: [] });
+    const bucket = tagsByGame.get(t.gameId)!;
+    if (t.type === 'genre') bucket.genres.push(t.name);
+    else bucket.tags.push(t.name);
+  }
+
+  return results.map((r) => ({
+    id: r.id,
+    steamAppId: r.steamAppId,
+    title: r.title,
+    description: r.description ?? undefined,
+    headerImageUrl: r.headerImageUrl ?? undefined,
+    releaseDate: r.releaseDate ?? undefined,
+    developer: r.developer ?? undefined,
+    publisher: r.publisher ?? undefined,
+    reviewScore: r.reviewScore ?? undefined,
+    reviewCount: r.reviewCount ?? undefined,
+    reviewDescription: r.reviewDescription ?? undefined,
+    hltbMain: r.hltbMain ?? undefined,
+    hltbMainExtra: r.hltbMainExtra ?? undefined,
+    hltbCompletionist: r.hltbCompletionist ?? undefined,
+    hltbManual: r.hltbManual ?? undefined,
+    isOwned: r.isOwned ?? false,
+    isWishlisted: r.isWishlisted ?? false,
+    isWatchlisted: r.isWatchlisted ?? false,
+    isIgnored: r.isIgnored ?? false,
+    playtimeMinutes: r.playtimeMinutes ?? 0,
+    personalInterest: r.personalInterest ?? 3,
+    lastPlayed: r.lastPlayed ?? undefined,
+    tags: tagsByGame.get(r.id)?.tags ?? [],
+    genres: tagsByGame.get(r.id)?.genres ?? [],
+    isCoop: r.isCoop ?? false,
+    isMultiplayer: r.isMultiplayer ?? false,
+    isReleased: r.isReleased ?? undefined,
+    dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
+    reviewLastUpdated: r.reviewLastUpdated ?? undefined,
+    hltbLastUpdated: r.hltbLastUpdated ?? undefined,
+  }));
+}
+
+/**
+ * Count unreleased wishlisted games (for dashboard/crosslinks).
+ */
+export function getUnreleasedCount(userId: string): number {
+  const db = getDb();
+  const row = db
+    .select({ count: sql<number>`count(*)` })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isWishlisted, true),
+        eq(games.isReleased, false),
+      )
+    )
+    .get();
+  return row?.count ?? 0;
+}
+
+/**
+ * Get games whose isReleased status needs checking (for release status sync).
+ * Only checks wishlisted games to avoid unnecessary API calls.
+ */
+export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: number; title: string }> {
+  const db = getDb();
+  return db
+    .selectDistinct({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(games.isReleased, false),
+        eq(userGames.isWishlisted, true),
+      )
+    )
+    .all();
+}
+
+/**
+ * Mark a game as released.
+ */
+export function markGameAsReleased(gameId: number): void {
+  const db = getDb();
+  db.update(games)
+    .set({ isReleased: true, updatedAt: new Date().toISOString() })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+// ============================================
 // Triage (Interest Rating)
 // ============================================
 

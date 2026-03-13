@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -11,26 +12,93 @@ import {
   ListChecks,
   Settings,
   TrendingDown,
+  CalendarClock,
+  MoreHorizontal,
+  X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
-const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+interface NavItem {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
+  {
+    label: 'Browse',
+    items: [
+      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'My Games',
+    items: [
+      { name: 'Library', href: '/library', icon: Library },
+      { name: 'Backlog', href: '/backlog', icon: Gamepad2 },
+    ],
+  },
+  {
+    label: 'Tracking',
+    items: [
+      { name: 'Wishlist', href: '/wishlist', icon: Heart },
+      { name: 'Releases', href: '/releases', icon: CalendarClock },
+      { name: 'Watchlist', href: '/watchlist', icon: Bell },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { name: 'Triage', href: '/triage', icon: ListChecks },
+      { name: 'Settings', href: '/settings', icon: Settings },
+    ],
+  },
+];
+
+/** Primary mobile tabs (shown in bottom bar) */
+const mobileTabItems: NavItem[] = [
+  { name: 'Home', href: '/', icon: LayoutDashboard },
   { name: 'Library', href: '/library', icon: Library },
   { name: 'Wishlist', href: '/wishlist', icon: Heart },
   { name: 'Backlog', href: '/backlog', icon: Gamepad2 },
-  { name: 'Triage', href: '/triage', icon: ListChecks },
+];
+
+/** Secondary items (shown in More menu) */
+const mobileMoreItems: NavItem[] = [
+  { name: 'Releases', href: '/releases', icon: CalendarClock },
   { name: 'Watchlist', href: '/watchlist', icon: Bell },
+  { name: 'Triage', href: '/triage', icon: ListChecks },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 function isNavActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
-  // Settings sub-routes should highlight the Settings nav item
   return pathname === href || pathname.startsWith(href + '/');
+}
+
+function isMoreActive(pathname: string): boolean {
+  return mobileMoreItems.some((item) => isNavActive(pathname, item.href));
 }
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const closeMore = useCallback(() => setMoreOpen(false), []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMore();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [moreOpen, closeMore]);
 
   return (
     <>
@@ -48,24 +116,33 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
-          {navigation.map((item) => {
-            const isActive = isNavActive(pathname, item.href);
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-secondary text-secondary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.name}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 p-4 space-y-4">
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                {section.label}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const isActive = isNavActive(pathname, item.href);
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-secondary text-secondary-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Footer */}
@@ -79,7 +156,7 @@ export function Sidebar() {
       {/* Mobile bottom tab bar */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
         <div className="flex items-center justify-around h-16">
-          {navigation.map((item) => {
+          {mobileTabItems.map((item) => {
             const isActive = isNavActive(pathname, item.href);
             return (
               <Link
@@ -96,8 +173,74 @@ export function Sidebar() {
               </Link>
             );
           })}
+
+          {/* More button */}
+          <button
+            onClick={() => setMoreOpen(true)}
+            aria-label="More navigation options"
+            aria-expanded={moreOpen}
+            aria-controls="mobile-more-menu"
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 h-full text-[11px] font-medium transition-colors ${
+              isMoreActive(pathname)
+                ? 'text-steam-blue'
+                : 'text-muted-foreground'
+            }`}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+            More
+          </button>
         </div>
       </nav>
+
+      {/* Mobile More menu (bottom sheet) */}
+      {moreOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="lg:hidden fixed inset-0 z-[60] bg-black/50"
+            onClick={() => setMoreOpen(false)}
+          />
+
+          {/* Sheet */}
+          <div
+            id="mobile-more-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-label="More navigation"
+            className="lg:hidden fixed bottom-0 left-0 right-0 z-[70] bg-card border-t border-border rounded-t-2xl safe-bottom"
+          >
+            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+              <h3 className="text-sm font-semibold text-foreground">More</h3>
+              <button
+                onClick={() => setMoreOpen(false)}
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <nav className="px-2 pb-4 space-y-0.5">
+              {mobileMoreItems.map((item) => {
+                const isActive = isNavActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    onClick={() => setMoreOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-secondary text-secondary-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                    }`}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        </>
+      )}
     </>
   );
 }

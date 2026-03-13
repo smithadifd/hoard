@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen, Star } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getReviewCoverage, getBacklogStats, getAlertStats } from '@/lib/db/queries';
+import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen, Star, CalendarClock } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getReviewCoverage, getBacklogStats, getAlertStats, getUnreleasedWishlistGames } from '@/lib/db/queries';
+import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,7 @@ export default async function DashboardPage() {
   let backlogStats = { unplayedCount: 0, totalOwned: 0 };
   let alertStats = { activeCount: 0, recentlyTriggered: 0 };
   let lastSyncLabel = 'Never';
+  let upcomingReleases: Array<{ title: string; releaseLabel: string; id: number }> = [];
 
   try {
     stats = getDashboardStats(session.user.id);
@@ -24,6 +26,25 @@ export default async function DashboardPage() {
     reviewCoverage = getReviewCoverage();
     backlogStats = getBacklogStats(session.user.id);
     alertStats = getAlertStats(session.user.id);
+
+    // Get upcoming releases for the dashboard card
+    const unreleasedGames = getUnreleasedWishlistGames(session.user.id);
+    const now = new Date();
+    upcomingReleases = unreleasedGames
+      .map((g) => {
+        const parsed = parseReleaseDate(g.releaseDate);
+        const bucket = getReleaseBucket(parsed, now);
+        return { title: g.title, releaseLabel: parsed.label, id: g.id, bucket, date: parsed.date };
+      })
+      // Show games with known dates first, sorted by date, then TBD
+      .sort((a, b) => {
+        if (a.date && b.date) return a.date.getTime() - b.date.getTime();
+        if (a.date) return -1;
+        if (b.date) return 1;
+        return a.title.localeCompare(b.title);
+      })
+      .slice(0, 5);
+
     const logs = getRecentSyncLogs(5);
     const lastSync = logs.find((l) => l.status === 'success' || l.status === 'partial');
     if (lastSync?.completedAt) {
@@ -191,6 +212,33 @@ export default async function DashboardPage() {
               {alertStats.activeCount > 0 ? `${alertStats.activeCount} active alerts` : 'Set up price alerts'}
             </p>
           </Link>
+        </div>
+      )}
+
+      {/* Upcoming Releases */}
+      {upcomingReleases.length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Upcoming Releases</h2>
+            </div>
+            <Link href="/releases" className="text-xs text-primary hover:underline">
+              View all
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {upcomingReleases.map((game) => (
+              <Link
+                key={game.id}
+                href={`/games/${game.id}`}
+                className="flex items-center justify-between py-1.5 text-sm hover:text-steam-blue transition-colors group"
+              >
+                <span className="truncate font-medium group-hover:text-steam-blue">{game.title}</span>
+                <span className="text-xs text-muted-foreground ml-2 shrink-0">{game.releaseLabel}</span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
     </div>
