@@ -30,6 +30,7 @@ const SOURCE_LABELS: Record<string, string> = {
   reviews: 'Steam Reviews',
   alert_check: 'Price Alerts',
   database_backup: 'Database Backup',
+  release_check: 'Release Check',
 };
 
 function formatRelativeTime(isoDate: string): string {

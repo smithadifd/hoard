@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getEnrichedGames } from '@/lib/db/queries';
+import { getEnrichedGames, getUnreleasedCount } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { WishlistGrid } from './WishlistGrid';
 import { GameListFilters } from '@/components/filters/GameListFilters';
@@ -42,6 +43,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
   const { games, total, totalUnfiltered } = getEnrichedGames(filters, page, pageSize, session.user.id);
 
   const hiddenCount = totalUnfiltered !== undefined ? totalUnfiltered - total : 0;
+  const unreleasedCount = getUnreleasedCount(session.user.id);
 
   const paginationParams: Record<string, string> = {};
   const showAllSearchParams = new URLSearchParams();
@@ -63,13 +65,20 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
           {total > 0
             ? hiddenCount > 0
               ? <>
-                  {total} of {totalUnfiltered} wishlisted games (
-                  <a href={showAllHref} className="text-primary underline-offset-4 hover:underline">
-                    {hiddenCount} hidden
-                  </a>
-                  )
+                  {total} of {totalUnfiltered} wishlisted games
+                  {unreleasedCount > 0 && (
+                    <> ({unreleasedCount} upcoming — <Link href="/releases" className="text-primary underline-offset-4 hover:underline">view releases</Link>)</>
+                  )}
+                  {hiddenCount > unreleasedCount && (
+                    <> · <a href={showAllHref} className="text-primary underline-offset-4 hover:underline">{hiddenCount - unreleasedCount} hidden</a></>
+                  )}
                 </>
-              : `${total} wishlisted games`
+              : <>
+                  {total} wishlisted games
+                  {unreleasedCount > 0 && (
+                    <> ({unreleasedCount} upcoming — <Link href="/releases" className="text-primary underline-offset-4 hover:underline">view releases</Link>)</>
+                  )}
+                </>
             : 'Your wishlisted games — see deals at a glance'}
         </p>
       </div>
