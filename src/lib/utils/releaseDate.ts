@@ -44,8 +44,8 @@ export function parseReleaseDate(raw: string | null | undefined): ParsedReleaseD
 
   const trimmed = raw.trim();
 
-  // Check for TBD-like strings
-  if (TBD_PATTERNS.some((p) => trimmed.toLowerCase().includes(p))) {
+  // Check for TBD-like strings (exact match to avoid misclassifying "Coming Soon: Dec 2026")
+  if (TBD_PATTERNS.some((p) => trimmed.toLowerCase() === p)) {
     return { date: null, precision: 'unknown', label: trimmed };
   }
 
@@ -129,15 +129,16 @@ export function getReleaseBucket(parsed: ParsedReleaseDate, now: Date = new Date
     if (dateYear < currentYear) return 'overdue';
   }
 
-  // Same month and year
-  if (dateYear === currentYear && dateMonth === currentMonth) return 'this-month';
+  // For day/month precision, use granular this-month/next-month buckets
+  if (parsed.precision === 'day' || parsed.precision === 'month') {
+    if (dateYear === currentYear && dateMonth === currentMonth) return 'this-month';
 
-  // Next month (handle December → January)
-  const nextMonth = currentMonth === 11 ? 0 : currentMonth + 1;
-  const nextMonthYear = currentMonth === 11 ? currentYear + 1 : currentYear;
-  if (dateYear === nextMonthYear && dateMonth === nextMonth) return 'next-month';
+    const nextMonth = currentMonth === 11 ? 0 : currentMonth + 1;
+    const nextMonthYear = currentMonth === 11 ? currentYear + 1 : currentYear;
+    if (dateYear === nextMonthYear && dateMonth === nextMonth) return 'next-month';
+  }
 
-  // Later this year
+  // Later this year (all precisions)
   if (dateYear === currentYear) return 'later-this-year';
 
   // Next year

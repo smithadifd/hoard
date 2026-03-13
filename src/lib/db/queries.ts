@@ -1726,6 +1726,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
     hltbMain: r.hltbMain ?? undefined,
     hltbMainExtra: r.hltbMainExtra ?? undefined,
     hltbCompletionist: r.hltbCompletionist ?? undefined,
+    hltbManual: r.hltbManual ?? undefined,
     isOwned: r.isOwned ?? false,
     isWishlisted: r.isWishlisted ?? false,
     isWatchlisted: r.isWatchlisted ?? false,
@@ -1766,18 +1767,24 @@ export function getUnreleasedCount(userId: string): number {
 
 /**
  * Get games whose isReleased status needs checking (for release status sync).
- * Returns steamAppIds of games marked as unreleased.
+ * Only checks wishlisted games to avoid unnecessary API calls.
  */
 export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: number; title: string }> {
   const db = getDb();
   return db
-    .select({
+    .selectDistinct({
       id: games.id,
       steamAppId: games.steamAppId,
       title: games.title,
     })
     .from(games)
-    .where(eq(games.isReleased, false))
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(games.isReleased, false),
+        eq(userGames.isWishlisted, true),
+      )
+    )
     .all();
 }
 

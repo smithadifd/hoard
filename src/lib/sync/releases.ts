@@ -79,7 +79,7 @@ export async function checkReleaseStatus(): Promise<SyncResult> {
     }
   }
 
-  const status = failed > 0 && checked === 0 ? 'error' : 'success';
+  const status = failed > 0 && checked === 0 ? 'error' : failed > 0 ? 'partial' : 'success';
   completeSyncLog(syncLogId, status, checked, undefined, unreleasedGames.length, failed);
 
   if (released > 0) {

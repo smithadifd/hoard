@@ -1,6 +1,6 @@
 # Plan 16: Separate Releases from Wishlist
 
-**Status**: Draft
+**Status**: Complete
 **Created**: 2026-03-10
 **Motivation**: Wishlisted games often include upcoming/unreleased titles that clutter the actual wishlist. These are conceptually different — "games I'm tracking for release" vs "games I want to buy." Currently unreleased games are hidden by default (`hideUnreleased=true`) but have no dedicated home.
 

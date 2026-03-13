@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -89,6 +89,17 @@ export function Sidebar() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
+  const closeMore = useCallback(() => setMoreOpen(false), []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMore();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [moreOpen, closeMore]);
+
   return (
     <>
       {/* Desktop sidebar */}
@@ -166,6 +177,9 @@ export function Sidebar() {
           {/* More button */}
           <button
             onClick={() => setMoreOpen(true)}
+            aria-label="More navigation options"
+            aria-expanded={moreOpen}
+            aria-controls="mobile-more-menu"
             className={`flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 h-full text-[11px] font-medium transition-colors ${
               isMoreActive(pathname)
                 ? 'text-steam-blue'
@@ -188,7 +202,13 @@ export function Sidebar() {
           />
 
           {/* Sheet */}
-          <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[70] bg-card border-t border-border rounded-t-2xl safe-bottom">
+          <div
+            id="mobile-more-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-label="More navigation"
+            className="lg:hidden fixed bottom-0 left-0 right-0 z-[70] bg-card border-t border-border rounded-t-2xl safe-bottom"
+          >
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
               <h3 className="text-sm font-semibold text-foreground">More</h3>
               <button
