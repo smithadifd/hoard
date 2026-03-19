@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Eye, EyeOff, Star, Loader2, Bell, BellOff, Check, Ban, ListMinus, ListPlus } from 'lucide-react';
+import { Eye, EyeOff, Star, Loader2, Bell, BellOff, BellRing, Check, Ban, ListMinus, ListPlus } from 'lucide-react';
 import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface GameUserControlsProps {
@@ -11,6 +11,7 @@ interface GameUserControlsProps {
   interest: number;
   isWatchlisted: boolean;
   isIgnored: boolean;
+  autoAlertDisabled: boolean;
   notes?: string;
   priceThreshold?: number;
   notifyOnAllTimeLow?: boolean;
@@ -26,6 +27,7 @@ export function GameUserControls({
   interest: initialInterest,
   isWatchlisted: initialWatchlisted,
   isIgnored: initialIgnored,
+  autoAlertDisabled: initialAutoAlertDisabled,
   notes: initialNotes,
   priceThreshold: initialThreshold,
   notifyOnAllTimeLow: initialAtl = true,
@@ -38,6 +40,7 @@ export function GameUserControls({
   const [interest, setInterest] = useState(initialInterest);
   const [isWatchlisted, setIsWatchlisted] = useState(initialWatchlisted);
   const [isIgnored, setIsIgnored] = useState(initialIgnored);
+  const [autoAlertDisabled, setAutoAlertDisabled] = useState(initialAutoAlertDisabled);
   const [notes, setNotes] = useState(initialNotes || '');
   const [notifyAtl, setNotifyAtl] = useState(initialAtl);
   const [notifyThreshold, setNotifyThreshold] = useState(initialThresholdNotify);
@@ -89,6 +92,12 @@ export function GameUserControls({
     const newValue = !isIgnored;
     setIsIgnored(newValue);
     save({ isIgnored: newValue });
+  };
+
+  const toggleAutoAlert = () => {
+    const newValue = !autoAlertDisabled;
+    setAutoAlertDisabled(newValue);
+    save({ autoAlertDisabled: newValue });
   };
 
   const handleNotesBlur = () => {
@@ -211,6 +220,21 @@ export function GameUserControls({
         <Ban className="h-4 w-4" />
         {isIgnored ? 'Excluded from Backlog' : 'Exclude from Backlog'}
       </button>
+
+      {/* Auto ATL Deal Alert Opt-Out (shown when wishlisted) */}
+      {isWishlisted && (
+        <button
+          onClick={toggleAutoAlert}
+          className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            autoAlertDisabled
+              ? 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+              : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+          }`}
+        >
+          <BellRing className="h-4 w-4" />
+          {autoAlertDisabled ? 'Auto Deal Alerts Disabled' : 'Auto Deal Alerts Enabled'}
+        </button>
+      )}
 
       {/* Alert Controls (shown when watchlisted) */}
       {isWatchlisted && (

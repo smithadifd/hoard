@@ -68,6 +68,7 @@ export const gameUpdateSchema = z.object({
   notes: z.string().max(2000).optional(),
   isWatchlisted: z.boolean().optional(),
   isIgnored: z.boolean().optional(),
+  autoAlertDisabled: z.boolean().optional(),
   isWishlisted: z.boolean().optional(),
   priceThreshold: z.number().min(0).max(10000).optional(),
   // Manual HLTB data entry (null to clear)
@@ -119,6 +120,7 @@ const settingsKeyEnum = z.enum([
   'backlog_threshold_percent',
   'play_again_completion_pct',
   'play_again_dormant_months',
+  'auto_atl_deal_alerts',
 ]);
 
 export const settingsUpdateSchema = z.object({
