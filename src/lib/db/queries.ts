@@ -565,6 +565,7 @@ export function getEnrichedGames(
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
       isIgnored: userGames.isIgnored,
+      autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
@@ -652,6 +653,7 @@ export function getEnrichedGames(
       isWishlisted: r.isWishlisted ?? false,
       isWatchlisted: r.isWatchlisted ?? false,
       isIgnored: r.isIgnored ?? false,
+      autoAlertDisabled: r.autoAlertDisabled ?? false,
       playtimeMinutes: r.playtimeMinutes ?? 0,
       personalInterest: r.personalInterest ?? 3,
       lastPlayed: r.lastPlayed ?? undefined,
@@ -845,6 +847,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
       isIgnored: userGames.isIgnored,
+      autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
@@ -899,6 +902,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     isWishlisted: row.isWishlisted ?? false,
     isWatchlisted: row.isWatchlisted ?? false,
     isIgnored: row.isIgnored ?? false,
+    autoAlertDisabled: row.autoAlertDisabled ?? false,
     playtimeMinutes: row.playtimeMinutes ?? 0,
     personalInterest: row.personalInterest ?? 3,
     lastPlayed: row.lastPlayed ?? undefined,
@@ -1496,6 +1500,7 @@ export function updateUserGame(
     isIgnored: boolean;
     priceThreshold: number;
     isWishlisted: boolean;
+    autoAlertDisabled: boolean;
   }>,
   userId: string
 ): boolean {
@@ -1511,7 +1516,7 @@ export function updateUserGame(
         : undefined;
 
   // Only spread known user_games columns to prevent unexpected fields leaking through
-  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted } = updates;
+  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled } = updates;
 
   const result = db
     .update(userGames)
@@ -1522,6 +1527,7 @@ export function updateUserGame(
       ...(isIgnored !== undefined && { isIgnored }),
       ...(priceThreshold !== undefined && { priceThreshold }),
       ...(isWishlisted !== undefined && { isWishlisted }),
+      ...(autoAlertDisabled !== undefined && { autoAlertDisabled }),
       updatedAt: now,
       // Track when interest was explicitly rated
       ...(personalInterest !== undefined && { interestRatedAt: now }),
@@ -1674,6 +1680,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
       isIgnored: userGames.isIgnored,
+      autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
@@ -1684,7 +1691,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       and(
         eq(userGames.userId, userId),
         eq(userGames.isWishlisted, true),
-        eq(games.isReleased, false),
+        or(eq(games.isReleased, false), isNull(games.isReleased)),
       )
     )
     .orderBy(asc(games.title))
@@ -1731,6 +1738,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
     isWishlisted: r.isWishlisted ?? false,
     isWatchlisted: r.isWatchlisted ?? false,
     isIgnored: r.isIgnored ?? false,
+    autoAlertDisabled: r.autoAlertDisabled ?? false,
     playtimeMinutes: r.playtimeMinutes ?? 0,
     personalInterest: r.personalInterest ?? 3,
     lastPlayed: r.lastPlayed ?? undefined,
@@ -1758,7 +1766,7 @@ export function getUnreleasedCount(userId: string): number {
       and(
         eq(userGames.userId, userId),
         eq(userGames.isWishlisted, true),
-        eq(games.isReleased, false),
+        or(eq(games.isReleased, false), isNull(games.isReleased)),
       )
     )
     .get();
@@ -1781,7 +1789,7 @@ export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: numbe
     .innerJoin(userGames, eq(games.id, userGames.gameId))
     .where(
       and(
-        eq(games.isReleased, false),
+        or(eq(games.isReleased, false), isNull(games.isReleased)),
         eq(userGames.isWishlisted, true),
       )
     )
@@ -2220,4 +2228,97 @@ export function getAlertStats(userId: string): { activeCount: number; recentlyTr
     activeCount: activeRow?.count ?? 0,
     recentlyTriggered: triggeredRow?.count ?? 0,
   };
+}
+
+// ===========================================
+// Auto ATL Deal Alerts
+// ===========================================
+
+export interface AutoAlertCandidate {
+  gameId: number;
+  title: string;
+  headerImageUrl: string | null;
+  steamAppId: number;
+  reviewDescription: string | null;
+  hltbMain: number | null;
+  currentPrice: number;
+  regularPrice: number;
+  discountPercent: number;
+  historicalLowPrice: number | null;
+  dealScore: number;
+  store: string;
+  storeUrl: string | null;
+  lastAutoAlertAt: string | null;
+}
+
+/**
+ * Get wishlisted, released games at ATL with deal score >= minScore
+ * that don't have an explicit price alert and haven't opted out.
+ */
+export function getAutoAlertCandidates(userId: string, minDealScore: number): AutoAlertCandidate[] {
+  const db = getDb();
+
+  interface RawRow {
+    gameId: number;
+    title: string;
+    headerImageUrl: string | null;
+    steamAppId: number;
+    reviewDescription: string | null;
+    hltbMain: number | null;
+    currentPrice: number;
+    regularPrice: number;
+    discountPercent: number;
+    historicalLowPrice: number | null;
+    dealScore: number;
+    store: string;
+    storeUrl: string | null;
+    lastAutoAlertAt: string | null;
+  }
+
+  const rows = db.all(sql`
+    SELECT
+      g.id as gameId,
+      g.title,
+      g.header_image_url as headerImageUrl,
+      g.steam_app_id as steamAppId,
+      g.review_description as reviewDescription,
+      g.hltb_main as hltbMain,
+      ps.price_current as currentPrice,
+      ps.price_regular as regularPrice,
+      ps.discount_percent as discountPercent,
+      ps.historical_low_price as historicalLowPrice,
+      ps.deal_score as dealScore,
+      ps.store,
+      ps.url as storeUrl,
+      ug.last_auto_alert_at as lastAutoAlertAt
+    FROM user_games ug
+    INNER JOIN games g ON ug.game_id = g.id
+    INNER JOIN price_snapshots ps ON g.id = ps.game_id
+      AND ps.id = (
+        SELECT ps2.id FROM price_snapshots ps2
+        WHERE ps2.game_id = g.id
+        ORDER BY ps2.snapshot_date DESC, ps2.deal_score DESC
+        LIMIT 1
+      )
+    WHERE ug.user_id = ${userId}
+      AND ug.is_wishlisted = 1
+      AND (ug.auto_alert_disabled = 0 OR ug.auto_alert_disabled IS NULL)
+      AND g.is_released = 1
+      AND ps.is_historical_low = 1
+      AND ps.deal_score >= ${minDealScore}
+      AND NOT EXISTS (
+        SELECT 1 FROM price_alerts pa
+        WHERE pa.game_id = g.id AND pa.user_id = ${userId}
+      )
+  `) as RawRow[];
+
+  return rows;
+}
+
+export function updateAutoAlertLastNotified(gameId: number, userId: string): void {
+  const db = getDb();
+  db.update(userGames)
+    .set({ lastAutoAlertAt: new Date().toISOString() })
+    .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+    .run();
 }
