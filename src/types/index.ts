@@ -34,6 +34,7 @@ export interface EnrichedGame {
   isWishlisted: boolean;
   isWatchlisted: boolean;
   isIgnored: boolean;
+  autoAlertDisabled: boolean;
   playtimeMinutes: number;
   personalInterest: number;
   lastPlayed?: string;
