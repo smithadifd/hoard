@@ -11,6 +11,9 @@ import { getDiscordClient } from '../discord/client';
 import {
   getActivePriceAlerts,
   updateAlertLastNotified,
+  getAutoAlertCandidates,
+  updateAutoAlertLastNotified,
+  getSetting,
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
@@ -96,9 +99,59 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       }
     }
 
-    console.log(`[AlertCheck] Sent ${notifiedCount} notifications, ${throttled} throttled`);
-    completeSyncLog(syncLogId, 'success', notifiedCount, undefined, activeAlerts.length, 0);
-    return { stats: { attempted: activeAlerts.length, succeeded: notifiedCount, failed: 0, skipped: throttled }, syncLogId };
+    // Auto ATL deal alerts: notify for wishlisted games at ATL with good+ deal score
+    let autoNotified = 0;
+    let autoThrottled = 0;
+    const autoAtlEnabled = getSetting('auto_atl_deal_alerts') !== 'false'; // default on
+    if (autoAtlEnabled) {
+      const minScore = 55; // "Good" deal threshold
+      const candidates = getAutoAlertCandidates(effectiveUserId, minScore);
+      console.log(`[AlertCheck] ${candidates.length} auto ATL deal candidates`);
+
+      for (const candidate of candidates) {
+        // Throttle: skip if auto-notified within configured period
+        if (candidate.lastAutoAlertAt) {
+          const lastNotified = new Date(candidate.lastAutoAlertAt);
+          const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+          if (hoursSince < config.alertThrottleHours) {
+            autoThrottled++;
+            continue;
+          }
+        }
+
+        let dollarsPerHour: number | undefined;
+        if (candidate.hltbMain && candidate.hltbMain > 0) {
+          dollarsPerHour = candidate.currentPrice / candidate.hltbMain;
+        }
+
+        const sent = await discord.sendPriceAlert({
+          title: candidate.title,
+          headerImageUrl: candidate.headerImageUrl ?? undefined,
+          currentPrice: candidate.currentPrice,
+          regularPrice: candidate.regularPrice,
+          historicalLow: candidate.historicalLowPrice ?? candidate.currentPrice,
+          discountPercent: candidate.discountPercent,
+          store: candidate.store,
+          storeUrl: candidate.storeUrl ?? `https://store.steampowered.com/app/${candidate.steamAppId}`,
+          dollarsPerHour,
+          reviewDescription: candidate.reviewDescription ?? undefined,
+          dealScore: candidate.dealScore,
+        });
+
+        if (sent) {
+          updateAutoAlertLastNotified(candidate.gameId, effectiveUserId);
+          autoNotified++;
+          console.log(`[AlertCheck] Auto ATL: ${candidate.title} at $${candidate.currentPrice.toFixed(2)} (score: ${candidate.dealScore})`);
+        }
+      }
+    }
+
+    const totalNotified = notifiedCount + autoNotified;
+    const totalThrottled = throttled + autoThrottled;
+    const totalAttempted = activeAlerts.length + (autoAtlEnabled ? (autoNotified + autoThrottled) : 0);
+    console.log(`[AlertCheck] Sent ${totalNotified} notifications (${autoNotified} auto ATL), ${totalThrottled} throttled`);
+    completeSyncLog(syncLogId, 'success', totalNotified, undefined, totalAttempted, 0);
+    return { stats: { attempted: totalAttempted, succeeded: totalNotified, failed: 0, skipped: totalThrottled }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[AlertCheck] Failed:', error);

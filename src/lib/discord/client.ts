@@ -94,6 +94,7 @@ export class DiscordClient {
     storeUrl: string;
     dollarsPerHour?: number;
     reviewDescription?: string;
+    dealScore?: number;
   }): Promise<boolean> {
     const isFree = game.currentPrice === 0;
     const isAllTimeLow = game.currentPrice <= game.historicalLow;
@@ -152,6 +153,15 @@ export class DiscordClient {
       embed.fields!.push({
         name: 'Reviews',
         value: game.reviewDescription,
+        inline: true,
+      });
+    }
+
+    if (game.dealScore !== undefined) {
+      const rating = game.dealScore >= 85 ? 'Excellent' : game.dealScore >= 70 ? 'Great' : game.dealScore >= 55 ? 'Good' : 'Okay';
+      embed.fields!.push({
+        name: 'Deal Score',
+        value: `${game.dealScore}/100 (${rating})`,
         inline: true,
       });
     }

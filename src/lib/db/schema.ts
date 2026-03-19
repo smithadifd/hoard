@@ -70,6 +70,8 @@ export const userGames = sqliteTable('user_games', {
   isWatchlisted: integer('is_watchlisted', { mode: 'boolean' }).default(false),
   isIgnored: integer('is_ignored', { mode: 'boolean' }).default(false),
   wishlistRemovedAt: text('wishlist_removed_at'), // ISO timestamp; non-null = removed locally
+  autoAlertDisabled: integer('auto_alert_disabled', { mode: 'boolean' }).default(false), // Opt out of auto ATL deal alerts
+  lastAutoAlertAt: text('last_auto_alert_at'), // Throttle tracking for auto ATL deal alerts
   // Playtime from Steam
   playtimeMinutes: integer('playtime_minutes').default(0),
   playtimeRecentMinutes: integer('playtime_recent_minutes').default(0), // last 2 weeks
