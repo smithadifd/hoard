@@ -26,7 +26,6 @@ import {
   getActivePriceAlerts,
   updateAlertLastNotified,
   getAutoAlertCandidates,
-  updateAutoAlertLastNotified,
   getSetting,
   createSyncLog,
   completeSyncLog,
