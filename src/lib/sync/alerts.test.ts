@@ -11,6 +11,9 @@ vi.mock('../discord/client', () => ({
 vi.mock('../db/queries', () => ({
   getActivePriceAlerts: vi.fn(),
   updateAlertLastNotified: vi.fn(),
+  getAutoAlertCandidates: vi.fn(),
+  updateAutoAlertLastNotified: vi.fn(),
+  getSetting: vi.fn(),
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
@@ -22,6 +25,9 @@ import { getDiscordClient } from '../discord/client';
 import {
   getActivePriceAlerts,
   updateAlertLastNotified,
+  getAutoAlertCandidates,
+  updateAutoAlertLastNotified,
+  getSetting,
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
@@ -34,6 +40,8 @@ const mockUpdateNotified = vi.mocked(updateAlertLastNotified);
 const mockCreateSyncLog = vi.mocked(createSyncLog);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
+const mockGetAutoAlertCandidates = vi.mocked(getAutoAlertCandidates);
+const mockGetSetting = vi.mocked(getSetting);
 
 function makeAlert(overrides: Record<string, unknown> = {}) {
   return {
@@ -74,6 +82,8 @@ describe('checkPriceAlerts', () => {
       alertThrottleHours: 24,
     } as ReturnType<typeof getEffectiveConfig>);
     mockGetAlerts.mockReturnValue([]);
+    mockGetAutoAlertCandidates.mockReturnValue([]);
+    mockGetSetting.mockReturnValue(null);
   });
 
   it('returns early with zero stats when no active alerts exist', async () => {
