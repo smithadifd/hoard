@@ -50,7 +50,7 @@
     "@types/sharp": "^0.32.0",
     "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.27",
-    "drizzle-kit": "^0.31.8",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.27.4",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
