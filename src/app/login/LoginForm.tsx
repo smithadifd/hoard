@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
-
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,14 +41,6 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {DEMO_MODE && (
-        <div className="rounded-md bg-amber-600/10 border border-amber-600/30 p-3 text-sm text-amber-400">
-          <p className="font-medium mb-1">Demo Credentials</p>
-          <p>Email: <code className="bg-amber-600/10 px-1 rounded">demo@example.com</code></p>
-          <p>Password: <code className="bg-amber-600/10 px-1 rounded">demo1234!</code></p>
-        </div>
-      )}
-
       {error && (
         <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
           {error}
