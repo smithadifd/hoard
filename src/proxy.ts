@@ -6,7 +6,22 @@ import { getSessionCookie } from 'better-auth/cookies';
  *
  * - Checks for session cookie on all non-public routes
  * - Rate-limits mutating API requests via token bucket
+ * - Blocks mutations in demo mode
  */
+
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+
+/** Endpoints blocked in demo mode (method + path prefix) */
+const DEMO_BLOCKED: { method: string; prefix: string }[] = [
+  { method: 'POST', prefix: '/api/sync' },
+  { method: 'POST', prefix: '/api/steam' },
+  { method: 'POST', prefix: '/api/prices' },
+  { method: 'POST', prefix: '/api/backup' },
+  { method: 'PUT', prefix: '/api/settings' },
+  { method: 'PATCH', prefix: '/api/settings' },
+  { method: 'POST', prefix: '/api/setup' },
+  { method: 'POST', prefix: '/api/alerts/test' },
+];
 
 // --- Public paths that bypass auth ---
 const PUBLIC_PATHS = ['/login', '/setup', '/api/auth', '/api/setup', '/api/health'];
@@ -118,6 +133,19 @@ function applyRateLimit(request: NextRequest): NextResponse | null {
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+
+  // Block mutations in demo mode
+  if (DEMO_MODE) {
+    const method = request.method;
+    for (const rule of DEMO_BLOCKED) {
+      if (method === rule.method && pathname.startsWith(rule.prefix)) {
+        return NextResponse.json(
+          { error: 'This action is disabled in demo mode.' },
+          { status: 403 }
+        );
+      }
+    }
+  }
 
   // Skip auth + rate limiting for static assets
   if (STATIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p))) {
