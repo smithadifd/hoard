@@ -4,6 +4,8 @@ import { useState, useCallback, useRef } from 'react';
 import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock, Star, X } from 'lucide-react';
 import { readSSEStream } from '@/lib/utils/sse';
 
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+
 interface SettingsFormProps {
   initialSettings: Record<string, string>;
 }
@@ -145,154 +147,172 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   return (
     <div className="space-y-8">
       {/* API Keys Section */}
-      <section className="rounded-lg border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold">API Configuration</h2>
-        <p className="text-sm text-muted-foreground">
-          API keys are stored locally in your database and never shared.
-        </p>
+      {DEMO_MODE ? (
+        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold">API Configuration</h2>
+          <p className="text-sm text-muted-foreground">
+            API key configuration is disabled in demo mode.
+          </p>
+        </section>
+      ) : (
+        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold">API Configuration</h2>
+          <p className="text-sm text-muted-foreground">
+            API keys are stored locally in your database and never shared.
+          </p>
 
-        <div className="space-y-3">
-          <FormField
-            label="Steam API Key"
-            placeholder="Your Steam Web API key"
-            helpText="Get one at steamcommunity.com/dev/apikey"
-            value={settings.steam_api_key}
-            onChange={(v) => updateSetting('steam_api_key', v)}
-            type="password"
-          />
-          <FormField
-            label="Steam User ID (Steam64 format)"
-            placeholder="17-digit ID (e.g., 76561198012345678)"
-            helpText="Must be your 17-digit Steam64 ID — not your vanity name. Find it at steamid.io"
-            value={settings.steam_user_id}
-            onChange={(v) => updateSetting('steam_user_id', v)}
-          />
-          <FormField
-            label="IsThereAnyDeal API Key"
-            placeholder="Your ITAD API key"
-            helpText="Get started at docs.isthereanydeal.com"
-            value={settings.itad_api_key}
-            onChange={(v) => updateSetting('itad_api_key', v)}
-            type="password"
-          />
-          <FormField
-            label="Discord Webhook URL (Deals)"
-            placeholder="https://discord.com/api/webhooks/..."
-            helpText="Optional — for price alert notifications"
-            value={settings.discord_webhook_url}
-            onChange={(v) => updateSetting('discord_webhook_url', v)}
-          />
-          <FormField
-            label="Discord Webhook URL (Ops)"
-            placeholder="https://discord.com/api/webhooks/..."
-            helpText="Optional — for sync failures, startup alerts. Falls back to deals webhook if empty."
-            value={settings.discord_ops_webhook_url}
-            onChange={(v) => updateSetting('discord_ops_webhook_url', v)}
-          />
-        </div>
+          <div className="space-y-3">
+            <FormField
+              label="Steam API Key"
+              placeholder="Your Steam Web API key"
+              helpText="Get one at steamcommunity.com/dev/apikey"
+              value={settings.steam_api_key}
+              onChange={(v) => updateSetting('steam_api_key', v)}
+              type="password"
+            />
+            <FormField
+              label="Steam User ID (Steam64 format)"
+              placeholder="17-digit ID (e.g., 76561198012345678)"
+              helpText="Must be your 17-digit Steam64 ID — not your vanity name. Find it at steamid.io"
+              value={settings.steam_user_id}
+              onChange={(v) => updateSetting('steam_user_id', v)}
+            />
+            <FormField
+              label="IsThereAnyDeal API Key"
+              placeholder="Your ITAD API key"
+              helpText="Get started at docs.isthereanydeal.com"
+              value={settings.itad_api_key}
+              onChange={(v) => updateSetting('itad_api_key', v)}
+              type="password"
+            />
+            <FormField
+              label="Discord Webhook URL (Deals)"
+              placeholder="https://discord.com/api/webhooks/..."
+              helpText="Optional — for price alert notifications"
+              value={settings.discord_webhook_url}
+              onChange={(v) => updateSetting('discord_webhook_url', v)}
+            />
+            <FormField
+              label="Discord Webhook URL (Ops)"
+              placeholder="https://discord.com/api/webhooks/..."
+              helpText="Optional — for sync failures, startup alerts. Falls back to deals webhook if empty."
+              value={settings.discord_ops_webhook_url}
+              onChange={(v) => updateSetting('discord_ops_webhook_url', v)}
+            />
+          </div>
 
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
-          >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save Settings
+            </button>
+            {saveStatus === 'success' && (
+              <span className="flex items-center gap-1 text-sm text-deal-great">
+                <CheckCircle className="h-4 w-4" /> Saved
+              </span>
             )}
-            Save Settings
-          </button>
-          {saveStatus === 'success' && (
-            <span className="flex items-center gap-1 text-sm text-deal-great">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          {saveStatus === 'error' && (
-            <span className="flex items-center gap-1 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4" /> Failed to save
-            </span>
-          )}
-        </div>
-      </section>
+            {saveStatus === 'error' && (
+              <span className="flex items-center gap-1 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4" /> Failed to save
+              </span>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Sync Section */}
-      <section className="rounded-lg border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold">Data Sync</h2>
-        {!hasSteamKeys && (
-          <p className="text-sm text-yellow-500">
-            Save your Steam API Key and User ID above before syncing.
+      {DEMO_MODE ? (
+        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Data Sync</h2>
+          <p className="text-sm text-muted-foreground">
+            Data sync is disabled in demo mode. The demo uses pre-loaded data.
           </p>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <SyncButton
-            label="Sync Library"
-            icon={<Library className="h-4 w-4" />}
-            status={syncStatus.library}
-            message={syncMessage.library}
-            detail={syncDetail.library}
-            onClick={() => handleStreamSync('library', '/api/steam/library')}
-            onCancel={() => handleCancel('library')}
-            disabled={!hasSteamKeys}
-            primary
-          />
-          <SyncButton
-            label="Sync Wishlist"
-            icon={<Heart className="h-4 w-4" />}
-            status={syncStatus.wishlist}
-            message={syncMessage.wishlist}
-            detail={syncDetail.wishlist}
-            onClick={() => handleStreamSync('wishlist', '/api/steam/wishlist')}
-            onCancel={() => handleCancel('wishlist')}
-            disabled={!hasSteamKeys}
-          />
-          <SyncButton
-            label="Sync Prices"
-            icon={<DollarSign className="h-4 w-4" />}
-            status={syncStatus.prices}
-            message={syncMessage.prices}
-            detail={syncDetail.prices}
-            onClick={() => handleStreamSync('prices', '/api/sync', {
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 'prices' }),
-            })}
-            onCancel={() => handleCancel('prices')}
-            disabled={!hasItadKey}
-          />
-          <SyncButton
-            label="Sync HLTB"
-            icon={<Clock className="h-4 w-4" />}
-            status={syncStatus.hltb}
-            message={syncMessage.hltb}
-            detail={syncDetail.hltb}
-            onClick={() => handleStreamSync('hltb', '/api/sync', {
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 'hltb' }),
-            })}
-            onCancel={() => handleCancel('hltb')}
-            disabled={!hasSteamKeys}
-          />
-          <SyncButton
-            label="Sync Reviews"
-            icon={<Star className="h-4 w-4" />}
-            status={syncStatus.reviews}
-            message={syncMessage.reviews}
-            detail={syncDetail.reviews}
-            onClick={() => handleStreamSync('reviews', '/api/sync', {
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 'reviews' }),
-            })}
-            onCancel={() => handleCancel('reviews')}
-            disabled={!hasSteamKeys}
-          />
-        </div>
-        {!hasItadKey && hasSteamKeys && (
-          <p className="text-sm text-yellow-500">
-            Save your ITAD API Key above to sync prices.
-          </p>
-        )}
-      </section>
+        </section>
+      ) : (
+        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Data Sync</h2>
+          {!hasSteamKeys && (
+            <p className="text-sm text-yellow-500">
+              Save your Steam API Key and User ID above before syncing.
+            </p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <SyncButton
+              label="Sync Library"
+              icon={<Library className="h-4 w-4" />}
+              status={syncStatus.library}
+              message={syncMessage.library}
+              detail={syncDetail.library}
+              onClick={() => handleStreamSync('library', '/api/steam/library')}
+              onCancel={() => handleCancel('library')}
+              disabled={!hasSteamKeys}
+              primary
+            />
+            <SyncButton
+              label="Sync Wishlist"
+              icon={<Heart className="h-4 w-4" />}
+              status={syncStatus.wishlist}
+              message={syncMessage.wishlist}
+              detail={syncDetail.wishlist}
+              onClick={() => handleStreamSync('wishlist', '/api/steam/wishlist')}
+              onCancel={() => handleCancel('wishlist')}
+              disabled={!hasSteamKeys}
+            />
+            <SyncButton
+              label="Sync Prices"
+              icon={<DollarSign className="h-4 w-4" />}
+              status={syncStatus.prices}
+              message={syncMessage.prices}
+              detail={syncDetail.prices}
+              onClick={() => handleStreamSync('prices', '/api/sync', {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'prices' }),
+              })}
+              onCancel={() => handleCancel('prices')}
+              disabled={!hasItadKey}
+            />
+            <SyncButton
+              label="Sync HLTB"
+              icon={<Clock className="h-4 w-4" />}
+              status={syncStatus.hltb}
+              message={syncMessage.hltb}
+              detail={syncDetail.hltb}
+              onClick={() => handleStreamSync('hltb', '/api/sync', {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'hltb' }),
+              })}
+              onCancel={() => handleCancel('hltb')}
+              disabled={!hasSteamKeys}
+            />
+            <SyncButton
+              label="Sync Reviews"
+              icon={<Star className="h-4 w-4" />}
+              status={syncStatus.reviews}
+              message={syncMessage.reviews}
+              detail={syncDetail.reviews}
+              onClick={() => handleStreamSync('reviews', '/api/sync', {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'reviews' }),
+              })}
+              onCancel={() => handleCancel('reviews')}
+              disabled={!hasSteamKeys}
+            />
+          </div>
+          {!hasItadKey && hasSteamKeys && (
+            <p className="text-sm text-yellow-500">
+              Save your ITAD API Key above to sync prices.
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }

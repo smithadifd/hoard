@@ -35,7 +35,9 @@ function createAuth(): Auth {
         enabled: true,
         maxAge: 5 * 60, // 5 min — avoids DB lookup on most requests
       },
-      expiresIn: 60 * 60 * 24 * 30, // 30 days
+      expiresIn: process.env.DEMO_MODE === 'true'
+        ? 60 * 60 * 24       // 24 hours (demo)
+        : 60 * 60 * 24 * 30, // 30 days (production)
       updateAge: 60 * 60 * 24, // refresh once per day
     },
 

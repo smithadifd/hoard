@@ -8,7 +8,8 @@
  */
 
 import Database from 'better-sqlite3';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, copyFileSync, mkdirSync } from 'fs';
+import { execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,6 +17,44 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const DB_PATH = process.env.DATABASE_URL || join(ROOT, 'data', 'hoard.db');
 const MIGRATIONS_DIR = join(ROOT, 'drizzle');
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+const DEMO_SEED_PATH = join(ROOT, 'data', 'demo', 'demo-seed.db');
+
+function seedDemoData() {
+  if (!DEMO_MODE) return;
+
+  const dataDir = dirname(DB_PATH);
+  mkdirSync(dataDir, { recursive: true });
+
+  // Copy seed DB if DB doesn't exist or is empty
+  if (!existsSync(DB_PATH) || isDatabaseEmpty()) {
+    if (existsSync(DEMO_SEED_PATH)) {
+      console.log('[startup] Demo mode: copying seed database');
+      copyFileSync(DEMO_SEED_PATH, DB_PATH);
+    } else {
+      console.log('[startup] Demo mode: no seed DB found at', DEMO_SEED_PATH);
+    }
+  }
+
+  // Run seed script to create demo user
+  console.log('[startup] Demo mode: running seed script');
+  execSync(`node ${join(ROOT, 'scripts', 'seed-demo.mjs')}`, {
+    stdio: 'inherit',
+    env: { ...process.env, DATABASE_URL: DB_PATH },
+  });
+}
+
+function isDatabaseEmpty() {
+  try {
+    const db = new Database(DB_PATH);
+    const row = db.prepare("SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='games'").get();
+    const isEmpty = !row || row.c === 0;
+    db.close();
+    return isEmpty;
+  } catch {
+    return true;
+  }
+}
 
 function runMigrations() {
   console.log('[startup] Running database migrations...');
@@ -104,6 +143,14 @@ function runMigrations() {
   } else {
     console.log('[startup] Database is up to date');
   }
+}
+
+// Run demo seeding (before migrations — seed DB already has schema)
+try {
+  seedDemoData();
+} catch (error) {
+  console.error('[startup] Demo seeding failed:', error);
+  // Non-fatal in demo mode — continue to migrations
 }
 
 // Run migrations then start the server

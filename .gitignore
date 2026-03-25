@@ -35,8 +35,10 @@ yarn-error.log*
 next-env.d.ts
 
 # database
-/data/
+/data/*
+!data/demo/
 *.db
+!data/demo/demo-seed.db
 *.db-journal
 *.db-wal
 *.db-shm

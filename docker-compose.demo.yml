@@ -1,0 +1,42 @@
+# Demo Docker Compose for Hoard
+# Deployed on AWS EC2 for public demo access
+#
+# Usage:
+#   docker compose -f docker-compose.demo.yml build
+#   docker compose -f docker-compose.demo.yml up -d
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        - NEXT_PUBLIC_APP_URL=https://hoard.smithadifd.com
+    container_name: hoard_demo
+    environment:
+      - DATABASE_URL=/app/data/hoard.db
+      - DEMO_MODE=true
+      - NEXT_PUBLIC_DEMO_MODE=true
+      - NEXT_PUBLIC_APP_URL=https://hoard.smithadifd.com
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=https://hoard.smithadifd.com
+      - TRUSTED_ORIGINS=https://hoard.smithadifd.com
+    volumes:
+      - hoard_demo_data:/app/data
+    ports:
+      - "3011:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+
+volumes:
+  hoard_demo_data:
+    name: hoard_demo_data

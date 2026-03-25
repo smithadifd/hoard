@@ -283,6 +283,37 @@ See `.env.example` for the full list. Key variables:
 | `CRON_LIBRARY_SYNC` | No | Library sync schedule (default: daily 3am) |
 | `TRUSTED_ORIGINS` | No | Comma-separated additional trusted origins for auth |
 | `ALERT_THROTTLE_HOURS` | No | Min hours between alerts per game (default: 24) |
+| `DEMO_MODE` | No | Set `true` to enable demo mode (blocks mutations, disables cron) |
+| `NEXT_PUBLIC_DEMO_MODE` | No | Set `true` for client-side demo UI (credentials on login, settings disabled) |
+
+---
+
+## Demo Mode
+
+For public demo deployment at `https://hoard.smithadifd.com`. Controlled by `DEMO_MODE=true` env var.
+
+### What it does
+- **DemoBanner**: Amber bar at top of every page ("Demo Mode — data resets weekly. View source on GitHub")
+- **Demo credentials**: Shown on login page (`demo@example.com` / `demo1234!`)
+- **Mutation blocking**: Proxy returns 403 for sync, steam, prices, backup, settings, setup, alert test endpoints
+- **Scheduler disabled**: All cron tasks skip registration in demo mode
+- **Settings hidden**: API key fields and sync buttons replaced with "disabled in demo mode" messages
+- **Session expiry**: 24h instead of 30 days
+
+### Demo data
+- `scripts/export-demo-db.mjs <source-db>` — sanitizes a prod DB copy (strips notes, interest, thresholds, API keys, auth data)
+- `data/demo/demo-seed.db` — pre-sanitized SQLite shipped in Docker image (~2.8MB, 538 games, 15k price snapshots)
+- `scripts/seed-demo.mjs` — creates demo user account on startup, links exported user_games
+
+### Demo deployment
+- `docker-compose.demo.yml` — port 3011, 300MB memory limit
+- `scripts/deploy-demo.sh` — SSH to EC2 `demo` host, pull, build, restart
+- `.env.demo` on EC2 contains only `BETTER_AUTH_SECRET`
+
+### Guidelines
+- Existing Synology production workflow is completely untouched
+- Demo data refreshed by re-running `export-demo-db.mjs` against prod
+- Weekly reset via EC2 cron (delete volume + restart container)
 
 ---
 

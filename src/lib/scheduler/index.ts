@@ -30,6 +30,11 @@ const tasks = new Map<string, ScheduledTask>();
  * Prevents concurrent runs of the same task.
  */
 export function registerTask(name: string, schedule: string, fn: TaskFn): void {
+  if (process.env.DEMO_MODE === 'true') {
+    console.log(`[Scheduler] Demo mode — skipping task registration: ${name}`);
+    return;
+  }
+
   if (tasks.has(name)) {
     console.warn(`Task "${name}" already registered, skipping`);
     return;
