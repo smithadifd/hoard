@@ -30,8 +30,8 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "drizzle-orm": "^0.45.1",
-    "lucide-react": "^0.577.0",
-    "next": "^16.1.6",
+    "lucide-react": "^1.0.1",
+    "next": "^16.2.1",
     "node-cron": "^4.2.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -48,18 +48,18 @@
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@types/sharp": "^0.32.0",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.1",
     "autoprefixer": "^10.4.27",
-    "drizzle-kit": "^0.31.8",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.27.4",
     "eslint": "^9.39.2",
-    "eslint-config-next": "^16.1.6",
+    "eslint-config-next": "^16.2.1",
     "postcss": "^8.5.8",
     "serwist": "^9.5.7",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.1"
   }
 }
