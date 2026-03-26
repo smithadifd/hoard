@@ -12,6 +12,7 @@ set -euo pipefail
 REMOTE="demo"
 REMOTE_PATH="/opt/demos/hoard"
 REPO_URL="https://github.com/smithadifd/hoard.git"
+INFRA_DIR="${DEMO_INFRA_DIR:-$HOME/demo-infra}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,7 +23,29 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# --- Ensure SSH access (auto-update security group if IP changed) ---
+ensure_ssh_access() {
+    if [ ! -f "$INFRA_DIR/terraform.tfvars" ]; then
+        warn "demo-infra not found at $INFRA_DIR — skipping IP check"
+        return 0
+    fi
+
+    local current_ip tfvars_ip
+    current_ip=$(curl -s --max-time 5 ifconfig.me)
+    tfvars_ip=$(grep 'admin_ip' "$INFRA_DIR/terraform.tfvars" | sed 's/.*"\(.*\)".*/\1/')
+
+    if [[ "$current_ip" != "$tfvars_ip" ]]; then
+        warn "Admin IP changed ($tfvars_ip -> $current_ip). Updating security group..."
+        (cd "$INFRA_DIR" && ./update-ip.sh)
+        info "Security group updated."
+    else
+        info "Admin IP unchanged ($current_ip)."
+    fi
+}
+
 info "Deploying Hoard demo to EC2..."
+
+ensure_ssh_access
 
 ssh "$REMOTE" bash -s <<REMOTE_SCRIPT
 set -euo pipefail
@@ -52,6 +75,10 @@ if [ ! -f ".env.demo" ]; then
 fi
 
 echo ""
+echo "--- Stopping all containers to free memory for build ---"
+docker stop \$(docker ps -q) 2>/dev/null || true
+
+echo ""
 echo "--- Building Docker image ---"
 docker compose -f docker-compose.demo.yml --env-file .env.demo build
 
@@ -60,8 +87,18 @@ echo "--- Starting containers ---"
 docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
 
 echo ""
+echo "--- Restarting other demo services ---"
+for dir in /opt/demos/*/; do
+    [ "\$dir" = "$REMOTE_PATH/" ] && continue
+    if [ -f "\$dir/docker-compose.demo.yml" ] && [ -f "\$dir/.env.demo" ]; then
+        echo "Restarting \$(basename \$dir)..."
+        (cd "\$dir" && docker compose -f docker-compose.demo.yml --env-file .env.demo up -d) || true
+    fi
+done
+
+echo ""
 echo "--- Container status ---"
-docker compose -f docker-compose.demo.yml ps
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 REMOTE_SCRIPT
 
 info "Waiting for health check..."
