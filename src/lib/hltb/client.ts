@@ -121,6 +121,31 @@ function cleanSearchTitle(title: string): string {
     .trim();
 }
 
+/**
+ * Strip common Steam edition suffixes and parenthetical years to produce
+ * a simplified title more likely to match HLTB's catalog.
+ *
+ * Examples:
+ *   "The Elder Scrolls IV: Oblivion Game of the Year Edition (2009)" → "The Elder Scrolls IV: Oblivion"
+ *   "Grand Theft Auto V Legacy" → "Grand Theft Auto V"
+ *   "Star Wars: Battlefront 2 (Classic, 2005)" → "Star Wars: Battlefront 2"
+ */
+function normalizeGameTitle(title: string): string {
+  let normalized = title;
+
+  // Strip parenthetical content containing years: (2005), (Classic, 2005), (1999)
+  normalized = normalized.replace(/\s*\([^)]*\d{4}[^)]*\)\s*$/, '');
+
+  // Strip common edition/version suffixes (case-insensitive)
+  const editionPattern = /\s*[-–—:]?\s*\b(Game of the Year|GOTY|Enhanced|Deluxe|Ultimate|Complete|Definitive|Special|Legendary|Premium|Gold|Standard|Steam|Maximum|HD|Remastered|Remaster|Anniversary|Director'?s\s*Cut|Digital)\s*(Edition|Version)?\s*$/i;
+  normalized = normalized.replace(editionPattern, '');
+
+  // Strip trailing "Legacy"
+  normalized = normalized.replace(/\s+Legacy\s*$/i, '');
+
+  return normalized.trim();
+}
+
 function buildSearchPayload(gameName: string): string {
   const cleaned = cleanSearchTitle(gameName);
   return JSON.stringify({
@@ -189,14 +214,29 @@ export class HLTBClient {
 
   /**
    * Search HLTB for a game by title.
-   * Returns the best match or null if not found.
+   * If the original title doesn't match, retries with a normalized title
+   * (stripped of edition suffixes, parenthetical years, etc.).
    */
   async search(title: string): Promise<HLTBResult | null> {
     const cached = this.cache.get(title.toLowerCase());
     if (cached) return cached;
 
     try {
-      return await this._searchInner(title, true);
+      const result = await this._searchInner(title, true);
+      if (result && result.similarity >= 0.4) return result;
+
+      // Retry with normalized title if it differs
+      const normalized = normalizeGameTitle(title);
+      if (normalized !== title && normalized.length > 0) {
+        const normalizedResult = await this._searchInner(normalized, true);
+        if (normalizedResult && normalizedResult.similarity >= 0.4) {
+          // Cache under original title too
+          this.cache.set(title.toLowerCase(), normalizedResult);
+          return normalizedResult;
+        }
+      }
+
+      return result;
     } catch (error) {
       console.error(`[HLTB] Search failed for "${title}":`, error);
       return null;

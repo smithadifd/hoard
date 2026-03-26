@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Clock, Search, Loader2, Check, Pencil, X, RefreshCw } from 'lucide-react';
+import { Clock, Search, Loader2, Check, Pencil, X, RefreshCw, Ban } from 'lucide-react';
 
 interface HLTBSearchResult {
   id: string;
@@ -19,6 +19,7 @@ interface HltbEditorProps {
   hltbMainExtra?: number;
   hltbCompletionist?: number;
   hltbManual?: boolean;
+  hltbMissCount?: number;
 }
 
 export function HltbEditor({
@@ -28,6 +29,7 @@ export function HltbEditor({
   hltbMainExtra,
   hltbCompletionist,
   hltbManual,
+  hltbMissCount,
 }: HltbEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -41,6 +43,23 @@ export function HltbEditor({
   const completionistRef = useRef<HTMLInputElement>(null);
 
   const hasData = hltbMain !== undefined && hltbMain > 0;
+  const isExcluded = hltbManual === true && !hasData;
+
+  const handleToggleExclude = async () => {
+    setSaving(true);
+    try {
+      await fetch(`/api/games/${gameId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hltbExcluded: !isExcluded }),
+      });
+      window.location.reload();
+    } catch {
+      // Silent fail
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSearch = async () => {
     setSearching(true);
@@ -177,21 +196,58 @@ export function HltbEditor({
               {hltbManual ? 'Manual override' : 'Auto-synced'}
             </span>
           </div>
+        ) : isExcluded ? (
+          <div className="space-y-2">
+            <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground">
+              <Ban className="h-3 w-3 inline mr-1" />
+              Excluded from HLTB sync
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={handleToggleExclude}
+                disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-md bg-secondary text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors min-h-[44px] disabled:opacity-50"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Resume sync
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditing(true);
+                  setTimeout(handleSearch, 100);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-md bg-secondary text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors min-h-[44px]"
+              >
+                <Search className="h-4 w-4" />
+                Search HLTB
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Auto-sync couldn&#39;t find a match. Search HLTB or enter hours manually.
+              Auto-sync couldn&#39;t find a match{hltbMissCount && hltbMissCount > 2 ? ` (${hltbMissCount} attempts)` : ''}. Search HLTB, enter hours manually, or skip.
             </p>
-            <button
-              onClick={() => {
-                setIsEditing(true);
-                setTimeout(handleSearch, 100);
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-md bg-secondary text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors min-h-[44px]"
-            >
-              <Search className="h-4 w-4" />
-              Search HLTB
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setIsEditing(true);
+                  setTimeout(handleSearch, 100);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-md bg-secondary text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors min-h-[44px]"
+              >
+                <Search className="h-4 w-4" />
+                Search HLTB
+              </button>
+              <button
+                onClick={handleToggleExclude}
+                disabled={saving}
+                className="flex items-center justify-center gap-1 px-3 py-2 rounded-md bg-secondary text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors min-h-[44px] disabled:opacity-50"
+                title="Stop HLTB sync for this game"
+              >
+                <Ban className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

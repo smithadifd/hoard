@@ -12,6 +12,7 @@ export async function register() {
     const { getEffectiveConfig } = await import('@/lib/config');
     const { syncPrices } = await import('@/lib/sync/prices');
     const { syncLibrary } = await import('@/lib/sync/library');
+    const { syncWishlist } = await import('@/lib/sync/wishlist');
     const { syncHltb } = await import('@/lib/sync/hltb');
     const { syncReviews } = await import('@/lib/sync/reviews');
     const { runDatabaseBackup } = await import('@/lib/sync/backup');
@@ -21,6 +22,7 @@ export async function register() {
 
     registerTask('price-check', config.cronPriceCheck, async () => syncPrices());
     registerTask('library-sync', config.cronLibrarySync, async () => syncLibrary());
+    registerTask('wishlist-sync', config.cronWishlistSync, async () => syncWishlist());
     registerTask('hltb-sync', config.cronHltbSync, async () => syncHltb());
     registerTask('review-enrichment', config.cronReviewSync, async () => syncReviews());
 
