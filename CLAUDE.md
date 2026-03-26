@@ -307,13 +307,17 @@ For public demo deployment at `https://hoard.smithadifd.com`. Controlled by `DEM
 
 ### Demo deployment
 - `docker-compose.demo.yml` — port 3011, 300MB memory limit
-- `scripts/deploy-demo.sh` — SSH to EC2 `demo` host, pull, build, restart
+- `scripts/deploy-demo.sh` — manual SSH to EC2 `demo` host, pull, build, restart
 - `.env.demo` on EC2 contains only `BETTER_AUTH_SECRET`
+- **Auto-deploy**: EC2 cron polls for new commits on main every 5 minutes, builds and deploys automatically (see `demo-infra/scripts/auto-deploy.sh`)
+- **Weekly reset**: EC2 cron deletes data volume + restarts container Sunday 4am UTC (see `demo-infra/scripts/reset-demos.sh`)
+- **Deploy log**: `/var/log/demo-deploy.log` on EC2
 
 ### Guidelines
 - Existing Synology production workflow is completely untouched
 - Demo data refreshed by re-running `export-demo-db.mjs` against prod
-- Weekly reset via EC2 cron (delete volume + restart container)
+- New mutation endpoints must check demo mode in `proxy.ts` and block if true
+- `NEXT_PUBLIC_DEMO_MODE` controls client-side demo UI (login page credentials, settings disabled)
 
 ---
 
