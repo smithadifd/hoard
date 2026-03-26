@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react';
 
 const STALE_THRESHOLDS: Record<string, { label: string; hours: number }> = {
   steam_library: { label: 'Library', hours: 48 },
+  steam_wishlist: { label: 'Wishlist', hours: 48 },
   itad_prices: { label: 'Prices', hours: 24 },
   hltb: { label: 'HLTB', hours: 336 }, // 14 days
 };

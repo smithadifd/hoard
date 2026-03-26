@@ -308,6 +308,7 @@ export default async function GameDetailPage({
             hltbMainExtra={game.hltbMainExtra}
             hltbCompletionist={game.hltbCompletionist}
             hltbManual={game.hltbManual}
+            hltbMissCount={game.hltbMissCount}
           />
 
           {/* External Links */}

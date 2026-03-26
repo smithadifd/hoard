@@ -61,12 +61,12 @@ export async function syncHltb(onProgress?: ProgressCallback, signal?: AbortSign
             hltbMain: result.gameplayMain > 0 ? result.gameplayMain : undefined,
             hltbMainExtra: result.gameplayMainExtra > 0 ? result.gameplayMainExtra : undefined,
             hltbCompletionist: result.gameplayCompletionist > 0 ? result.gameplayCompletionist : undefined,
-          });
+          }, false);
           succeeded++;
           onProgress?.(attempted, gamesToSync.length, { gameName: game.title, status: 'matched' });
         } else {
-          // Mark as checked so we don't re-query on next sync
-          updateGameHltbData(game.id, {});
+          // Mark as checked with incremented miss count (triggers backoff)
+          updateGameHltbData(game.id, {}, true);
           skipped++;
           onProgress?.(attempted, gamesToSync.length, { gameName: game.title, status: 'skipped' });
         }
