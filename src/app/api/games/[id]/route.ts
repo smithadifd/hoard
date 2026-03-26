@@ -1,4 +1,4 @@
-import { getEnrichedGameById, updateUserGame, updateManualHltbData } from '@/lib/db/queries';
+import { getEnrichedGameById, updateUserGame, updateManualHltbData, setHltbExcluded } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
@@ -70,10 +70,12 @@ export async function PATCH(
     }
 
     // Separate HLTB fields (games table) from user fields (user_games table)
-    const { hltbMain, hltbMainExtra, hltbCompletionist, ...userFields } = parsed.data;
+    const { hltbMain, hltbMainExtra, hltbCompletionist, hltbExcluded, ...userFields } = parsed.data;
     const hasHltbFields = hltbMain !== undefined || hltbMainExtra !== undefined || hltbCompletionist !== undefined;
 
-    if (hasHltbFields) {
+    if (hltbExcluded !== undefined) {
+      setHltbExcluded(idResult.data.id, hltbExcluded);
+    } else if (hasHltbFields) {
       updateManualHltbData(idResult.data.id, {
         hltbMain: hltbMain ?? null,
         hltbMainExtra: hltbMainExtra ?? null,

@@ -88,7 +88,7 @@ describe('syncHltb', () => {
       hltbMain: 8,
       hltbMainExtra: 12,
       hltbCompletionist: 20,
-    });
+    }, false);
     expect(result.stats.succeeded).toBe(1);
     expect(result.stats.attempted).toBe(1);
   });
@@ -106,7 +106,7 @@ describe('syncHltb', () => {
     await vi.advanceTimersByTimeAsync(2000);
     const result = await promise;
 
-    expect(mockUpdateHltb).toHaveBeenCalledWith(1, {});
+    expect(mockUpdateHltb).toHaveBeenCalledWith(1, {}, true);
     expect(result.stats.skipped).toBe(1);
     expect(result.stats.succeeded).toBe(0);
   });
@@ -124,7 +124,7 @@ describe('syncHltb', () => {
     await vi.advanceTimersByTimeAsync(2000);
     const result = await promise;
 
-    expect(mockUpdateHltb).toHaveBeenCalledWith(1, {});
+    expect(mockUpdateHltb).toHaveBeenCalledWith(1, {}, true);
     expect(result.stats.skipped).toBe(1);
   });
 
@@ -224,7 +224,7 @@ describe('syncHltb', () => {
       hltbMain: undefined,
       hltbMainExtra: undefined,
       hltbCompletionist: undefined,
-    });
+    }, false);
   });
 
   it('propagates fatal errors and logs sync failure', async () => {

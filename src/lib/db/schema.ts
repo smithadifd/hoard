@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, real, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 
 // ===========================================
 // Games - Central entity caching all game data
@@ -26,7 +26,8 @@ export const games = sqliteTable('games', {
   hltbMainExtra: real('hltb_main_extra'), // hours - main + extras
   hltbCompletionist: real('hltb_completionist'), // hours - completionist
   hltbLastUpdated: text('hltb_last_updated'), // ISO date
-  hltbManual: integer('hltb_manual', { mode: 'boolean' }).default(false), // User-entered HLTB data
+  hltbManual: integer('hltb_manual', { mode: 'boolean' }).default(false), // User-entered or explicitly excluded HLTB data
+  hltbMissCount: integer('hltb_miss_count').default(0), // Consecutive failed HLTB lookups (for backoff)
   // Review metadata tracking
   reviewLastUpdated: text('review_last_updated'), // ISO date — tracks when reviews were fetched
   // Metadata
@@ -86,6 +87,7 @@ export const userGames = sqliteTable('user_games', {
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({
   userGameIdx: uniqueIndex('user_game_idx').on(table.userId, table.gameId),
+  gameIdx: index('ug_game_idx').on(table.gameId),
 }));
 
 // ===========================================
@@ -105,7 +107,9 @@ export const priceSnapshots = sqliteTable('price_snapshots', {
   dealScore: integer('deal_score'), // Computed deal score (0-100) for SQL sorting
   snapshotDate: text('snapshot_date').notNull(), // ISO date
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
-});
+}, (table) => ({
+  gameSnapshotIdx: index('ps_game_snapshot_idx').on(table.gameId, table.snapshotDate),
+}));
 
 // ===========================================
 // Price Alerts - Watchlist configuration
@@ -147,7 +151,9 @@ export const syncLog = sqliteTable('sync_log', {
   errorMessage: text('error_message'),
   startedAt: text('started_at').notNull().default(sql`(datetime('now'))`),
   completedAt: text('completed_at'),
-});
+}, (table) => ({
+  sourceStartedIdx: index('sl_source_started_idx').on(table.source, table.startedAt),
+}));
 
 // ===========================================
 // Better Auth - Authentication tables

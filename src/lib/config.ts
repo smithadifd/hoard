@@ -26,6 +26,7 @@ export interface AppConfig {
   // Cron schedules
   cronPriceCheck: string;
   cronLibrarySync: string;
+  cronWishlistSync: string;
   cronHltbSync: string;
   cronReviewSync: string;
 
@@ -51,6 +52,7 @@ export function getConfig(): AppConfig {
       appUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://hoard.home',
       cronPriceCheck: process.env.CRON_PRICE_CHECK || '0 */12 * * *',
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
+      cronWishlistSync: process.env.CRON_WISHLIST_SYNC || '0 1 * * *',
       cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0,3',
       cronReviewSync: process.env.CRON_REVIEW_SYNC || '0 4 * * 2,5',
       alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),

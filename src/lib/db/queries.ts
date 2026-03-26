@@ -838,6 +838,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       hltbMainExtra: games.hltbMainExtra,
       hltbCompletionist: games.hltbCompletionist,
       hltbManual: games.hltbManual,
+      hltbMissCount: games.hltbMissCount,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
@@ -898,6 +899,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     hltbMainExtra: row.hltbMainExtra ?? undefined,
     hltbCompletionist: row.hltbCompletionist ?? undefined,
     hltbManual: row.hltbManual ?? undefined,
+    hltbMissCount: row.hltbMissCount ?? undefined,
     isOwned: row.isOwned ?? false,
     isWishlisted: row.isWishlisted ?? false,
     isWatchlisted: row.isWatchlisted ?? false,
@@ -1222,17 +1224,19 @@ export function updateGameReviewData(
     .run();
 }
 
-export function getGamesForHltbSync(): Array<{ id: number; title: string }> {
+// Tags that indicate software, not games — skip HLTB lookup entirely
+const SOFTWARE_TAGS = ['Software', 'Utilities', 'Game Development', 'Video Production', 'Photo Editing', 'Audio Production', 'Design & Illustration', 'Accounting', 'Web Publishing'];
+
+export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMissCount: number | null }> {
   const db = getDb();
   const staleThreshold = new Date();
   staleThreshold.setDate(staleThreshold.getDate() - 90); // 90 days
-  const retryThreshold = new Date();
-  retryThreshold.setDate(retryThreshold.getDate() - 7); // 7 days for failed matches
 
   return db
     .select({
       id: games.id,
       title: games.title,
+      hltbMissCount: games.hltbMissCount,
     })
     .from(games)
     .where(
@@ -1241,13 +1245,26 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string }> {
           isNull(games.hltbManual),
           eq(games.hltbManual, false),
         ),
+        // Exclude software/utilities (not games, will never have HLTB data)
+        sql`${games.id} NOT IN (
+          SELECT gt.game_id FROM game_tags gt
+          INNER JOIN tags t ON gt.tag_id = t.id
+          WHERE t.name IN (${sql.join(SOFTWARE_TAGS.map(t => sql`${t}`), sql`, `)})
+        )`,
         or(
+          // Never checked
           isNull(games.hltbLastUpdated),
+          // Stale (has HLTB data but >90 days old)
           lt(games.hltbLastUpdated, staleThreshold.toISOString()),
-          // Retry games that were checked but got no match (transient failures)
+          // No match — retry with exponential backoff:
+          //   miss 0-2: 7 days, miss 3-4: 30 days, miss 5+: 90 days
           and(
             isNull(games.hltbId),
-            lt(games.hltbLastUpdated, retryThreshold.toISOString())
+            sql`${games.hltbLastUpdated} < datetime('now', '-' || CASE
+              WHEN COALESCE(${games.hltbMissCount}, 0) <= 2 THEN '7'
+              WHEN COALESCE(${games.hltbMissCount}, 0) <= 4 THEN '30'
+              ELSE '90'
+            END || ' days')`
           )
         )
       )
@@ -1263,7 +1280,8 @@ export function updateGameHltbData(
     hltbMain?: number;
     hltbMainExtra?: number;
     hltbCompletionist?: number;
-  }
+  },
+  missed?: boolean,
 ): void {
   const db = getDb();
   db.update(games)
@@ -1273,6 +1291,10 @@ export function updateGameHltbData(
       hltbMainExtra: data.hltbMainExtra,
       hltbCompletionist: data.hltbCompletionist,
       hltbLastUpdated: new Date().toISOString(),
+      // Reset miss count on match, increment on miss
+      ...(missed
+        ? { hltbMissCount: sql`COALESCE(${games.hltbMissCount}, 0) + 1` }
+        : { hltbMissCount: 0 }),
     })
     .where(eq(games.id, gameId))
     .run();
@@ -1296,6 +1318,20 @@ export function updateManualHltbData(
       hltbCompletionist: data.hltbCompletionist ?? undefined,
       hltbManual: !isClearing,
       hltbLastUpdated: isClearing ? null : new Date().toISOString(),
+    })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+export function setHltbExcluded(gameId: number, excluded: boolean): void {
+  const db = getDb();
+  db.update(games)
+    .set({
+      hltbManual: excluded,
+      // When excluding: mark as checked so it doesn't show as "never checked"
+      // When re-including: clear so sync picks it up next run
+      hltbLastUpdated: excluded ? new Date().toISOString() : null,
+      hltbMissCount: 0,
     })
     .where(eq(games.id, gameId))
     .run();

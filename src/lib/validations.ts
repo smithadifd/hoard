@@ -75,6 +75,8 @@ export const gameUpdateSchema = z.object({
   hltbMain: z.number().min(0).max(10000).nullable().optional(),
   hltbMainExtra: z.number().min(0).max(10000).nullable().optional(),
   hltbCompletionist: z.number().min(0).max(10000).nullable().optional(),
+  // Exclude game from HLTB sync entirely (true = stop looking, false = resume sync)
+  hltbExcluded: z.boolean().optional(),
 });
 
 export const interestSchema = z.object({

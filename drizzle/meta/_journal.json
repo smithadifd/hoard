@@ -22,6 +22,13 @@
       "when": 1773438093371,
       "tag": "0002_wishlist_removed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774684800000,
+      "tag": "0003_add_performance_indexes",
+      "breakpoints": true
     }
   ]
 }
