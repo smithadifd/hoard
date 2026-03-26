@@ -21,6 +21,11 @@ const DEMO_BLOCKED: { method: string; prefix: string }[] = [
   { method: 'PATCH', prefix: '/api/settings' },
   { method: 'POST', prefix: '/api/setup' },
   { method: 'POST', prefix: '/api/alerts/test' },
+  { method: 'PATCH', prefix: '/api/games' },
+  { method: 'POST', prefix: '/api/games' },
+  { method: 'POST', prefix: '/api/alerts' },
+  { method: 'PATCH', prefix: '/api/alerts' },
+  { method: 'DELETE', prefix: '/api/alerts' },
 ];
 
 // --- Public paths that bypass auth ---
