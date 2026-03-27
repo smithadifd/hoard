@@ -16,6 +16,7 @@ import {
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
+  getScoringConfig,
 } from '../db/queries';
 import type { SyncResult, ProgressCallback } from './types';
 import { SUCCESS_RATE_THRESHOLDS } from './health';
@@ -114,17 +115,18 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
 
       const isAtATL = historicalLowPrice !== undefined && currentPrice <= historicalLowPrice;
 
-      // Compute deal score for SQL-level sorting
+      // Compute deal score for SQL-level sorting using real game data
       let dealScoreValue: number | undefined;
       try {
+        const { weights, thresholds } = getScoringConfig();
         const score = calculateDealScore({
           currentPrice,
           regularPrice,
           historicalLow: historicalLowPrice ?? currentPrice,
-          reviewPercent: null, // We don't have review data in this context
-          hltbMainHours: null,
-          personalInterest: 3,
-        });
+          reviewPercent: game.reviewScore,
+          hltbMainHours: game.hltbMain,
+          personalInterest: game.personalInterest ?? 3,
+        }, weights, thresholds);
         dealScoreValue = score.overall;
       } catch {
         // Score computation failed — store without score
