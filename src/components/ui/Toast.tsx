@@ -41,7 +41,7 @@ export function Toast({ toast, onDismiss }: ToastProps) {
 
   return (
     <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-      <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-card border border-border shadow-lg">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-card border border-white/[0.08] shadow-lg">
         <span className="text-sm">{toast.message}</span>
         {toast.undoAction && (
           <button
@@ -50,7 +50,7 @@ export function Toast({ toast, onDismiss }: ToastProps) {
               clearTimers();
               onDismiss();
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-steam-blue hover:bg-steam-blue/10 transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
           >
             <Undo2 className="h-3 w-3" />
             Undo

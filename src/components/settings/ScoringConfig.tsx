@@ -103,7 +103,7 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card p-6 space-y-6">
+    <section className="rounded-xl bg-card p-6 space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Deal Scoring</h2>
         <p className="text-sm text-muted-foreground mt-1">
@@ -189,7 +189,7 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
             step={1}
             value={backlogThreshold}
             onChange={(e) => handleBacklogThresholdChange(e.target.value)}
-            className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+            className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-primary bg-secondary"
           />
           <span className="text-sm font-medium w-12 text-right">{backlogThreshold}%</span>
         </div>
@@ -218,7 +218,7 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
               step={5}
               value={playAgainCompletionPct}
               onChange={(e) => handlePlayAgainCompletionChange(e.target.value)}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-primary bg-secondary"
             />
           </div>
           <div>
@@ -236,7 +236,7 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
               step={1}
               value={playAgainDormantMonths}
               onChange={(e) => handlePlayAgainDormantChange(e.target.value)}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-primary bg-secondary"
             />
           </div>
         </div>
@@ -247,7 +247,7 @@ export function ScoringConfig({ initialWeights, initialThresholds, initialBacklo
         <button
           onClick={handleSave}
           disabled={saving || !isValid}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -301,7 +301,7 @@ function WeightSlider({
         step={5}
         value={pct}
         onChange={(e) => onChange(parseInt(e.target.value, 10))}
-        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-steam-blue bg-secondary"
+        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-primary bg-secondary"
       />
     </div>
   );

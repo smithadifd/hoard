@@ -72,9 +72,9 @@ export function ScoreBreakdown({ dealScore, weights, hasReviewData, hasHltbData 
   ];
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+    <div className="rounded-xl bg-card p-5 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Deal Score Breakdown</h3>
+        <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">Deal Score Breakdown</h3>
         <span className={`text-sm font-bold ${ratingColors[dealScore.rating] ?? 'text-foreground'}`}>
           {dealScore.overall} — {ratingLabels[dealScore.rating] ?? dealScore.rating}
         </span>
@@ -92,7 +92,7 @@ export function ScoreBreakdown({ dealScore, weights, hasReviewData, hasHltbData 
                     <span>No data</span>
                   </span>
                 )}
-                <span className="font-medium tabular-nums w-7 text-right">{dim.score}</span>
+                <span className="font-label font-medium tabular-nums w-7 text-right">{dim.score}</span>
                 <span className="text-muted-foreground/60 w-10 text-right">
                   ({Math.round(dim.weight * 100)}%)
                 </span>

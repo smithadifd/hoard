@@ -58,7 +58,7 @@ export default async function GameDetailPage({
 
       {/* Header Image */}
       {game.headerImageUrl && (
-        <div className="relative aspect-[460/215] max-w-2xl rounded-lg overflow-hidden bg-secondary">
+        <div className="relative aspect-[460/215] max-w-2xl rounded-xl overflow-hidden bg-surface-lowest">
           <Image
             src={game.headerImageUrl}
             alt={game.title}
@@ -67,6 +67,7 @@ export default async function GameDetailPage({
             sizes="(max-width: 768px) 100vw, 672px"
             priority
           />
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
         </div>
       )}
 
@@ -75,7 +76,7 @@ export default async function GameDetailPage({
         <div className="lg:col-span-2 space-y-6">
           {/* Title & Meta */}
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{game.title}</h1>
+            <h1 className="text-3xl font-headline font-extrabold tracking-tight">{game.title}</h1>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
               {game.developer && <span>{game.developer}</span>}
               {game.developer && game.releaseDate && <span>&middot;</span>}
@@ -86,7 +87,7 @@ export default async function GameDetailPage({
           {/* Quick Stats */}
           <div className="flex flex-wrap gap-4">
             {game.reviewScore !== undefined && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card">
                 <Star className="h-4 w-4 text-yellow-500" />
                 <div>
                   <div className="text-sm font-medium">
@@ -102,8 +103,8 @@ export default async function GameDetailPage({
             )}
 
             {game.isOwned && game.playtimeMinutes > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
-                <Gamepad2 className="h-4 w-4 text-steam-blue" />
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card">
+                <Gamepad2 className="h-4 w-4 text-primary" />
                 <div>
                   <div className="text-sm font-medium">
                     {Math.round(game.playtimeMinutes / 60)} hours played
@@ -116,7 +117,7 @@ export default async function GameDetailPage({
             )}
 
             {game.hltbMain !== undefined && game.hltbMain > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <div className="text-sm font-medium">{game.hltbMain}h main</div>
@@ -132,8 +133,8 @@ export default async function GameDetailPage({
 
           {/* Price Section */}
           {game.currentPrice !== undefined && (
-            <section className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <h2 className="text-sm font-semibold">Pricing</h2>
+            <section className="rounded-xl bg-card p-5 space-y-3">
+              <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">Pricing</h2>
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
                   <PriceBadge
@@ -158,7 +159,7 @@ export default async function GameDetailPage({
                           href={game.storeUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-steam-blue hover:underline font-medium"
+                          className="text-primary hover:underline font-medium"
                         >
                           {game.bestStore} <ExternalLink className="inline h-3 w-3" />
                         </a>
@@ -186,8 +187,8 @@ export default async function GameDetailPage({
                   )}
                 </p>
               )}
-              <div className="mt-4 pt-3 border-t border-border">
-                <h3 className="text-sm font-medium text-muted-foreground mb-3">
+              <div className="mt-4 pt-3 border-t border-white/[0.06]">
+                <h3 className="text-xs font-label font-medium uppercase tracking-widest text-muted-foreground mb-3">
                   Price History
                 </h3>
                 <PriceHistoryChart gameId={game.id} />
@@ -207,8 +208,8 @@ export default async function GameDetailPage({
 
           {/* Description */}
           {game.description && (
-            <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold mb-2">About</h2>
+            <section className="rounded-xl bg-card p-5">
+              <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground mb-2">About</h2>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 {game.description}
               </p>
@@ -223,7 +224,7 @@ export default async function GameDetailPage({
                   {game.genres.map((g) => (
                     <span
                       key={g}
-                      className="px-2 py-1 rounded-md bg-steam-blue/10 text-steam-blue text-xs font-medium"
+                      className="px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium"
                     >
                       {g}
                     </span>
@@ -248,7 +249,7 @@ export default async function GameDetailPage({
           {/* Status Badges */}
           <div className="flex flex-wrap gap-2">
             {game.isOwned && (
-              <span className="px-2 py-1 rounded-md bg-steam-green/10 text-steam-green text-xs font-medium">
+              <span className="px-2 py-1 rounded-md bg-teal/10 text-teal text-xs font-medium">
                 Owned
               </span>
             )}
@@ -312,8 +313,8 @@ export default async function GameDetailPage({
           />
 
           {/* External Links */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="text-sm font-semibold mb-3">Links</h3>
+          <div className="rounded-xl bg-card p-5">
+            <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground mb-3">Links</h3>
 
             <div className="space-y-1">
               <ExternalLinkItem

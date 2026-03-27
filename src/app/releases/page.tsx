@@ -53,7 +53,7 @@ export default async function ReleasesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Releases</h1>
+        <h1 className="text-3xl font-headline font-extrabold tracking-tight">Releases</h1>
         <p className="text-muted-foreground mt-1">
           {games.length > 0
             ? `${games.length} upcoming game${games.length === 1 ? '' : 's'} from your wishlist`
@@ -62,7 +62,7 @@ export default async function ReleasesPage() {
       </div>
 
       {games.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center space-y-3">
+        <div className="rounded-lg border border-dashed border-white/[0.08] p-12 text-center space-y-3">
           <p className="text-muted-foreground">
             No upcoming releases found. Games marked as &quot;Coming Soon&quot; on Steam will appear here
             when you sync your wishlist.

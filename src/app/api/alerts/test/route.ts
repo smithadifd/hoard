@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const sent = await discord.send('', [{
       title: 'Hoard Test Notification',
       description: 'Your Discord webhook is configured correctly! Price alerts will appear here when triggered.',
-      color: 0x1a9fff, // steam-blue
+      color: 0xF59E0B, // primary amber
       footer: { text: 'Hoard - Game Deal Tracker' },
       timestamp: new Date().toISOString(),
     }]);

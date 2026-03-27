@@ -105,7 +105,7 @@ export function RandomPickModal({ finalPick, candidates, open, onClose, onReroll
       />
 
       {/* Modal */}
-      <div className="relative bg-card border border-border rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="relative bg-card border border-white/[0.08] rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
         {/* Close */}
         {phase === 'landed' && (
           <button
@@ -186,21 +186,21 @@ export function RandomPickModal({ finalPick, candidates, open, onClose, onReroll
             <div className="flex gap-2 pt-1 animate-in fade-in duration-300">
               <a
                 href={`steam://run/${game.steamAppId}`}
-                className="flex-1 px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium text-center hover:bg-steam-blue/90 transition-colors flex items-center justify-center gap-1.5"
+                className="flex-1 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium text-center hover:bg-primary/90 transition-colors flex items-center justify-center gap-1.5"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 Launch
               </a>
               <Link
                 href={`/games/${game.id}`}
-                className="flex-1 px-4 py-2 rounded-md border border-border text-sm font-medium text-center hover:bg-secondary transition-colors"
+                className="flex-1 px-4 py-2 rounded-md border border-white/[0.08] text-sm font-medium text-center hover:bg-secondary transition-colors"
                 onClick={onClose}
               >
                 View Details
               </Link>
               <button
                 onClick={onReroll}
-                className="px-4 py-2 rounded-md border border-border text-sm font-medium hover:bg-secondary transition-colors flex items-center gap-1.5"
+                className="px-4 py-2 rounded-md border border-white/[0.08] text-sm font-medium hover:bg-secondary transition-colors flex items-center gap-1.5"
               >
                 <Shuffle className="h-3.5 w-3.5" />
                 Reroll

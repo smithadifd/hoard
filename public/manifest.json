@@ -4,8 +4,8 @@
   "description": "Track game deals, manage your backlog, and find your next game to play.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0c0a1d",
-  "theme_color": "#1b2838",
+  "background_color": "#131313",
+  "theme_color": "#131313",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
