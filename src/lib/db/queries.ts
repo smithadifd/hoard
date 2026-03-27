@@ -2352,7 +2352,7 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
       AND (ug.auto_alert_disabled = 0 OR ug.auto_alert_disabled IS NULL)
       AND g.is_released = 1
       AND ps.is_historical_low = 1
-      AND ps.deal_score >= ${minDealScore}
+      AND (ps.deal_score >= ${minDealScore} OR ps.price_current = 0)
       AND NOT EXISTS (
         SELECT 1 FROM price_alerts pa
         WHERE pa.game_id = g.id AND pa.user_id = ${userId}

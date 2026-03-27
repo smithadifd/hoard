@@ -33,9 +33,9 @@ describe('calculateDealScore', () => {
       expect(result.priceScore).toBe(0);
     });
 
-    it('returns 50 when current price is zero (free/invalid)', () => {
+    it('returns 100 when current price is zero (free game)', () => {
       const result = calculateDealScore(makeInput({ currentPrice: 0 }));
-      expect(result.priceScore).toBe(50);
+      expect(result.priceScore).toBe(100);
     });
 
     it('returns 50 when regular price is zero', () => {
