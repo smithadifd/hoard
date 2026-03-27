@@ -42,7 +42,7 @@ export function WishlistGrid({ games: serverGames, emptyMessage }: WishlistGridP
   return (
     <div className="space-y-3">
       {showSteamHint !== null && (
-        <div className="rounded-md border border-border bg-card px-4 py-3 text-sm flex items-center justify-between gap-4">
+        <div className="rounded-md border border-white/[0.08] bg-card px-4 py-3 text-sm flex items-center justify-between gap-4">
           <span className="text-muted-foreground">
             <span className="text-foreground font-medium">{removedTitle}</span> removed from your Hoard wishlist.
           </span>
@@ -50,7 +50,7 @@ export function WishlistGrid({ games: serverGames, emptyMessage }: WishlistGridP
             href={`https://store.steampowered.com/app/${showSteamHint}/`}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 text-steam-blue text-sm hover:underline"
+            className="shrink-0 text-primary text-sm hover:underline"
           >
             Remove from Steam too
           </a>

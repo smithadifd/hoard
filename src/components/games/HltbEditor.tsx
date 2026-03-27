@@ -155,7 +155,7 @@ export function HltbEditor({
 
   if (!isEditing) {
     return (
-      <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+      <div className="rounded-xl bg-card p-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
@@ -191,7 +191,7 @@ export function HltbEditor({
             <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${
               hltbManual
                 ? 'bg-yellow-500/10 text-yellow-500'
-                : 'bg-steam-blue/10 text-steam-blue'
+                : 'bg-primary/10 text-primary'
             }`}>
               {hltbManual ? 'Manual override' : 'Auto-synced'}
             </span>
@@ -255,7 +255,7 @@ export function HltbEditor({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+    <div className="rounded-xl bg-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
@@ -382,7 +382,7 @@ export function HltbEditor({
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex-1 flex items-center justify-center gap-1 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+          className="flex-1 flex items-center justify-center gap-1 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[44px]"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />

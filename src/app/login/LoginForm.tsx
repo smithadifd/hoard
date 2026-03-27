@@ -58,7 +58,7 @@ export function LoginForm() {
           required
           autoComplete="email"
           autoFocus
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-steam-blue focus:border-transparent"
+          className="w-full rounded-md border border-white/[0.08] bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-transparent"
           placeholder="you@example.com"
         />
       </div>
@@ -73,7 +73,7 @@ export function LoginForm() {
           type="password"
           required
           autoComplete="current-password"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-steam-blue focus:border-transparent"
+          className="w-full rounded-md border border-white/[0.08] bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-transparent"
           placeholder="Enter your password"
         />
       </div>
@@ -81,7 +81,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-md bg-steam-blue px-4 py-2.5 text-sm font-medium text-white hover:bg-steam-blue/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? 'Signing in...' : 'Sign In'}
       </button>

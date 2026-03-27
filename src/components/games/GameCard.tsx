@@ -19,16 +19,16 @@ export function GameCard({ game, onRemove }: GameCardProps) {
   return (
     <Link
       href={`/games/${game.id}`}
-      className="group rounded-lg border border-border bg-card overflow-hidden hover:border-steam-blue/50 transition-colors"
+      className="group rounded-xl bg-card overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/30"
     >
       {/* Header Image */}
-      <div className="relative aspect-[460/215] bg-secondary">
+      <div className="relative aspect-[460/215] bg-surface-lowest">
         {game.headerImageUrl ? (
           <Image
             src={game.headerImageUrl}
             alt={game.title}
             fill
-            className="object-cover"
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
         ) : (
@@ -36,6 +36,9 @@ export function GameCard({ game, onRemove }: GameCardProps) {
             No Image
           </div>
         )}
+
+        {/* Bottom gradient overlay */}
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
 
         {/* Remove Button (wishlist context only) */}
         {onRemove && (
@@ -60,19 +63,19 @@ export function GameCard({ game, onRemove }: GameCardProps) {
 
         {/* Coming Soon Badge (non-owned unreleased games) */}
         {game.isReleased === false && !game.isOwned && (
-          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-600/80 text-white backdrop-blur-sm">
+          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold bg-teal/80 text-white backdrop-blur-sm">
             Coming Soon
           </span>
         )}
 
         {/* Playtime Status Badge */}
         {game.isOwned && game.playtimeMinutes === 0 && (
-          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/80 text-white backdrop-blur-sm">
+          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold bg-primary/80 text-primary-foreground backdrop-blur-sm">
             Unplayed
           </span>
         )}
         {game.isOwned && game.playtimeMinutes > 0 && game.playtimeMinutes < 60 && (
-          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/80 text-white backdrop-blur-sm">
+          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold bg-deal-okay/80 text-primary-foreground backdrop-blur-sm">
             &lt;1h played
           </span>
         )}
@@ -80,7 +83,7 @@ export function GameCard({ game, onRemove }: GameCardProps) {
 
       {/* Info */}
       <div className="p-3 space-y-2">
-        <h3 className="font-semibold text-sm truncate group-hover:text-steam-blue transition-colors">
+        <h3 className="font-headline font-semibold text-sm truncate group-hover:text-primary transition-colors">
           {game.title}
         </h3>
 
@@ -88,8 +91,8 @@ export function GameCard({ game, onRemove }: GameCardProps) {
         <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
           {/* Reviews */}
           {game.reviewScore !== undefined ? (
-            <span className="flex items-center gap-1">
-              <Star className="h-3 w-3" />
+            <span className="flex items-center gap-1 font-label">
+              <Star className="h-3 w-3 text-teal" />
               {game.reviewScore}%
             </span>
           ) : (
@@ -98,7 +101,7 @@ export function GameCard({ game, onRemove }: GameCardProps) {
 
           {/* HLTB Duration */}
           {game.hltbMain !== undefined && game.hltbMain > 0 ? (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 font-label">
               <Clock className="h-3 w-3" />
               {game.hltbMain}h
             </span>
@@ -108,7 +111,7 @@ export function GameCard({ game, onRemove }: GameCardProps) {
 
           {/* Playtime (if owned) */}
           {game.isOwned && game.playtimeMinutes > 0 && (
-            <span className="text-steam-blue">
+            <span className="text-primary font-label">
               {Math.round(game.playtimeMinutes / 60)}h played
             </span>
           )}
@@ -120,18 +123,18 @@ export function GameCard({ game, onRemove }: GameCardProps) {
             <div className="flex items-center gap-2 min-w-0 flex-wrap gap-y-1">
               {game.discountPercent && game.discountPercent > 0 ? (
                 <>
-                  <span className="bg-steam-sale text-white text-xs font-bold px-1.5 py-0.5 rounded">
+                  <span className="bg-primary text-primary-foreground text-xs font-label font-bold px-1.5 py-0.5 rounded">
                     -{game.discountPercent}%
                   </span>
-                  <span className="text-xs text-muted-foreground line-through">
+                  <span className="text-xs text-muted-foreground line-through font-label">
                     ${game.regularPrice?.toFixed(2)}
                   </span>
-                  <span className="text-sm font-semibold text-deal-great">
+                  <span className="text-sm font-label font-bold text-teal">
                     ${game.currentPrice.toFixed(2)}
                   </span>
                 </>
               ) : (
-                <span className="text-sm font-medium">
+                <span className="text-sm font-label font-medium">
                   ${game.currentPrice.toFixed(2)}
                 </span>
               )}
@@ -139,7 +142,7 @@ export function GameCard({ game, onRemove }: GameCardProps) {
 
             {/* $/hour */}
             {game.dollarsPerHour !== undefined && (
-              <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+              <span className="flex items-center gap-0.5 text-xs text-muted-foreground font-label">
                 <DollarSign className="h-3 w-3" />
                 {game.dollarsPerHour.toFixed(2)}/hr
               </span>

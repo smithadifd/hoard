@@ -131,7 +131,7 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
   const candidateCount = filterByMood(games, selectedMood, timeOption?.value, coopOption?.value).length;
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+    <div className="rounded-xl bg-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium flex items-center gap-2">
           <Shuffle className="h-4 w-4" />
@@ -153,7 +153,7 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
                 onClick={() => setMood(m.id)}
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
                   mood === m.id
-                    ? 'bg-steam-blue text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                 }`}
               >
@@ -174,7 +174,7 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
                 onClick={() => setTime(t.id)}
                 className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
                   time === t.id
-                    ? 'bg-steam-blue text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                 }`}
               >
@@ -194,7 +194,7 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
                 onClick={() => setCoopSetting(c.id)}
                 className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
                   coopSetting === c.id
-                    ? 'bg-steam-blue text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                 }`}
               >
@@ -208,7 +208,7 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
       <button
         onClick={handlePick}
         disabled={candidateCount === 0}
-        className="w-full px-4 py-2.5 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+        className="w-full px-4 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
       >
         <Shuffle className="h-4 w-4" />
         {candidateCount === 0 ? 'No games match' : 'Pick a Game'}

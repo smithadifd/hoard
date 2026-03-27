@@ -34,11 +34,11 @@ const RANGES = [
 ] as const;
 
 // Colors from tailwind.config.ts (Recharts needs raw values, not Tailwind classes)
-const STEAM_BLUE = '#1a9fff';
-const DEAL_GREAT = '#22c55e';
-const MUTED_FG = '#a1a1aa'; // zinc-400
-const BORDER_COLOR = '#27272a'; // zinc-800
-const CARD_BG = '#18181b'; // zinc-900
+const PRIMARY_AMBER = '#F59E0B';
+const TEAL = '#14B8A6';
+const MUTED_FG = '#D8C3AD';
+const BORDER_COLOR = '#2A2A2A'; // surface-high
+const CARD_BG = '#201F1F'; // card
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -69,14 +69,14 @@ function CustomTooltip({ active, payload, label }: {
 
   return (
     <div
-      className="rounded-md border border-border px-3 py-2 text-xs shadow-md"
+      className="rounded-md border border-white/[0.08] px-3 py-2 text-xs shadow-md"
       style={{ backgroundColor: CARD_BG }}
     >
       <p className="font-medium text-foreground mb-1">
         {label ? formatDate(label) : ''}
       </p>
       <div className="space-y-0.5">
-        <p style={{ color: STEAM_BLUE }}>
+        <p style={{ color: PRIMARY_AMBER }}>
           Price: ${snapshot.priceCurrent.toFixed(2)}
           {hasDiscount && (
             <span className="text-muted-foreground ml-1">
@@ -161,7 +161,7 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: STEAM_BLUE }} />
+          <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: PRIMARY_AMBER }} />
           Sale Price
         </span>
         <span className="flex items-center gap-1.5">
@@ -170,7 +170,7 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
         </span>
         {historicalLow != null && (
           <span className="flex items-center gap-1.5">
-            <span className="inline-block w-4 h-0.5 rounded border-t border-dashed" style={{ borderColor: DEAL_GREAT }} />
+            <span className="inline-block w-4 h-0.5 rounded border-t border-dashed" style={{ borderColor: TEAL }} />
             All-Time Low (${historicalLow.toFixed(2)})
           </span>
         )}
@@ -209,8 +209,8 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
             <Area
               type="stepAfter"
               dataKey="priceCurrent"
-              stroke={STEAM_BLUE}
-              fill={STEAM_BLUE}
+              stroke={PRIMARY_AMBER}
+              fill={PRIMARY_AMBER}
               fillOpacity={0.15}
               strokeWidth={2}
               name="Price"
@@ -220,7 +220,7 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
             {historicalLow != null && (
               <ReferenceLine
                 y={historicalLow}
-                stroke={DEAL_GREAT}
+                stroke={TEAL}
                 strokeDasharray="6 3"
               />
             )}

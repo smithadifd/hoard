@@ -148,14 +148,14 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     <div className="space-y-8">
       {/* API Keys Section */}
       {DEMO_MODE ? (
-        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <section className="rounded-xl bg-card p-6 space-y-4">
           <h2 className="text-lg font-semibold">API Configuration</h2>
           <p className="text-sm text-muted-foreground">
             API key configuration is disabled in demo mode.
           </p>
         </section>
       ) : (
-        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <section className="rounded-xl bg-card p-6 space-y-4">
           <h2 className="text-lg font-semibold">API Configuration</h2>
           <p className="text-sm text-muted-foreground">
             API keys are stored locally in your database and never shared.
@@ -205,7 +205,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -230,14 +230,14 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
 
       {/* Sync Section */}
       {DEMO_MODE ? (
-        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <section className="rounded-xl bg-card p-6 space-y-4">
           <h2 className="text-lg font-semibold">Data Sync</h2>
           <p className="text-sm text-muted-foreground">
             Data sync is disabled in demo mode. The demo uses pre-loaded data.
           </p>
         </section>
       ) : (
-        <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+        <section className="rounded-xl bg-card p-6 space-y-4">
           <h2 className="text-lg font-semibold">Data Sync</h2>
           {!hasSteamKeys && (
             <p className="text-sm text-yellow-500">
@@ -372,11 +372,11 @@ function SyncButton({
 }) {
   const isSyncing = status === 'syncing';
   const baseClasses = primary
-    ? 'bg-steam-blue text-white hover:bg-steam-blue/90'
+    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
     : 'bg-secondary text-secondary-foreground hover:bg-secondary/80';
 
   return (
-    <div className="rounded-md border border-border bg-background p-3 space-y-2">
+    <div className="rounded-md border border-white/[0.08] bg-background p-3 space-y-2">
       <div className="flex items-center gap-2">
         <button
           onClick={onClick}

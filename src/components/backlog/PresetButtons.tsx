@@ -46,7 +46,7 @@ export function PresetButtons({ currentFilters, onPresetSelect, presetCounts }: 
             }}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               active
-                ? 'bg-steam-blue text-white'
+                ? 'bg-primary text-primary-foreground'
                 : isEmpty
                   ? 'bg-secondary/50 text-muted-foreground/50 cursor-default'
                   : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'

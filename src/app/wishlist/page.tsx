@@ -60,7 +60,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Wishlist</h1>
+        <h1 className="text-3xl font-headline font-extrabold tracking-tight">Wishlist</h1>
         <p className="text-muted-foreground mt-1">
           {total > 0
             ? hiddenCount > 0
@@ -86,7 +86,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
       <GameListFilters currentFilters={filters} />
 
       {total === 0 && hiddenCount > 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center space-y-3">
+        <div className="rounded-lg border border-dashed border-white/[0.08] p-12 text-center space-y-3">
           <p className="text-muted-foreground">
             {hiddenCount} {hiddenCount === 1 ? 'game matches' : 'games match'}{filters.search ? ' your search' : ''} but {hiddenCount === 1 ? 'is' : 'are'} hidden by active filters (incomplete data or unreleased).
           </p>

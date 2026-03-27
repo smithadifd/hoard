@@ -53,7 +53,7 @@ export function AlertConfig({
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+    <section className="rounded-xl bg-card p-6 space-y-4">
       <div className="flex items-center gap-2">
         <Bell className="h-5 w-5 text-muted-foreground" />
         <h2 className="text-lg font-semibold">Price Alert Configuration</h2>
@@ -87,7 +87,7 @@ export function AlertConfig({
           <button
             onClick={handleSaveThrottle}
             disabled={saving}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {saving && <Loader2 className="h-3 w-3 animate-spin" />}
             Save
@@ -109,7 +109,7 @@ export function AlertConfig({
       </div>
 
       {/* Auto ATL Deal Alerts */}
-      <div className="space-y-2 pt-2 border-t border-border">
+      <div className="space-y-2 pt-2 border-t border-white/[0.06]">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-muted-foreground" />
           <label className="text-sm font-medium">Auto ATL Deal Alerts</label>
@@ -123,7 +123,7 @@ export function AlertConfig({
             }}
             disabled={savingAutoAtl}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              autoAtlDealAlerts ? 'bg-steam-blue' : 'bg-muted'
+              autoAtlDealAlerts ? 'bg-primary' : 'bg-muted'
             }`}
           >
             <span
@@ -149,7 +149,7 @@ export function AlertConfig({
       </div>
 
       {/* Test Webhook */}
-      <div className="space-y-2 pt-2 border-t border-border">
+      <div className="space-y-2 pt-2 border-t border-white/[0.06]">
         <label className="text-sm font-medium">Test Discord Webhook</label>
         <div className="flex items-center gap-3">
           <button

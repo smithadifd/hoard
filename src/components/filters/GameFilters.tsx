@@ -107,7 +107,7 @@ export function GameFilters({
         >
           <SlidersHorizontal className="h-4 w-4" />
           {advancedFilterCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 bg-steam-blue text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
+            <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
               {advancedFilterCount}
             </span>
           )}
@@ -116,7 +116,7 @@ export function GameFilters({
         {showRandomPick && onRandomPick && (
           <button
             onClick={onRandomPick}
-            className="px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors flex items-center gap-2 min-h-[44px]"
+            className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 min-h-[44px]"
           >
             <Shuffle className="h-4 w-4" />
             Pick for me
@@ -126,7 +126,7 @@ export function GameFilters({
 
       {/* Advanced Filters (collapsible) */}
       {showAdvanced && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-lg border border-border bg-card">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-xl bg-card">
           {/* Duration */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Max Duration</label>
@@ -247,8 +247,8 @@ export function GameFilters({
                   : 'All genres'}
               </button>
               {genreDropdownOpen && (
-                <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-60 overflow-hidden">
-                  <div className="p-2 border-b border-border">
+                <div className="absolute z-20 top-full mt-1 w-full bg-card border border-white/[0.08] rounded-md shadow-lg max-h-60 overflow-hidden">
+                  <div className="p-2 border-b border-white/[0.06]">
                     <input
                       type="text"
                       placeholder="Search genres..."

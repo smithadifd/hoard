@@ -65,7 +65,7 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-headline font-extrabold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground mt-1">
           Your game collection at a glance
         </p>
@@ -141,15 +141,15 @@ export default async function DashboardPage() {
 
       {/* Setup Prompt or Quick Links */}
       {!hasData ? (
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h2 className="text-lg font-semibold mb-2">Welcome to Hoard</h2>
+        <div className="rounded-xl bg-card p-6">
+          <h2 className="text-lg font-headline font-bold mb-2">Welcome to Hoard</h2>
           <p className="text-muted-foreground mb-4">
             Get started by adding your Steam API key and Steam User ID in Settings,
             then sync your library.
           </p>
           <Link
             href="/settings"
-            className="inline-flex items-center px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors"
+            className="inline-flex items-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Go to Settings
           </Link>
@@ -158,11 +158,11 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link
             href="/library"
-            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
           >
             <div className="flex items-center gap-2 mb-1">
-              <Library className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
-              <span className="font-medium group-hover:text-steam-blue transition-colors">
+              <Library className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              <span className="font-medium group-hover:text-primary transition-colors">
                 Browse Library
               </span>
             </div>
@@ -172,11 +172,11 @@ export default async function DashboardPage() {
           </Link>
           <Link
             href="/wishlist"
-            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
           >
             <div className="flex items-center gap-2 mb-1">
-              <Heart className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
-              <span className="font-medium group-hover:text-steam-blue transition-colors">
+              <Heart className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              <span className="font-medium group-hover:text-primary transition-colors">
                 Browse Wishlist
               </span>
             </div>
@@ -186,11 +186,11 @@ export default async function DashboardPage() {
           </Link>
           <Link
             href="/backlog"
-            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
           >
             <div className="flex items-center gap-2 mb-1">
-              <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
-              <span className="font-medium group-hover:text-steam-blue transition-colors">
+              <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              <span className="font-medium group-hover:text-primary transition-colors">
                 Browse Backlog
               </span>
             </div>
@@ -200,11 +200,11 @@ export default async function DashboardPage() {
           </Link>
           <Link
             href="/watchlist"
-            className="rounded-lg border border-border bg-card p-4 hover:border-steam-blue/50 transition-colors group"
+            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
           >
             <div className="flex items-center gap-2 mb-1">
-              <Bell className="h-4 w-4 text-muted-foreground group-hover:text-steam-blue transition-colors" />
-              <span className="font-medium group-hover:text-steam-blue transition-colors">
+              <Bell className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              <span className="font-medium group-hover:text-primary transition-colors">
                 Manage Watchlist
               </span>
             </div>
@@ -217,11 +217,11 @@ export default async function DashboardPage() {
 
       {/* Upcoming Releases */}
       {upcomingReleases.length > 0 && (
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-xl bg-card p-5">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">Upcoming Releases</h2>
+              <CalendarClock className="h-4 w-4 text-primary" />
+              <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">Upcoming Releases</h2>
             </div>
             <Link href="/releases" className="text-xs text-primary hover:underline">
               View all
@@ -232,9 +232,9 @@ export default async function DashboardPage() {
               <Link
                 key={game.id}
                 href={`/games/${game.id}`}
-                className="flex items-center justify-between py-1.5 text-sm hover:text-steam-blue transition-colors group"
+                className="flex items-center justify-between py-1.5 text-sm hover:text-primary transition-colors group"
               >
-                <span className="truncate font-medium group-hover:text-steam-blue">{game.title}</span>
+                <span className="truncate font-medium group-hover:text-primary">{game.title}</span>
                 <span className="text-xs text-muted-foreground ml-2 shrink-0">{game.releaseLabel}</span>
               </Link>
             ))}
@@ -257,12 +257,12 @@ function StatCard({
   subtitle: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-xl bg-card p-5 relative overflow-hidden group">
       <div className="flex items-center gap-2 text-muted-foreground mb-2">
         {icon}
-        <span className="text-sm font-medium">{label}</span>
+        <span className="text-[11px] font-label font-semibold uppercase tracking-[0.15em] text-primary">{label}</span>
       </div>
-      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-2xl font-headline font-extrabold">{value}</div>
       <div className="text-xs text-muted-foreground mt-1">{subtitle}</div>
     </div>
   );

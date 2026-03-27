@@ -162,7 +162,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
                 selectedResult.gameplayCompletionist,
               )}
               disabled={saving}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-steam-blue text-white text-xs font-medium hover:bg-steam-blue/90 disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 rounded bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
               Save
@@ -191,7 +191,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
             <button
               onClick={handleSaveManual}
               disabled={saving}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-steam-blue text-white text-xs font-medium hover:bg-steam-blue/90 disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 rounded bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
               Save
@@ -225,7 +225,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
           <button
             onClick={handleSearch}
             disabled={searching}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[44px]"
           >
             {searching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -304,7 +304,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
                 selectedResult.gameplayCompletionist,
               )}
               disabled={saving || selectedResult.gameplayMain <= 0}
-              className="flex-1 flex items-center justify-center gap-1 py-3 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+              className="flex-1 flex items-center justify-center gap-1 py-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[44px]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Save
@@ -339,7 +339,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
             <button
               onClick={handleSaveManual}
               disabled={saving}
-              className="flex-1 flex items-center justify-center gap-1 py-3 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+              className="flex-1 flex items-center justify-center gap-1 py-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[44px]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Save

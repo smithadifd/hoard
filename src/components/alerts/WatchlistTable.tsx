@@ -66,7 +66,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
 
   if (alerts.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
+      <div className="rounded-xl bg-card p-8 text-center">
         <Bell className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
         <h3 className="text-sm font-medium mb-1">No price alerts</h3>
         <p className="text-xs text-muted-foreground mb-4">
@@ -74,7 +74,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
         </p>
         <Link
           href="/wishlist"
-          className="inline-flex items-center px-3 py-1.5 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors"
+          className="inline-flex items-center px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
         >
           Browse Wishlist
         </Link>
@@ -92,7 +92,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
             && alert.currentPrice <= alert.targetPrice;
 
           return (
-            <div key={alert.id} className={`rounded-lg border border-border bg-card p-4 ${!alert.isActive ? 'opacity-50' : ''}`}>
+            <div key={alert.id} className={`rounded-xl bg-card p-4 ${!alert.isActive ? 'opacity-50' : ''}`}>
               <div className="flex items-start gap-3">
                 {/* Game image + info */}
                 <Link href={`/games/${alert.gameId}`} className="flex-1 min-w-0 flex items-center gap-3">
@@ -108,7 +108,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
                   <div className="min-w-0">
                     <h3 className="font-medium text-sm truncate">{alert.title}</h3>
                     {alert.isActive ? (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-steam-green/10 text-steam-green mt-1">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-teal/10 text-teal mt-1">
                         Active
                       </span>
                     ) : (
@@ -179,9 +179,9 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
       </div>
 
       {/* Desktop table layout */}
-      <div className="hidden lg:block rounded-lg border border-border overflow-hidden">
+      <div className="hidden lg:block rounded-lg border border-white/[0.08] overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-card border-b border-border">
+          <thead className="bg-card border-b border-white/[0.06]">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Game</th>
               <th className="text-right px-4 py-3 font-medium text-muted-foreground">Current</th>
@@ -201,7 +201,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
                 <tr key={alert.id} className={`bg-card/50 ${!alert.isActive ? 'opacity-50' : ''}`}>
                   {/* Game */}
                   <td className="px-4 py-3">
-                    <Link href={`/games/${alert.gameId}`} className="flex items-center gap-3 hover:text-steam-blue transition-colors">
+                    <Link href={`/games/${alert.gameId}`} className="flex items-center gap-3 hover:text-primary transition-colors">
                       {alert.headerImageUrl && (
                         <Image
                           src={alert.headerImageUrl}
@@ -245,7 +245,7 @@ export function WatchlistTable({ alerts: initialAlerts }: WatchlistTableProps) {
                   {/* Status */}
                   <td className="px-4 py-3 text-center">
                     {alert.isActive ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-steam-green/10 text-steam-green">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-teal/10 text-teal">
                         Active
                       </span>
                     ) : (

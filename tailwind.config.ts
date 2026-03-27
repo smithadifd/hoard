@@ -44,20 +44,30 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        // Steam-inspired color palette
-        steam: {
-          dark: '#1b2838',
-          darker: '#171a21',
-          blue: '#1a9fff',
-          green: '#4c6b22',
-          sale: '#4c6b22',
-        },
+        // Semantic accent colors
+        teal: '#14B8A6',
+        gold: '#F59E0B',
+        // Deal quality indicators
         deal: {
-          great: '#22c55e',
-          good: '#84cc16',
-          okay: '#eab308',
+          great: '#14B8A6',
+          good: '#22c55e',
+          okay: '#FACC15',
           poor: '#ef4444',
         },
+        // Surface hierarchy (direct use for fine-grained control)
+        surface: {
+          lowest: '#0E0E0E',
+          base: '#131313',
+          low: '#1C1B1B',
+          DEFAULT: '#201F1F',
+          high: '#2A2A2A',
+          highest: '#353534',
+        },
+      },
+      fontFamily: {
+        headline: ['var(--font-jakarta)', 'Plus Jakarta Sans', 'sans-serif'],
+        body: ['var(--font-manrope)', 'Manrope', 'sans-serif'],
+        label: ['var(--font-grotesk)', 'Space Grotesk', 'sans-serif'],
       },
       borderRadius: {
         lg: 'var(--radius)',

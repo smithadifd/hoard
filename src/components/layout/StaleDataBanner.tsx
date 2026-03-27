@@ -43,7 +43,7 @@ export function StaleDataBanner() {
   if (staleItems.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 text-xs text-yellow-500 bg-yellow-500/10 border-b border-yellow-500/20">
+    <div className="flex items-center gap-2 px-4 py-2 text-xs text-primary bg-primary/10 border-b border-primary/20">
       <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
       <span>
         Stale data: {staleItems.join(', ')} sync{staleItems.length > 1 ? 's are' : ' is'} overdue
