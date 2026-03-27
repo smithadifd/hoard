@@ -73,7 +73,8 @@ export function calculateDealScore(
 }
 
 function calculatePriceScore(current: number, historicalLow: number, regular: number): number {
-  if (current <= 0 || regular <= 0) return 50;
+  if (current <= 0) return 100; // Free game = best possible price
+  if (regular <= 0) return 50;
   if (current <= historicalLow) return 100;
 
   // Score based on how close to historical low vs regular price
