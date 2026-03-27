@@ -19,6 +19,7 @@ vi.mock('../db/queries', () => ({
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
+  getScoringConfig: vi.fn(),
 }));
 
 // Mock the dynamic import of alerts
@@ -37,6 +38,7 @@ import {
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
+  getScoringConfig,
 } from '../db/queries';
 
 const mockGetConfig = vi.mocked(getEffectiveConfig);
@@ -48,9 +50,22 @@ const mockInsertPriceSnapshot = vi.mocked(insertPriceSnapshot);
 const mockCreateSyncLog = vi.mocked(createSyncLog);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
+const mockGetScoringConfig = vi.mocked(getScoringConfig);
 
-function makeGame(id: number, steamAppId: number, title: string, itadGameId?: string) {
-  return { id, steamAppId, title, itadGameId: itadGameId ?? null };
+function makeGame(id: number, steamAppId: number, title: string, itadGameId?: string, overrides?: {
+  reviewScore?: number | null;
+  hltbMain?: number | null;
+  personalInterest?: number | null;
+}) {
+  return {
+    id,
+    steamAppId,
+    title,
+    itadGameId: itadGameId ?? null,
+    reviewScore: overrides?.reviewScore ?? null,
+    hltbMain: overrides?.hltbMain ?? null,
+    personalInterest: overrides?.personalInterest ?? null,
+  };
 }
 
 function makeOverview(id: string, currentPrice: number, regularPrice: number, options: {
@@ -99,6 +114,10 @@ describe('syncPrices', () => {
       valueScore: 60,
       interestScore: 50,
     } as ReturnType<typeof calculateDealScore>);
+    mockGetScoringConfig.mockReturnValue({
+      weights: { priceWeight: 0.30, reviewWeight: 0.25, valueWeight: 0.25, interestWeight: 0.20 },
+      thresholds: { maxDollarsPerHour: { overwhelminglyPositive: 4, veryPositive: 3, positive: 2, mixed: 1.5, negative: 1 } },
+    } as ReturnType<typeof getScoringConfig>);
   });
 
   it('throws when ITAD API key is not configured', async () => {

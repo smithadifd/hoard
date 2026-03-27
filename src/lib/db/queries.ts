@@ -1124,7 +1124,15 @@ export interface PriceSnapshotRow {
   snapshotDate: string;
 }
 
-export function getGamesForPriceSync(userId: string): Array<{ id: number; steamAppId: number; title: string; itadGameId: string | null }> {
+export function getGamesForPriceSync(userId: string): Array<{
+  id: number;
+  steamAppId: number;
+  title: string;
+  itadGameId: string | null;
+  reviewScore: number | null;
+  hltbMain: number | null;
+  personalInterest: number | null;
+}> {
   const db = getDb();
 
   return db
@@ -1133,6 +1141,9 @@ export function getGamesForPriceSync(userId: string): Array<{ id: number; steamA
       steamAppId: games.steamAppId,
       title: games.title,
       itadGameId: games.itadGameId,
+      reviewScore: games.reviewScore,
+      hltbMain: games.hltbMain,
+      personalInterest: userGames.personalInterest,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
