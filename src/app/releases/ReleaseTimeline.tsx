@@ -39,11 +39,11 @@ export function ReleaseTimeline({ groups }: ReleaseTimelineProps) {
         placeholder="Search upcoming games..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full max-w-sm px-3 py-2 rounded-md border border-border bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        className="w-full max-w-sm px-3 py-2 rounded-md border border-white/[0.08] bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       />
 
       {totalFiltered === 0 && search.trim() ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <div className="rounded-lg border border-dashed border-white/[0.08] p-8 text-center">
           <p className="text-muted-foreground">
             No upcoming games match &quot;{search}&quot;
           </p>

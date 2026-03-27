@@ -132,7 +132,7 @@ export function GameUserControls({
   return (
     <div className="space-y-4">
       {/* Interest Rating */}
-      <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+      <div className="rounded-xl bg-card p-4 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Interest</span>
           {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
@@ -165,7 +165,7 @@ export function GameUserControls({
         ) : (
           <button
             onClick={addToWishlist}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-secondary text-secondary-foreground hover:bg-steam-blue/10 hover:text-steam-blue"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-secondary text-secondary-foreground hover:bg-primary/10 hover:text-primary"
           >
             <ListPlus className="h-4 w-4" />
             Add to Wishlist
@@ -178,7 +178,7 @@ export function GameUserControls({
               href={`https://store.steampowered.com/app/${steamAppId}/`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-steam-blue hover:underline"
+              className="text-primary hover:underline"
             >
               Remove from Steam too
             </a>
@@ -191,7 +191,7 @@ export function GameUserControls({
         onClick={toggleWatchlist}
         className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
           isWatchlisted
-            ? 'bg-steam-blue text-white hover:bg-steam-blue/90'
+            ? 'bg-primary text-primary-foreground hover:bg-primary/90'
             : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
         }`}
       >
@@ -238,7 +238,7 @@ export function GameUserControls({
 
       {/* Alert Controls (shown when watchlisted) */}
       {isWatchlisted && (
-        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="rounded-xl bg-card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Bell className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Price Alerts</span>
@@ -266,7 +266,7 @@ export function GameUserControls({
                 <button
                   onClick={handleThresholdSave}
                   disabled={saving}
-                  className="px-3 py-2.5 rounded-md bg-steam-blue text-white text-xs font-medium hover:bg-steam-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+                  className="px-3 py-2.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[44px]"
                 >
                   Save
                 </button>

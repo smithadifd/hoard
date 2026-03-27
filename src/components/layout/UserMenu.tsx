@@ -59,8 +59,8 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
         className="flex items-center gap-2 rounded-full p-1.5 hover:bg-accent transition-colors"
         aria-label="User menu"
       >
-        <div className="h-8 w-8 rounded-full bg-steam-blue/20 flex items-center justify-center">
-          <span className="text-sm font-medium text-steam-blue">
+        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+          <span className="text-sm font-medium text-primary">
             {userName.charAt(0).toUpperCase()}
           </span>
         </div>
@@ -70,9 +70,9 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-56 rounded-lg border bg-card shadow-lg z-50 py-1">
-          <div className="px-3 py-2 border-b">
-            <p className="font-medium text-sm">{userName}</p>
+        <div className="absolute right-0 top-full mt-2 w-56 rounded-lg border border-white/[0.08] bg-surface-high/95 backdrop-blur-xl shadow-xl shadow-black/40 z-50 py-1">
+          <div className="px-3 py-2 border-b border-white/[0.06]">
+            <p className="font-headline font-semibold text-sm">{userName}</p>
             <p className="text-xs text-muted-foreground">{userEmail}</p>
           </div>
 
@@ -83,7 +83,7 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
             <MenuLink href="/settings/system" icon={Cpu} label="System & Sync" onClick={close} />
           </nav>
 
-          <div className="border-t py-1">
+          <div className="border-t border-white/[0.06] py-1">
             <button
               onClick={handleSignOut}
               className="flex items-center gap-2 px-3 py-2 text-sm w-full hover:bg-accent text-destructive transition-colors"

@@ -259,7 +259,7 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
       {/* Progress bar */}
       <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
         <div
-          className="h-full rounded-full bg-steam-blue transition-all"
+          className="h-full rounded-full bg-primary transition-all"
           style={{ width: `${games.length > 0 ? (ratedCount / games.length) * 100 : 0}%` }}
         />
       </div>
@@ -371,7 +371,7 @@ function ViewButton({
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
         active
-          ? 'bg-steam-blue text-white'
+          ? 'bg-primary text-primary-foreground'
           : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
       }`}
     >
@@ -442,7 +442,7 @@ function TriageRow({
           : isSkipFeedback
             ? 'bg-muted/50 border border-muted-foreground/20 opacity-60'
             : isFocused
-              ? 'bg-steam-blue/10 border border-steam-blue/30'
+              ? 'bg-primary/10 border border-primary/30'
               : 'hover:bg-secondary/50 border border-transparent'
       }`}
     >
@@ -463,7 +463,7 @@ function TriageRow({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <Link href={`/games/${game.id}`} className="hover:text-steam-blue transition-colors">
+        <Link href={`/games/${game.id}`} className="hover:text-primary transition-colors">
           <h4 className="text-sm font-medium truncate">{game.title}</h4>
         </Link>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

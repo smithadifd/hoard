@@ -124,7 +124,7 @@ export function TriageCard({
       <div className="p-4 space-y-3">
         {/* Title & Info */}
         <div>
-          <Link href={`/games/${game.id}`} className="hover:text-steam-blue transition-colors">
+          <Link href={`/games/${game.id}`} className="hover:text-primary transition-colors">
             <h3 className="text-lg font-semibold leading-tight">{game.title}</h3>
           </Link>
           <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-muted-foreground">

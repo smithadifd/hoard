@@ -26,7 +26,7 @@ export default async function WatchlistPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Watchlist</h1>
+          <h1 className="text-3xl font-headline font-extrabold tracking-tight">Watchlist</h1>
           <p className="text-muted-foreground mt-1">
             Manage price alerts for your watchlisted games
           </p>
@@ -43,15 +43,15 @@ export default async function WatchlistPage() {
       {/* Stats */}
       {alerts.length > 0 && (
         <div className="flex gap-4">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
-            <Bell className="h-4 w-4 text-steam-blue" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-white/[0.08]">
+            <Bell className="h-4 w-4 text-primary" />
             <span className="text-sm">
               <span className="font-medium">{stats.activeCount}</span>
               <span className="text-muted-foreground"> active alerts</span>
             </span>
           </div>
           {stats.recentlyTriggered > 0 && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-border">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-card border border-white/[0.08]">
               <Bell className="h-4 w-4 text-deal-great" />
               <span className="text-sm">
                 <span className="font-medium">{stats.recentlyTriggered}</span>

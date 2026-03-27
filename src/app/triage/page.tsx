@@ -35,7 +35,7 @@ export default async function TriagePage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Rate Your Games</h1>
+        <h1 className="text-3xl font-headline font-extrabold tracking-tight">Rate Your Games</h1>
         <p className="text-muted-foreground mt-1">
           {view ? descriptions[view] : 'Quickly rate your games (1-5 stars). Ratings influence deal scores.'}
         </p>

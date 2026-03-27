@@ -22,24 +22,24 @@ export function PriceBadge({
   return (
     <div className="flex items-center gap-2">
       {hasDiscount && (
-        <span className="bg-steam-sale text-white text-xs font-bold px-1.5 py-0.5 rounded">
+        <span className="bg-primary text-primary-foreground text-xs font-label font-bold px-1.5 py-0.5 rounded">
           -{discountPercent}%
         </span>
       )}
 
       <div className="flex flex-col items-end">
         {hasDiscount && regularPrice !== undefined && (
-          <span className="text-xs text-muted-foreground line-through">
+          <span className="text-xs text-muted-foreground line-through font-label">
             {currency}{regularPrice.toFixed(2)}
           </span>
         )}
-        <span className={`text-sm font-semibold ${isAtATL ? 'text-deal-great' : ''}`}>
+        <span className={`text-sm font-label font-bold ${isAtATL ? 'text-teal' : ''}`}>
           {currency}{currentPrice.toFixed(2)}
         </span>
       </div>
 
       {isAtATL && (
-        <span className="text-[10px] font-bold text-deal-great uppercase tracking-wider">
+        <span className="text-[10px] font-label font-bold text-teal uppercase tracking-wider">
           ATL
         </span>
       )}

@@ -14,7 +14,7 @@ export function SettingsNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex gap-1 border-b overflow-x-auto">
+    <nav className="flex gap-1 border-b border-white/[0.06] overflow-x-auto">
       {tabs.map(tab => {
         const isActive = tab.exact
           ? pathname === tab.href
@@ -26,7 +26,7 @@ export function SettingsNav() {
             href={tab.href}
             className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
               isActive
-                ? 'border-steam-blue text-foreground'
+                ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >

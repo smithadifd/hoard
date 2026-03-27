@@ -92,7 +92,7 @@ export function SyncHistory() {
   }, []);
 
   return (
-    <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+    <section className="rounded-xl bg-card p-6 space-y-4">
       <div className="flex items-center gap-2">
         <Activity className="h-5 w-5 text-muted-foreground" />
         <h2 className="text-lg font-semibold">Sync History</h2>
@@ -117,7 +117,7 @@ export function SyncHistory() {
                 {tasks.map(task => (
                   <div
                     key={task.name}
-                    className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
+                    className="flex items-center justify-between rounded-md border border-white/[0.08] px-3 py-2 text-sm"
                   >
                     <div>
                       <span className="font-medium">{task.name}</span>
@@ -147,7 +147,7 @@ export function SyncHistory() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground">
+                    <tr className="border-b border-white/[0.06] text-left text-muted-foreground">
                       <th className="pb-2 pr-4 font-medium">Source</th>
                       <th className="pb-2 pr-4 font-medium">Status</th>
                       <th className="pb-2 pr-4 font-medium hidden sm:table-cell">Items</th>
@@ -157,7 +157,7 @@ export function SyncHistory() {
                   </thead>
                   <tbody>
                     {logs.map(log => (
-                      <tr key={log.id} className="border-b border-border/50 last:border-0">
+                      <tr key={log.id} className="border-b border-white/[0.06]/50 last:border-0">
                         <td className="py-2 pr-4">
                           {log.status === 'error' && log.errorMessage ? (
                             <button

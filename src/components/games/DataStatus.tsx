@@ -32,7 +32,7 @@ function DataStatusRow({ label, dateStr, now }: { label: string; dateStr?: strin
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`flex items-center gap-1 ${isStale ? 'text-amber-500' : 'text-steam-green'}`}>
+      <span className={`flex items-center gap-1 ${isStale ? 'text-amber-500' : 'text-teal'}`}>
         {isStale ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
         {formatTimeAgo(dateStr, now)}
       </span>
@@ -52,7 +52,7 @@ export function DataStatus({
   const [now] = useState(() => Date.now());
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4 space-y-2">
+    <section className="rounded-xl bg-card p-4 space-y-2">
       <h2 className="text-sm font-semibold">Data Status</h2>
       <DataStatusRow label="Reviews" dateStr={reviewLastUpdated} now={now} />
       <DataStatusRow label="Duration (HLTB)" dateStr={hltbLastUpdated} now={now} />

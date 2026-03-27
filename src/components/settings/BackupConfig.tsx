@@ -68,7 +68,7 @@ export function BackupConfig() {
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+    <section className="rounded-xl bg-card p-6 space-y-4">
       <div className="flex items-center gap-2">
         <HardDrive className="h-5 w-5 text-muted-foreground" />
         <h2 className="text-lg font-semibold">Database Backups</h2>
@@ -110,7 +110,7 @@ export function BackupConfig() {
       )}
 
       {/* Manual Backup */}
-      <div className="flex items-center gap-3 pt-2 border-t border-border">
+      <div className="flex items-center gap-3 pt-2 border-t border-white/[0.06]">
         <button
           onClick={handleBackupNow}
           disabled={backingUp}
