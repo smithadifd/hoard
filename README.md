@@ -4,6 +4,12 @@
 
 Hoard is a self-hosted web app that tracks game deals across stores, manages your Steam library and backlog, and helps you decide what to play next — all from a single dashboard.
 
+## Live Demo
+
+Try Hoard without installing anything: **[hoard.smithadifd.com](https://hoard.smithadifd.com)**
+
+Login with `demo@example.com` / `demo1234!` — data resets weekly, mutations are disabled.
+
 ## What It Does
 
 - **Library sync** — imports your Steam library and wishlist automatically
@@ -38,7 +44,7 @@ Hoard is a self-hosted web app that tracks game deals across stores, manages you
 ### Run Locally
 
 ```bash
-git clone https://github.com/your-user/hoard.git
+git clone https://github.com/smithadifd/hoard.git
 cd hoard
 npm install
 cp .env.example .env.local
