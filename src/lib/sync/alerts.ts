@@ -34,11 +34,6 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
 
     console.log(`[AlertCheck] ${activeAlerts.length} active alerts to evaluate`);
 
-    if (activeAlerts.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
-      return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
-    }
-
     for (const alert of activeAlerts) {
       onProgress?.(notifiedCount, activeAlerts.length);
 
