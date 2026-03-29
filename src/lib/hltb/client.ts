@@ -21,6 +21,8 @@ const REQUEST_TIMEOUT_MS = 15_000;
 // Cached auth state — reused across searches until it expires/fails
 let cachedSearchPath: string | null = null;
 let cachedAuthToken: string | null = null;
+let cachedHpKey: string | null = null;
+let cachedHpVal: string | null = null;
 let authFetchedAt = 0;
 const AUTH_TTL_MS = 5 * 60 * 1000; // Refresh auth every 5 minutes
 
@@ -62,44 +64,52 @@ async function discoverSearchPath(): Promise<string | null> {
 }
 
 /**
- * Get auth token from HLTB init endpoint.
+ * Get auth token and fingerprint params from HLTB init endpoint.
+ * As of March 2026, HLTB requires hpKey/hpVal as both headers and body params.
  */
-async function fetchAuthToken(searchPath: string): Promise<string | null> {
+async function fetchAuthData(searchPath: string): Promise<{ token: string | null; hpKey: string | null; hpVal: string | null }> {
   try {
     const timestamp = Date.now();
     const initUrl = `${BASE_URL}${searchPath}init?t=${timestamp}`;
     const resp = await fetchWithTimeout(initUrl, { headers: getHeaders() });
-    if (!resp.ok) return null;
+    if (!resp.ok) return { token: null, hpKey: null, hpVal: null };
 
     const data = await resp.json();
-    return data.token || null;
+    return {
+      token: data.token || null,
+      hpKey: data.hpKey || null,
+      hpVal: data.hpVal || null,
+    };
   } catch (error) {
     console.warn('[HLTB] Failed to fetch auth token:', error);
-    return null;
+    return { token: null, hpKey: null, hpVal: null };
   }
 }
 
 /**
- * Ensure we have a valid search path and auth token, refreshing if stale.
+ * Ensure we have a valid search path, auth token, and fingerprint params, refreshing if stale.
  */
-async function ensureAuth(): Promise<{ searchPath: string; authToken: string | null }> {
+async function ensureAuth(): Promise<{ searchPath: string; authToken: string | null; hpKey: string | null; hpVal: string | null }> {
   const now = Date.now();
   if (cachedSearchPath && cachedAuthToken && (now - authFetchedAt) < AUTH_TTL_MS) {
-    return { searchPath: cachedSearchPath, authToken: cachedAuthToken };
+    return { searchPath: cachedSearchPath, authToken: cachedAuthToken, hpKey: cachedHpKey, hpVal: cachedHpVal };
   }
 
   // Discover search path (or fall back)
   const discovered = await discoverSearchPath();
   cachedSearchPath = discovered || FALLBACK_SEARCH_PATH;
 
-  // Get auth token
-  cachedAuthToken = await fetchAuthToken(cachedSearchPath);
+  // Get auth token + fingerprint params
+  const authData = await fetchAuthData(cachedSearchPath);
+  cachedAuthToken = authData.token;
+  cachedHpKey = authData.hpKey;
+  cachedHpVal = authData.hpVal;
   authFetchedAt = now;
 
-  return { searchPath: cachedSearchPath, authToken: cachedAuthToken };
+  return { searchPath: cachedSearchPath, authToken: cachedAuthToken, hpKey: cachedHpKey, hpVal: cachedHpVal };
 }
 
-function getHeaders(authToken?: string | null): Record<string, string> {
+function getHeaders(authToken?: string | null, hpKey?: string | null, hpVal?: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'accept': '*/*',
@@ -109,6 +119,10 @@ function getHeaders(authToken?: string | null): Record<string, string> {
   };
   if (authToken) {
     headers['x-auth-token'] = authToken;
+  }
+  if (hpKey && hpVal) {
+    headers['x-hp-key'] = hpKey;
+    headers['x-hp-val'] = hpVal;
   }
   return headers;
 }
@@ -146,9 +160,9 @@ function normalizeGameTitle(title: string): string {
   return normalized.trim();
 }
 
-function buildSearchPayload(gameName: string): string {
+function buildSearchPayload(gameName: string, hpKey?: string | null, hpVal?: string | null): string {
   const cleaned = cleanSearchTitle(gameName);
-  return JSON.stringify({
+  const payload: Record<string, unknown> = {
     searchType: 'games',
     searchTerms: cleaned.split(/\s+/).filter(t => t.length > 0 && !/^[-–—]+$/.test(t)),
     searchPage: 1,
@@ -171,7 +185,12 @@ function buildSearchPayload(gameName: string): string {
       randomizer: 0,
     },
     useCache: true,
-  });
+  };
+  // HLTB fingerprint: hpKey/hpVal must be included as a body parameter
+  if (hpKey && hpVal) {
+    payload[hpKey] = hpVal;
+  }
+  return JSON.stringify(payload);
 }
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
@@ -244,13 +263,13 @@ export class HLTBClient {
   }
 
   private async _searchInner(title: string, allowRetry: boolean): Promise<HLTBResult | null> {
-    const { searchPath, authToken } = await ensureAuth();
+    const { searchPath, authToken, hpKey, hpVal } = await ensureAuth();
     const searchUrl = `${BASE_URL}${searchPath}`;
-    const payload = buildSearchPayload(title);
+    const payload = buildSearchPayload(title, hpKey, hpVal);
 
     const resp = await fetchWithTimeout(searchUrl, {
       method: 'POST',
-      headers: getHeaders(authToken),
+      headers: getHeaders(authToken, hpKey, hpVal),
       body: payload,
     });
 
@@ -307,13 +326,13 @@ export class HLTBClient {
    * Inner implementation for searchAll with optional retry on auth failure.
    */
   private async _searchAllInner(title: string, maxResults: number, allowRetry: boolean): Promise<HLTBResult[]> {
-    const { searchPath, authToken } = await ensureAuth();
+    const { searchPath, authToken, hpKey, hpVal } = await ensureAuth();
     const searchUrl = `${BASE_URL}${searchPath}`;
-    const payload = buildSearchPayload(title);
+    const payload = buildSearchPayload(title, hpKey, hpVal);
 
     const resp = await fetchWithTimeout(searchUrl, {
       method: 'POST',
-      headers: getHeaders(authToken),
+      headers: getHeaders(authToken, hpKey, hpVal),
       body: payload,
     });
 
