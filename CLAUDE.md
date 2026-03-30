@@ -256,6 +256,13 @@ npm run lint
 ### Feature Plans
 - [x] Plan 15: Wishlist Game Removal (local removal, sync guard, Steam source-of-truth auto-removal, cascade deactivation)
 - [x] Plan 16: Separate Releases from Wishlist (/releases page, nav overhaul, release date parsing, release status sync, Discord notifications)
+- [x] Filters & Quick Wins: Price/free filter, interest filter, backlog fixes, default wishlist sort, auto alerts button, dynamic version (v1.0.0)
+
+### Planned Features
+- [ ] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
+- [ ] Post-purchase enjoyment rating (two-field model: interest + enjoyment, expected value metrics)
+- [ ] Onboarding wizard (multi-step setup with background sync)
+- [ ] Dashboard overhaul (charts/visualizations via Recharts)
 
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
