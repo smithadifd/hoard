@@ -150,7 +150,7 @@ export function Sidebar() {
         {/* Footer */}
         <div className="p-4 border-t border-white/[0.06]">
           <p className="text-[10px] font-label text-muted-foreground/40">
-            Hoard v0.1.0
+            Hoard v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0'}
           </p>
         </div>
       </aside>
@@ -220,7 +220,7 @@ export function Sidebar() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <nav className="px-2 pb-4 space-y-0.5">
+            <nav className="px-2 pb-2 space-y-0.5">
               {mobileMoreItems.map((item) => {
                 const isActive = isNavActive(pathname, item.href);
                 return (
@@ -240,6 +240,11 @@ export function Sidebar() {
                 );
               })}
             </nav>
+            <div className="px-4 pb-4 border-t border-white/[0.06] pt-2">
+              <p className="text-[10px] font-label text-muted-foreground/40">
+                Hoard v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0'}
+              </p>
+            </div>
           </div>
         </>
       )}

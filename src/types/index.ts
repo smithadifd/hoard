@@ -92,6 +92,7 @@ export interface GameFilters {
   maxReviewCount?: number; // Maximum review count (for Hidden Gems: exclude popular titles)
   maxPrice?: number;
   onSale?: boolean;
+  minInterest?: number; // Minimum personal interest rating (1-5)
   strictFilters?: boolean; // When true, NULL values fail filters instead of passing
   excludeTags?: string[]; // Exclude games with these tags
   requireCompleteData?: boolean;

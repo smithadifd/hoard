@@ -63,9 +63,11 @@ export function GameFilters({
     filters.minHours,
     filters.coop !== undefined ? true : undefined,
     filters.onSale,
+    filters.maxPrice !== undefined ? true : undefined,
     filters.playtimeStatus,
     filters.genres?.length ? true : undefined,
     filters.minReview,
+    filters.minInterest,
     filters.requireCompleteData === false ? true : undefined,
     filters.hideUnreleased === false ? true : undefined,
   ].filter(Boolean).length;
@@ -136,6 +138,8 @@ export function GameFilters({
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
             >
               <option value="">Any</option>
+              <option value="1">Under 1 hour</option>
+              <option value="2">Under 2 hours</option>
               <option value="5">Under 5 hours</option>
               <option value="10">Under 10 hours</option>
               <option value="20">Under 20 hours</option>
@@ -189,20 +193,54 @@ export function GameFilters({
             </select>
           </div>
 
-          {/* On Sale */}
+          {/* Pricing */}
           {!hidePricing && (
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Pricing</label>
               <select
-                value={filters.onSale === undefined ? '' : filters.onSale ? 'yes' : 'no'}
-                onChange={(e) => updateFilter('onSale', e.target.value === '' ? undefined : e.target.value === 'yes')}
+                value={
+                  filters.maxPrice !== undefined
+                    ? `max:${filters.maxPrice}`
+                    : filters.onSale ? 'sale' : ''
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '') {
+                    onFiltersChange({ ...filters, maxPrice: undefined, onSale: undefined });
+                  } else if (val === 'sale') {
+                    onFiltersChange({ ...filters, maxPrice: undefined, onSale: true });
+                  } else if (val.startsWith('max:')) {
+                    onFiltersChange({ ...filters, maxPrice: Number(val.slice(4)), onSale: undefined });
+                  }
+                }}
                 className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
               >
                 <option value="">Any</option>
-                <option value="yes">On sale</option>
+                <option value="max:0">Free</option>
+                <option value="max:5">Under $5</option>
+                <option value="max:10">Under $10</option>
+                <option value="max:15">Under $15</option>
+                <option value="max:20">Under $20</option>
+                <option value="max:30">Under $30</option>
+                <option value="sale">On sale</option>
               </select>
             </div>
           )}
+
+          {/* Min Interest */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Min Interest</label>
+            <select
+              value={filters.minInterest || ''}
+              onChange={(e) => updateFilter('minInterest', e.target.value ? Number(e.target.value) : undefined)}
+              className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
+            >
+              <option value="">Any</option>
+              <option value="3">3+ Stars</option>
+              <option value="4">4+ Stars</option>
+              <option value="5">5 Stars Only</option>
+            </select>
+          </div>
 
           {/* Data Completeness */}
           {filters.requireCompleteData !== undefined && (
@@ -326,9 +364,11 @@ export function GameFilters({
                     minHours: undefined,
                     coop: undefined,
                     onSale: undefined,
+                    maxPrice: undefined,
                     playtimeStatus: undefined,
                     genres: undefined,
                     minReview: undefined,
+                    minInterest: undefined,
                     requireCompleteData: filters.requireCompleteData !== undefined ? true : undefined,
                     hideUnreleased: filters.hideUnreleased !== undefined ? true : undefined,
                     sortBy: 'title',

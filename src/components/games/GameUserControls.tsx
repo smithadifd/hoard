@@ -227,8 +227,8 @@ export function GameUserControls({
           onClick={toggleAutoAlert}
           className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             autoAlertDisabled
-              ? 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
-              : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+              ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+              : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
           }`}
         >
           <BellRing className="h-4 w-4" />

@@ -22,10 +22,11 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
   const filters: GameFilters = {
     view: 'wishlist',
     search: typeof params.search === 'string' ? params.search : undefined,
-    sortBy: (typeof params.sortBy === 'string' ? params.sortBy : 'title') as GameFilters['sortBy'],
-    sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
+    sortBy: (typeof params.sortBy === 'string' ? params.sortBy : 'dealScore') as GameFilters['sortBy'],
+    sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'desc') as GameFilters['sortOrder'],
     maxHours: typeof params.maxHours === 'string' ? Number(params.maxHours) : undefined,
     coop: typeof params.coop === 'string' ? params.coop === 'true' : undefined,
+    maxPrice: typeof params.maxPrice === 'string' && !isNaN(Number(params.maxPrice)) && Number(params.maxPrice) >= 0 ? Number(params.maxPrice) : undefined,
     onSale: typeof params.onSale === 'string' ? params.onSale === 'true' : undefined,
     playtimeStatus: typeof params.playtime === 'string'
       ? (params.playtime as GameFilters['playtimeStatus'])
@@ -34,6 +35,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
       ? params.genres.split(',')
       : undefined,
     minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
+    minInterest: typeof params.minInterest === 'string' && Number(params.minInterest) >= 1 && Number(params.minInterest) <= 5 ? Number(params.minInterest) : undefined,
     requireCompleteData: params.showAll === 'true' ? false : true,
     hideUnreleased: params.showUnreleased === 'true' ? false : true,
   };

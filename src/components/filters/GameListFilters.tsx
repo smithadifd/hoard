@@ -20,12 +20,14 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
       if (newFilters.search) params.set('search', newFilters.search);
       if (newFilters.sortBy && newFilters.sortBy !== 'title') params.set('sortBy', newFilters.sortBy);
       if (newFilters.sortOrder && newFilters.sortOrder !== 'asc') params.set('sortOrder', newFilters.sortOrder);
-      if (newFilters.maxHours) params.set('maxHours', String(newFilters.maxHours));
+      if (newFilters.maxHours !== undefined) params.set('maxHours', String(newFilters.maxHours));
       if (newFilters.coop !== undefined) params.set('coop', String(newFilters.coop));
+      if (newFilters.maxPrice !== undefined) params.set('maxPrice', String(newFilters.maxPrice));
       if (newFilters.onSale !== undefined) params.set('onSale', String(newFilters.onSale));
       if (newFilters.playtimeStatus) params.set('playtime', newFilters.playtimeStatus);
       if (newFilters.genres?.length) params.set('genres', newFilters.genres.join(','));
-      if (newFilters.minReview) params.set('minReview', String(newFilters.minReview));
+      if (newFilters.minReview !== undefined) params.set('minReview', String(newFilters.minReview));
+      if (newFilters.minInterest !== undefined) params.set('minInterest', String(newFilters.minInterest));
       if (newFilters.requireCompleteData === false) params.set('showAll', 'true');
       if (newFilters.hideUnreleased === false) params.set('showUnreleased', 'true');
 

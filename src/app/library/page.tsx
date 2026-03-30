@@ -25,6 +25,7 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
     sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
     maxHours: typeof params.maxHours === 'string' ? Number(params.maxHours) : undefined,
     coop: typeof params.coop === 'string' ? params.coop === 'true' : undefined,
+    maxPrice: typeof params.maxPrice === 'string' && !isNaN(Number(params.maxPrice)) && Number(params.maxPrice) >= 0 ? Number(params.maxPrice) : undefined,
     onSale: typeof params.onSale === 'string' ? params.onSale === 'true' : undefined,
     playtimeStatus: typeof params.playtime === 'string'
       ? (params.playtime as GameFilters['playtimeStatus'])
@@ -33,6 +34,7 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
       ? params.genres.split(',')
       : undefined,
     minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
+    minInterest: typeof params.minInterest === 'string' && Number(params.minInterest) >= 1 && Number(params.minInterest) <= 5 ? Number(params.minInterest) : undefined,
   };
 
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
