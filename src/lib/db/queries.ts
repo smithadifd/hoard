@@ -1238,6 +1238,10 @@ export function updateGameReviewData(
 // Tags that indicate software, not games — skip HLTB lookup entirely
 const SOFTWARE_TAGS = ['Software', 'Utilities', 'Game Development', 'Video Production', 'Photo Editing', 'Audio Production', 'Design & Illustration', 'Accounting', 'Web Publishing'];
 
+// After this many consecutive misses, stop automatic retries (DLCs, soundtracks, etc. that
+// will never have an HLTB entry). Games can still be matched via manual search on the detail page.
+const HLTB_GIVE_UP_MISSES = 8;
+
 export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMissCount: number | null }> {
   const db = getDb();
   const staleThreshold = new Date();
@@ -1268,9 +1272,10 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMi
           // Stale (has HLTB data but >90 days old)
           lt(games.hltbLastUpdated, staleThreshold.toISOString()),
           // No match — retry with exponential backoff:
-          //   miss 0-2: 7 days, miss 3-4: 30 days, miss 5+: 90 days
+          //   miss 0-2: 7 days, miss 3-4: 30 days, miss 5-7: 90 days, 8+: give up
           and(
             isNull(games.hltbId),
+            sql`COALESCE(${games.hltbMissCount}, 0) < ${HLTB_GIVE_UP_MISSES}`,
             sql`${games.hltbLastUpdated} < datetime('now', '-' || CASE
               WHEN COALESCE(${games.hltbMissCount}, 0) <= 2 THEN '7'
               WHEN COALESCE(${games.hltbMissCount}, 0) <= 4 THEN '30'
