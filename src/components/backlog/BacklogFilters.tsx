@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { GameFilters } from '@/components/filters/GameFilters';
 import { PresetButtons } from './PresetButtons';
 import { PickForMePanel, weightedPick } from './PickForMePanel';
@@ -14,9 +15,10 @@ interface BacklogFiltersProps {
   games: EnrichedGame[];
   availableGenres: string[];
   presetCounts?: Record<string, number>;
+  hiddenByStrictCount?: number;
 }
 
-export function BacklogFilters({ currentFilters, games, availableGenres, presetCounts }: BacklogFiltersProps) {
+export function BacklogFilters({ currentFilters, games, availableGenres, presetCounts, hiddenByStrictCount = 0 }: BacklogFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -30,13 +32,15 @@ export function BacklogFilters({ currentFilters, games, availableGenres, presetC
       if (newFilters.search) params.set('search', newFilters.search);
       if (newFilters.sortBy && newFilters.sortBy !== 'title') params.set('sortBy', newFilters.sortBy);
       if (newFilters.sortOrder && newFilters.sortOrder !== 'asc') params.set('sortOrder', newFilters.sortOrder);
-      if (newFilters.maxHours) params.set('maxHours', String(newFilters.maxHours));
-      if (newFilters.minHours) params.set('minHours', String(newFilters.minHours));
+      if (newFilters.maxHours !== undefined) params.set('maxHours', String(newFilters.maxHours));
+      if (newFilters.minHours !== undefined) params.set('minHours', String(newFilters.minHours));
       if (newFilters.coop !== undefined) params.set('coop', String(newFilters.coop));
       if (newFilters.onSale !== undefined) params.set('onSale', String(newFilters.onSale));
       if (newFilters.playtimeStatus) params.set('playtime', newFilters.playtimeStatus);
       if (newFilters.genres?.length) params.set('genres', newFilters.genres.join(','));
-      if (newFilters.minReview) params.set('minReview', String(newFilters.minReview));
+      if (newFilters.minReview !== undefined) params.set('minReview', String(newFilters.minReview));
+      if (newFilters.minInterest !== undefined) params.set('minInterest', String(newFilters.minInterest));
+      if (newFilters.strictFilters === false) params.set('showMissing', 'true');
 
       const qs = params.toString();
       router.push(`${pathname}${qs ? '?' + qs : ''}`);
@@ -90,6 +94,29 @@ export function BacklogFilters({ currentFilters, games, availableGenres, presetC
         availableGenres={availableGenres}
         hidePricing={true}
       />
+      {hiddenByStrictCount > 0 && currentFilters.strictFilters && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-500/10 text-amber-400 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{hiddenByStrictCount} game{hiddenByStrictCount !== 1 ? 's' : ''} hidden (missing duration/review data)</span>
+          <button
+            onClick={() => navigate({ ...currentFilters, strictFilters: false })}
+            className="ml-auto text-xs font-medium underline underline-offset-2 hover:text-amber-300 whitespace-nowrap"
+          >
+            Show all
+          </button>
+        </div>
+      )}
+      {!currentFilters.strictFilters && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-secondary text-muted-foreground text-sm">
+          <span>Showing games with missing data</span>
+          <button
+            onClick={() => navigate({ ...currentFilters, strictFilters: true })}
+            className="ml-auto text-xs font-medium underline underline-offset-2 hover:text-foreground whitespace-nowrap"
+          >
+            Hide incomplete
+          </button>
+        </div>
+      )}
       <PickForMePanel games={games} onPick={handlePick} />
       <RandomPickModal
         finalPick={pickedGame}

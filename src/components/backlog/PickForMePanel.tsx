@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Shuffle, Coffee, Swords, Crown } from 'lucide-react';
+import { Shuffle, Coffee, Swords, Crown, Sparkles, TreePalm } from 'lucide-react';
 import type { EnrichedGame, GameFilters } from '@/types';
 
 interface PickMood {
@@ -20,6 +20,19 @@ const MOODS: PickMood[] = [
     icon: <Coffee className="h-3.5 w-3.5" />,
     filters: { maxHours: 5 },
     excludeTags: ['Souls-like', 'Difficult'],
+  },
+  {
+    id: 'relaxing',
+    label: 'Relaxing',
+    icon: <TreePalm className="h-3.5 w-3.5" />,
+    filters: { maxHours: 20 },
+    excludeTags: ['Souls-like', 'Difficult', 'Horror', 'Survival Horror'],
+  },
+  {
+    id: 'short-sweet',
+    label: 'Short & Sweet',
+    icon: <Sparkles className="h-3.5 w-3.5" />,
+    filters: { maxHours: 2, minReview: 80 },
   },
   {
     id: 'challenge',

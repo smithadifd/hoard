@@ -36,12 +36,24 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
       ? params.genres.split(',')
       : undefined,
     minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
+    minInterest: typeof params.minInterest === 'string' && Number(params.minInterest) >= 1 && Number(params.minInterest) <= 5 ? Number(params.minInterest) : undefined,
   };
+
+  // Allow toggling strict filters off via URL param
+  if (params.showMissing === 'true') {
+    filters.strictFilters = false;
+  }
 
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
   const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
   const availableGenres = getAllGenres();
+
+  // Count how many games are hidden by strict filters (missing HLTB/review data)
+  const totalWithMissing = filters.strictFilters
+    ? countGames({ ...filters, strictFilters: false }, session.user.id)
+    : total;
+  const hiddenByStrictCount = totalWithMissing - total;
 
   // Compute match counts for each preset (efficient count-only queries)
   const presetCounts: Record<string, number> = {};
@@ -74,7 +86,9 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
         <h1 className="text-3xl font-headline font-extrabold tracking-tight">Backlog</h1>
         <p className="text-muted-foreground mt-1">
           {total > 0
-            ? `${total} games match your filters`
+            ? hiddenByStrictCount > 0
+              ? `${total} games match your filters (${hiddenByStrictCount} more with incomplete data)`
+              : `${total} games match your filters`
             : 'Find your next game to play'}
         </p>
       </div>
@@ -84,6 +98,7 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
         games={games}
         availableGenres={availableGenres}
         presetCounts={presetCounts}
+        hiddenByStrictCount={hiddenByStrictCount}
       />
 
       {total === 0 && activePreset ? (

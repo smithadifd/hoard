@@ -486,12 +486,23 @@ export function getEnrichedGames(
       sql`${games.id} NOT IN (
         SELECT gt.game_id FROM game_tags gt
         INNER JOIN tags t ON gt.tag_id = t.id
-        WHERE t.name IN (${sql.join(filters.excludeTags.map(t => sql`${t}`), sql`, `)})
+        WHERE LOWER(t.name) IN (${sql.join(filters.excludeTags.map(t => sql`${t.toLowerCase()}`), sql`, `)})
       )`
     );
   }
 
-  if (filters.onSale === true) {
+  if (filters.maxPrice !== undefined) {
+    conditions.push(
+      sql`${games.id} IN (
+        SELECT ps.game_id FROM price_snapshots ps
+        WHERE ps.price_current <= ${filters.maxPrice}
+        AND ps.snapshot_date = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ps.game_id
+        )
+      )`
+    );
+  } else if (filters.onSale === true) {
     conditions.push(
       sql`${games.id} IN (
         SELECT ps.game_id FROM price_snapshots ps
@@ -502,6 +513,10 @@ export function getEnrichedGames(
         )
       )`
     );
+  }
+
+  if (filters.minInterest !== undefined) {
+    conditions.push(sql`${userGames.personalInterest} >= ${filters.minInterest}`);
   }
 
   // Snapshot conditions before data-quality filters so totalUnfiltered still applies search/genre/etc.
@@ -802,9 +817,35 @@ export function countGames(filters: GameFilters, userId: string): number {
       sql`${games.id} NOT IN (
         SELECT gt.game_id FROM game_tags gt
         INNER JOIN tags t ON gt.tag_id = t.id
-        WHERE t.name IN (${sql.join(filters.excludeTags.map(t => sql`${t}`), sql`, `)})
+        WHERE LOWER(t.name) IN (${sql.join(filters.excludeTags.map(t => sql`${t.toLowerCase()}`), sql`, `)})
       )`
     );
+  }
+  if (filters.maxPrice !== undefined) {
+    conditions.push(
+      sql`${games.id} IN (
+        SELECT ps.game_id FROM price_snapshots ps
+        WHERE ps.price_current <= ${filters.maxPrice}
+        AND ps.snapshot_date = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ps.game_id
+        )
+      )`
+    );
+  } else if (filters.onSale === true) {
+    conditions.push(
+      sql`${games.id} IN (
+        SELECT ps.game_id FROM price_snapshots ps
+        WHERE ps.discount_percent > 0
+        AND ps.snapshot_date = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ps.game_id
+        )
+      )`
+    );
+  }
+  if (filters.minInterest !== undefined) {
+    conditions.push(sql`${userGames.personalInterest} >= ${filters.minInterest}`);
   }
 
   const result = db
