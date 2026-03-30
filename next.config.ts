@@ -1,8 +1,12 @@
 import type { NextConfig } from 'next';
 import { withSerwist } from '@serwist/turbopack';
+import pkg from './package.json' with { type: 'json' };
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  env: {
+    NEXT_PUBLIC_APP_VERSION: pkg.version,
+  },
   turbopack: {
     root: '.',
   },
