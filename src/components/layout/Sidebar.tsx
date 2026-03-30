@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -15,8 +15,16 @@ import {
   CalendarClock,
   MoreHorizontal,
   X,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 
 interface NavItem {
   name: string;
@@ -76,6 +84,8 @@ const mobileMoreItems: NavItem[] = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
+const STORAGE_KEY = 'hoard-sidebar-collapsed';
+
 function isNavActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(href + '/');
@@ -88,6 +98,37 @@ function isMoreActive(pathname: string): boolean {
 export function Sidebar() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+
+  const collapsed = useSyncExternalStore(
+    (onStoreChange) => {
+      const handler = (e: StorageEvent) => {
+        if (e.key === STORAGE_KEY) onStoreChange();
+      };
+      window.addEventListener('storage', handler);
+      return () => window.removeEventListener('storage', handler);
+    },
+    () => localStorage.getItem(STORAGE_KEY) === 'true',
+    () => false,
+  );
+
+  const toggleCollapsed = useCallback(() => {
+    const current = localStorage.getItem(STORAGE_KEY) === 'true';
+    localStorage.setItem(STORAGE_KEY, String(!current));
+    window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY }));
+  }, []);
+
+  // Keyboard shortcut: [ to toggle sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '[' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+        toggleCollapsed();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCollapsed]);
 
   const closeMore = useCallback(() => setMoreOpen(false), []);
 
@@ -103,57 +144,121 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 bg-surface-low flex-col">
-        {/* Logo */}
-        <div className="p-6 pb-8">
-          <Link href="/" className="flex items-center gap-2.5">
-            <TrendingDown className="h-6 w-6 text-primary" />
-            <div>
-              <span className="text-xl font-headline font-extrabold text-primary tracking-tight">Hoard</span>
-              <p className="text-[10px] font-label uppercase tracking-[0.2em] text-muted-foreground/50">
-                Deal Tracker
-              </p>
-            </div>
-          </Link>
-        </div>
+      <TooltipProvider delayDuration={collapsed ? 100 : 700}>
+        <aside
+          className={`hidden lg:flex bg-surface-low flex-col transition-[width] duration-200 ${
+            collapsed ? 'w-16' : 'w-64'
+          }`}
+        >
+          {/* Logo + collapse toggle */}
+          <div className={`pb-8 flex items-center ${collapsed ? 'p-3 pb-6 justify-center' : 'p-6 justify-between'}`}>
+            <Link href="/" className="flex items-center gap-2.5">
+              <TrendingDown className="h-6 w-6 text-primary shrink-0" />
+              {!collapsed && (
+                <div>
+                  <span className="text-xl font-headline font-extrabold text-primary tracking-tight">Hoard</span>
+                  <p className="text-[10px] font-label uppercase tracking-[0.2em] text-muted-foreground/50">
+                    Deal Tracker
+                  </p>
+                </div>
+              )}
+            </Link>
+            {!collapsed && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={toggleCollapsed}
+                    className="p-1.5 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-white/[0.03] transition-colors"
+                    aria-label="Collapse sidebar"
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  Collapse <kbd className="ml-1 px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">[</kbd>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 space-y-5">
-          {navSections.map((section) => (
-            <div key={section.label}>
-              <p className="px-3 mb-1.5 text-[10px] font-label font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">
-                {section.label}
-              </p>
-              <div className="space-y-0.5">
-                {section.items.map((item) => {
-                  const isActive = isNavActive(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className={`flex items-center gap-3 px-3 py-2 text-sm font-medium transition-all ${
-                        isActive
-                          ? 'text-primary border-l-2 border-primary bg-primary/5 rounded-r-md'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03] rounded-md border-l-2 border-transparent'
-                      }`}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      {item.name}
-                    </Link>
-                  );
-                })}
+          {/* Navigation */}
+          <nav className={`flex-1 space-y-5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
+            {navSections.map((section) => (
+              <div key={section.label}>
+                {!collapsed && (
+                  <p className="px-3 mb-1.5 text-[10px] font-label font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">
+                    {section.label}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const isActive = isNavActive(pathname, item.href);
+                    const linkContent = (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`flex items-center px-3 py-2 text-sm font-medium transition-all ${
+                          collapsed ? 'justify-center' : 'gap-3'
+                        } ${
+                          isActive
+                            ? collapsed
+                              ? 'text-primary bg-primary/5 rounded-md'
+                              : 'text-primary border-l-2 border-primary bg-primary/5 rounded-r-md'
+                            : collapsed
+                              ? 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03] rounded-md'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03] rounded-md border-l-2 border-transparent'
+                        }`}
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && item.name}
+                      </Link>
+                    );
+
+                    if (collapsed) {
+                      return (
+                        <Tooltip key={item.name}>
+                          <TooltipTrigger asChild>
+                            {linkContent}
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            {item.name}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    }
+
+                    return linkContent;
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </nav>
+            ))}
+          </nav>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-white/[0.06]">
-          <p className="text-[10px] font-label text-muted-foreground/40">
-            Hoard v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0'}
-          </p>
-        </div>
-      </aside>
+          {/* Footer */}
+          <div className={`border-t border-white/[0.06] ${collapsed ? 'p-2' : 'p-4'}`}>
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={toggleCollapsed}
+                    className="flex items-center justify-center w-full p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    aria-label="Expand sidebar"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  Expand <kbd className="ml-1 px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">[</kbd>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <p className="text-[10px] font-label text-muted-foreground/40">
+                Hoard v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0'}
+              </p>
+            )}
+          </div>
+        </aside>
+      </TooltipProvider>
 
       {/* Mobile bottom tab bar */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/[0.06] bg-surface-low/95 backdrop-blur-xl safe-bottom">
