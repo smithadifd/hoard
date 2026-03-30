@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Clock, Star, DollarSign, X } from 'lucide-react';
+import { Clock, Star, DollarSign } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 
@@ -12,17 +12,16 @@ import { DealIndicator } from '@/components/prices/DealIndicator';
  */
 interface GameCardProps {
   game: EnrichedGame;
-  onRemove?: (gameId: number) => void;
 }
 
-export function GameCard({ game, onRemove }: GameCardProps) {
+export function GameCard({ game }: GameCardProps) {
   return (
     <Link
       href={`/games/${game.id}`}
       className="group rounded-xl bg-card overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/30"
     >
       {/* Header Image */}
-      <div className="relative aspect-[460/215] bg-surface-lowest">
+      <div className="relative aspect-[460/215] bg-surface-lowest overflow-hidden">
         {game.headerImageUrl ? (
           <Image
             src={game.headerImageUrl}
@@ -39,20 +38,6 @@ export function GameCard({ game, onRemove }: GameCardProps) {
 
         {/* Bottom gradient overlay */}
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
-
-        {/* Remove Button (wishlist context only) */}
-        {onRemove && (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              onRemove(game.id);
-            }}
-            aria-label="Remove from wishlist"
-            className="absolute top-2 left-2 p-1 rounded bg-black/60 text-white hover:bg-destructive/80 transition-colors z-10"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
 
         {/* Deal Badge */}
         {game.dealRating && (
