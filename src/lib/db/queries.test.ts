@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterAll } from 'vitest';
-import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting } from './test-helpers';
+import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
 import type { TestDb } from './test-helpers';
 
 // Mock getDb to return our test database
@@ -44,6 +44,16 @@ import {
   getAlertStats,
   getAllGenres,
   getBacklogStats,
+  countGames,
+  getBacklogThreshold,
+  getPlayAgainCompletionPct,
+  getPlayAgainDormantMonths,
+  getGamesForPriceSync,
+  getRecentSyncStats,
+  getLastSuccessfulSyncBySource,
+  getFirstUserId,
+  getUnreleasedCount,
+  markGameAsReleased,
 } from './queries';
 
 beforeEach(() => {
@@ -581,5 +591,263 @@ describe('genres and backlog', () => {
     const stats = getBacklogStats('default');
     expect(stats.totalOwned).toBe(3);
     expect(stats.unplayedCount).toBe(2);
+  });
+});
+
+// ============================================
+// countGames
+// ============================================
+
+describe('countGames', () => {
+  beforeEach(() => {
+    const g1 = seedGame(testDb, { steamAppId: 100, title: 'Alpha', reviewScore: 90, hltbMain: 10 });
+    const g2 = seedGame(testDb, { steamAppId: 200, title: 'Beta', reviewScore: null, hltbMain: 5 });
+    const g3 = seedGame(testDb, { steamAppId: 300, title: 'Charlie', reviewScore: 60, hltbMain: 20 });
+
+    seedUserGame(testDb, g1, { isOwned: true, playtimeMinutes: 600 });
+    seedUserGame(testDb, g2, { isOwned: true, playtimeMinutes: 0 });
+    seedUserGame(testDb, g3, { isOwned: true, playtimeMinutes: 0, isIgnored: true });
+
+    // Add genres to g1 and g2
+    upsertTags(g1, ['Action', 'RPG'], 'genre');
+    upsertTags(g2, ['Puzzle'], 'genre');
+
+    // Add price snapshots
+    seedPriceSnapshot(testDb, g1, { priceCurrent: 9.99, priceRegular: 19.99, discountPercent: 50 });
+    seedPriceSnapshot(testDb, g2, { priceCurrent: 4.99, priceRegular: 4.99, discountPercent: 0 });
+    seedPriceSnapshot(testDb, g3, { priceCurrent: 14.99, priceRegular: 29.99, discountPercent: 50 });
+  });
+
+  it('no filters returns total count', () => {
+    const count = countGames({}, 'default');
+    expect(count).toBe(3);
+  });
+
+  it('playtimeStatus backlog excludes games with high playtime', () => {
+    // g1 has 600 min playtime with 10h HLTB = 100% completion, not backlog
+    // g2 has 0 playtime = backlog
+    // g3 has 0 playtime but isIgnored = excluded from backlog
+    const count = countGames({ playtimeStatus: 'backlog' }, 'default');
+    expect(count).toBe(1); // only g2
+  });
+
+  it('minReview with strictFilters excludes NULL review games', () => {
+    const count = countGames({ minReview: 70, strictFilters: true }, 'default');
+    // g1 has 90 (passes), g2 has null (excluded by strict), g3 has 60 (below 70)
+    expect(count).toBe(1);
+  });
+
+  it('genres filter only counts games with matching genre tags', () => {
+    const count = countGames({ genres: ['Action'] }, 'default');
+    expect(count).toBe(1); // only g1
+  });
+
+  it('maxPrice filter only counts games at or below threshold', () => {
+    const count = countGames({ maxPrice: 5.00 }, 'default');
+    expect(count).toBe(1); // only g2 at 4.99
+  });
+
+  it('isIgnored games excluded from backlog count', () => {
+    // g3 is ignored with 0 playtime — would be backlog but isIgnored excludes it
+    const count = countGames({ playtimeStatus: 'backlog' }, 'default');
+    expect(count).toBe(1); // g2 only, g3 excluded by isIgnored
+  });
+});
+
+// ============================================
+// Settings-backed thresholds
+// ============================================
+
+describe('settings-backed thresholds', () => {
+  describe('getBacklogThreshold', () => {
+    it('returns default when no setting exists', () => {
+      expect(getBacklogThreshold()).toBe(10);
+    });
+
+    it('returns custom value when setting is present', () => {
+      seedSetting(testDb, 'backlog_threshold_percent', '25');
+      expect(getBacklogThreshold()).toBe(25);
+    });
+  });
+
+  describe('getPlayAgainCompletionPct', () => {
+    it('returns default when no setting exists', () => {
+      expect(getPlayAgainCompletionPct()).toBe(50);
+    });
+
+    it('returns custom value when setting is present', () => {
+      seedSetting(testDb, 'play_again_completion_pct', '75');
+      expect(getPlayAgainCompletionPct()).toBe(75);
+    });
+  });
+
+  describe('getPlayAgainDormantMonths', () => {
+    it('returns default when no setting exists', () => {
+      expect(getPlayAgainDormantMonths()).toBe(24);
+    });
+
+    it('returns custom value when setting is present', () => {
+      seedSetting(testDb, 'play_again_dormant_months', '12');
+      expect(getPlayAgainDormantMonths()).toBe(12);
+    });
+  });
+});
+
+// ============================================
+// Sync-related queries
+// ============================================
+
+describe('sync-related queries', () => {
+  describe('getGamesForPriceSync', () => {
+    it('returns owned OR wishlisted games', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Owned Only' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Wishlisted Only' });
+      const g3 = seedGame(testDb, { steamAppId: 300, title: 'Neither' });
+
+      seedUserGame(testDb, g1, { isOwned: true, isWishlisted: false, isWatchlisted: true });
+      seedUserGame(testDb, g2, { isOwned: false, isWishlisted: true });
+      seedUserGame(testDb, g3, { isOwned: false, isWishlisted: false });
+
+      const result = getGamesForPriceSync('default');
+      const titles = result.map(g => g.title);
+      // g1 is watchlisted, g2 is wishlisted — both should appear
+      expect(titles).toContain('Owned Only');
+      expect(titles).toContain('Wishlisted Only');
+      expect(titles).not.toContain('Neither');
+    });
+  });
+
+  describe('getRecentSyncStats', () => {
+    it('returns only matching source logs', () => {
+      const log1 = createSyncLog('steam_library');
+      completeSyncLog(log1, 'success', 10);
+      const log2 = createSyncLog('itad_prices');
+      completeSyncLog(log2, 'success', 20);
+      const log3 = createSyncLog('steam_library');
+      completeSyncLog(log3, 'error', 0, 'Failed');
+
+      const stats = getRecentSyncStats('steam_library');
+      expect(stats).toHaveLength(2);
+      expect(stats.every(s => s.source === 'steam_library')).toBe(true);
+    });
+  });
+
+  describe('getLastSuccessfulSyncBySource', () => {
+    it('returns map of source to completedAt', () => {
+      const log1 = createSyncLog('steam_library');
+      completeSyncLog(log1, 'success', 10);
+      const log2 = createSyncLog('itad_prices');
+      completeSyncLog(log2, 'success', 20);
+      const log3 = createSyncLog('hltb_enrichment');
+      completeSyncLog(log3, 'error', 0, 'Failed');
+
+      const result = getLastSuccessfulSyncBySource();
+      expect(result).toHaveProperty('steam_library');
+      expect(result).toHaveProperty('itad_prices');
+      expect(result).not.toHaveProperty('hltb_enrichment');
+    });
+  });
+
+  describe('getFirstUserId', () => {
+    it('returns user ID when user exists', () => {
+      seedUser(testDb, { id: 'user-abc', name: 'Alice', email: 'alice@example.com' });
+      expect(getFirstUserId()).toBe('user-abc');
+    });
+
+    it('throws when no users exist', () => {
+      expect(() => getFirstUserId()).toThrow('No users found');
+    });
+  });
+});
+
+// ============================================
+// Release queries
+// ============================================
+
+describe('release queries', () => {
+  describe('getUnreleasedCount', () => {
+    it('returns correct count of unreleased wishlisted games', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Unreleased A' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Released B' });
+      const g3 = seedGame(testDb, { steamAppId: 300, title: 'Unreleased C' });
+
+      // g1: wishlisted, isReleased = false
+      upsertGameFromSteam({ steamAppId: 100, title: 'Unreleased A', isReleased: false });
+      seedUserGame(testDb, g1, { isWishlisted: true });
+
+      // g2: wishlisted, isReleased = true
+      upsertGameFromSteam({ steamAppId: 200, title: 'Released B', isReleased: true });
+      seedUserGame(testDb, g2, { isWishlisted: true });
+
+      // g3: wishlisted, isReleased = null (unknown)
+      seedUserGame(testDb, g3, { isWishlisted: true });
+
+      const count = getUnreleasedCount('default');
+      // g1 (false) + g3 (null) = 2
+      expect(count).toBe(2);
+    });
+  });
+
+  describe('markGameAsReleased', () => {
+    it('sets isReleased to true', () => {
+      const gameId = seedGame(testDb, { steamAppId: 100, title: 'Upcoming Game' });
+      seedUserGame(testDb, gameId, { isWishlisted: true });
+
+      // Initially not released
+      const before = getEnrichedGameById(gameId, 'default');
+      expect(before?.isReleased).toBeFalsy();
+
+      markGameAsReleased(gameId);
+
+      const after = getEnrichedGameById(gameId, 'default');
+      expect(after?.isReleased).toBe(true);
+    });
+  });
+});
+
+// ============================================
+// Additional getEnrichedGames filters
+// ============================================
+
+describe('additional getEnrichedGames filters', () => {
+  beforeEach(() => {
+    const g1 = seedGame(testDb, { steamAppId: 100, title: 'On Sale Game' });
+    const g2 = seedGame(testDb, { steamAppId: 200, title: 'Full Price Game' });
+    const g3 = seedGame(testDb, { steamAppId: 300, title: 'Cheap Game' });
+
+    seedUserGame(testDb, g1, { isOwned: true, personalInterest: 5 });
+    seedUserGame(testDb, g2, { isOwned: true, personalInterest: 2 });
+    seedUserGame(testDb, g3, { isOwned: true, personalInterest: 4 });
+
+    // g1: discounted
+    seedPriceSnapshot(testDb, g1, { priceCurrent: 9.99, priceRegular: 19.99, discountPercent: 50 });
+    // g2: no discount
+    seedPriceSnapshot(testDb, g2, { priceCurrent: 59.99, priceRegular: 59.99, discountPercent: 0 });
+    // g3: small discount, cheap price
+    seedPriceSnapshot(testDb, g3, { priceCurrent: 2.99, priceRegular: 4.99, discountPercent: 40 });
+  });
+
+  it('onSale: true only returns games with discountPercent > 0', () => {
+    const result = getEnrichedGames({ onSale: true }, undefined, undefined, 'default');
+    expect(result.games).toHaveLength(2);
+    const titles = result.games.map(g => g.title);
+    expect(titles).toContain('On Sale Game');
+    expect(titles).toContain('Cheap Game');
+    expect(titles).not.toContain('Full Price Game');
+  });
+
+  it('maxPrice only returns games at or below price', () => {
+    const result = getEnrichedGames({ maxPrice: 5.00 }, undefined, undefined, 'default');
+    expect(result.games).toHaveLength(1);
+    expect(result.games[0].title).toBe('Cheap Game');
+  });
+
+  it('minInterest only returns games with personalInterest >= threshold', () => {
+    const result = getEnrichedGames({ minInterest: 4 }, undefined, undefined, 'default');
+    expect(result.games).toHaveLength(2);
+    const titles = result.games.map(g => g.title);
+    expect(titles).toContain('On Sale Game');
+    expect(titles).toContain('Cheap Game');
+    expect(titles).not.toContain('Full Price Game');
   });
 });
