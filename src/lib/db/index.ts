@@ -68,6 +68,9 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE UNIQUE INDEX IF NOT EXISTS user_game_idx ON user_games (user_id, game_id);
+    CREATE INDEX IF NOT EXISTS ug_owned_idx ON user_games (user_id, is_owned);
+    CREATE INDEX IF NOT EXISTS ug_wishlisted_idx ON user_games (user_id, is_wishlisted);
+    CREATE INDEX IF NOT EXISTS ug_watchlisted_idx ON user_games (user_id, is_watchlisted);
 
     CREATE TABLE IF NOT EXISTS price_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,6 +99,9 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       last_notified_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS alert_user_game_idx ON price_alerts (user_id, game_id);
+    CREATE INDEX IF NOT EXISTS alert_active_idx ON price_alerts (user_id, is_active);
 
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -253,7 +259,8 @@ function createDb() {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('busy_timeout = 5000');
   sqlite.pragma('synchronous = NORMAL');
-  sqlite.pragma('cache_size = 1000000000'); // 1GB
+  sqlite.pragma('cache_size = -32768'); // 32 MB page cache (negative = kibibytes)
+  sqlite.pragma('mmap_size = 134217728'); // 128 MB memory-mapped I/O
   sqlite.pragma('foreign_keys = true');
   sqlite.pragma('temp_store = memory');
 
