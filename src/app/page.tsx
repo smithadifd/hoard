@@ -1,9 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, Clock, BookOpen, Star, CalendarClock } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getHltbCoverage, getReviewCoverage, getBacklogStats, getAlertStats, getUnreleasedWishlistGames } from '@/lib/db/queries';
+import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity } from '@/lib/db/queries';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
+import GenreChart from '@/components/dashboard/GenreChart';
+import DealScoreChart from '@/components/dashboard/DealScoreChart';
+import RecentActivityFeed from '@/components/dashboard/RecentActivityFeed';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,20 +15,22 @@ export default async function DashboardPage() {
   if (!session) redirect('/login');
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
-  let hltbCoverage = { withHltb: 0, total: 0 };
-  let reviewCoverage = { withReviews: 0, total: 0 };
   let backlogStats = { unplayedCount: 0, totalOwned: 0 };
   let alertStats = { activeCount: 0, recentlyTriggered: 0 };
   let lastSyncLabel = 'Never';
   let upcomingReleases: Array<{ title: string; releaseLabel: string; id: number }> = [];
+  let genreData: Array<{ name: string; count: number }> = [];
+  let dealScoreData: Array<{ bucket: string; count: number }> = [];
+  let recentActivity: Array<{ type: 'price_drop' | 'wishlisted' | 'played'; gameId: number; title: string; detail: string; date: string }> = [];
 
   try {
     stats = getDashboardStats(session.user.id);
     dealsActive = getDealsCount();
-    hltbCoverage = getHltbCoverage();
-    reviewCoverage = getReviewCoverage();
     backlogStats = getBacklogStats(session.user.id);
     alertStats = getAlertStats(session.user.id);
+    genreData = getGenreDistribution(session.user.id);
+    dealScoreData = getDealScoreDistribution(session.user.id);
+    recentActivity = getRecentActivity(session.user.id);
 
     // Get upcoming releases for the dashboard card
     const unreleasedGames = getUnreleasedWishlistGames(session.user.id);
@@ -36,7 +41,6 @@ export default async function DashboardPage() {
         const bucket = getReleaseBucket(parsed, now);
         return { title: g.title, releaseLabel: parsed.label, id: g.id, bucket, date: parsed.date };
       })
-      // Show games with known dates first, sorted by date, then TBD
       .sort((a, b) => {
         if (a.date && b.date) return a.date.getTime() - b.date.getTime();
         if (a.date) return -1;
@@ -62,7 +66,7 @@ export default async function DashboardPage() {
   const hasData = stats.libraryCount > 0 || stats.wishlistCount > 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-headline font-extrabold tracking-tight">Dashboard</h1>
@@ -71,75 +75,17 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard
-          icon={<Library className="h-5 w-5" />}
-          label="Library"
-          value={stats.libraryCount > 0 ? stats.libraryCount.toLocaleString() : '—'}
-          subtitle="games owned"
-        />
-        <StatCard
-          icon={<Heart className="h-5 w-5" />}
-          label="Wishlist"
-          value={stats.wishlistCount > 0 ? stats.wishlistCount.toLocaleString() : '—'}
-          subtitle="games tracked"
-        />
-        <Link href="/watchlist">
-          <StatCard
-            icon={<Bell className="h-5 w-5" />}
-            label="Watchlist"
-            value={alertStats.activeCount > 0 ? alertStats.activeCount.toLocaleString() : stats.watchlistCount > 0 ? stats.watchlistCount.toLocaleString() : '—'}
-            subtitle={alertStats.recentlyTriggered > 0
-              ? `${alertStats.recentlyTriggered} triggered this week`
-              : 'price alerts active'}
-          />
-        </Link>
-        <StatCard
-          icon={<Gamepad2 className="h-5 w-5" />}
-          label="Playtime"
-          value={stats.totalPlaytimeHours > 0 ? `${stats.totalPlaytimeHours.toLocaleString()}h` : '—'}
-          subtitle="total hours played"
-        />
-        <StatCard
-          icon={<DollarSign className="h-5 w-5" />}
-          label="Deals Active"
-          value={dealsActive > 0 ? dealsActive.toLocaleString() : '—'}
-          subtitle="games on sale"
-        />
-        <StatCard
-          icon={<Clock className="h-5 w-5" />}
-          label="HLTB Coverage"
-          value={hltbCoverage.total > 0 ? `${hltbCoverage.withHltb}/${hltbCoverage.total}` : '—'}
-          subtitle={hltbCoverage.total > 0
-            ? `${Math.round((hltbCoverage.withHltb / hltbCoverage.total) * 100)}% with duration data`
-            : 'games with duration data'}
-        />
-        <StatCard
-          icon={<Star className="h-5 w-5" />}
-          label="Review Coverage"
-          value={reviewCoverage.total > 0 ? `${reviewCoverage.withReviews}/${reviewCoverage.total}` : '—'}
-          subtitle={reviewCoverage.total > 0
-            ? `${Math.round((reviewCoverage.withReviews / reviewCoverage.total) * 100)}% with review data`
-            : 'games with review data'}
-        />
-        <StatCard
-          icon={<BookOpen className="h-5 w-5" />}
-          label="Backlog"
-          value={backlogStats.unplayedCount > 0 ? backlogStats.unplayedCount.toLocaleString() : '—'}
-          subtitle={backlogStats.totalOwned > 0
-            ? `${Math.round((backlogStats.unplayedCount / backlogStats.totalOwned) * 100)}% of library unplayed`
-            : 'unplayed games'}
-        />
-        <StatCard
-          icon={<RefreshCw className="h-5 w-5" />}
-          label="Last Synced"
-          value={lastSyncLabel}
-          subtitle={hasData ? 'sync up to date' : 'waiting for setup'}
-        />
+      {/* Compact Stats Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <CompactStat href="/library" icon={<Library className="h-4 w-4" />} label="Library" value={stats.libraryCount > 0 ? stats.libraryCount.toLocaleString() : '—'} />
+        <CompactStat href="/wishlist" icon={<Heart className="h-4 w-4" />} label="Wishlist" value={stats.wishlistCount > 0 ? stats.wishlistCount.toLocaleString() : '—'} />
+        <CompactStat href="/watchlist" icon={<Bell className="h-4 w-4" />} label="Alerts" value={alertStats.activeCount > 0 ? alertStats.activeCount.toLocaleString() : '—'} />
+        <CompactStat href="/library" icon={<Gamepad2 className="h-4 w-4" />} label="Playtime" value={stats.totalPlaytimeHours > 0 ? `${stats.totalPlaytimeHours.toLocaleString()}h` : '—'} />
+        <CompactStat href="/wishlist?onSale=true" icon={<DollarSign className="h-4 w-4" />} label="On Sale" value={dealsActive > 0 ? dealsActive.toLocaleString() : '—'} />
+        <CompactStat href="/backlog" icon={<BookOpen className="h-4 w-4" />} label="Backlog" value={backlogStats.unplayedCount > 0 ? backlogStats.unplayedCount.toLocaleString() : '—'} />
       </div>
 
-      {/* Setup Prompt or Quick Links */}
+      {/* Setup Prompt */}
       {!hasData ? (
         <div className="rounded-xl bg-card p-6">
           <h2 className="text-lg font-headline font-bold mb-2">Welcome to Hoard</h2>
@@ -155,115 +101,98 @@ export default async function DashboardPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link
-            href="/library"
-            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <Library className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              <span className="font-medium group-hover:text-primary transition-colors">
-                Browse Library
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              View your {stats.libraryCount} owned games
-            </p>
-          </Link>
-          <Link
-            href="/wishlist"
-            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <Heart className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              <span className="font-medium group-hover:text-primary transition-colors">
-                Browse Wishlist
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Check your {stats.wishlistCount} wishlisted games
-            </p>
-          </Link>
-          <Link
-            href="/backlog"
-            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              <span className="font-medium group-hover:text-primary transition-colors">
-                Browse Backlog
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {backlogStats.unplayedCount} unplayed games to explore
-            </p>
-          </Link>
-          <Link
-            href="/watchlist"
-            className="rounded-xl bg-card p-4 hover:bg-surface-high transition-all group"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <Bell className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              <span className="font-medium group-hover:text-primary transition-colors">
-                Manage Watchlist
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {alertStats.activeCount > 0 ? `${alertStats.activeCount} active alerts` : 'Set up price alerts'}
-            </p>
-          </Link>
-        </div>
-      )}
+        <>
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <DashboardCard icon={<Tags className="h-4 w-4" />} title="Genre Breakdown">
+              <GenreChart data={genreData} />
+            </DashboardCard>
+            <DashboardCard icon={<BarChart3 className="h-4 w-4" />} title="Deal Score Distribution">
+              <DealScoreChart data={dealScoreData} />
+            </DashboardCard>
+          </div>
 
-      {/* Upcoming Releases */}
-      {upcomingReleases.length > 0 && (
-        <div className="rounded-xl bg-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-primary" />
-              <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">Upcoming Releases</h2>
-            </div>
-            <Link href="/releases" className="text-xs text-primary hover:underline">
-              View all
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {upcomingReleases.map((game) => (
-              <Link
-                key={game.id}
-                href={`/games/${game.id}`}
-                className="flex items-center justify-between py-1.5 text-sm hover:text-primary transition-colors group"
+          {/* Activity + Upcoming Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <DashboardCard icon={<Activity className="h-4 w-4" />} title="Recent Activity">
+              <RecentActivityFeed items={recentActivity} />
+            </DashboardCard>
+
+            {upcomingReleases.length > 0 && (
+              <DashboardCard
+                icon={<CalendarClock className="h-4 w-4" />}
+                title="Upcoming Releases"
+                action={<Link href="/releases" className="text-xs text-primary hover:underline">View all</Link>}
               >
-                <span className="truncate font-medium group-hover:text-primary">{game.title}</span>
-                <span className="text-xs text-muted-foreground ml-2 shrink-0">{game.releaseLabel}</span>
-              </Link>
-            ))}
+                <div className="space-y-2">
+                  {upcomingReleases.map((game) => (
+                    <Link
+                      key={game.id}
+                      href={`/games/${game.id}`}
+                      className="flex items-center justify-between py-1.5 text-sm hover:text-primary transition-colors group"
+                    >
+                      <span className="truncate font-medium group-hover:text-primary">{game.title}</span>
+                      <span className="text-xs text-muted-foreground ml-2 shrink-0">{game.releaseLabel}</span>
+                    </Link>
+                  ))}
+                </div>
+              </DashboardCard>
+            )}
           </div>
-        </div>
+
+          {/* Footer Bar */}
+          <div className="rounded-xl bg-card/60 border border-white/[0.04] px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="flex items-center gap-2 mr-auto">
+              <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-label font-semibold uppercase tracking-[0.15em] text-muted-foreground">Last Synced</span>
+              <span className="text-sm font-medium">{lastSyncLabel}</span>
+            </div>
+            <QuickLink href="/library" icon={<Library className="h-3.5 w-3.5" />} label="Library" />
+            <QuickLink href="/wishlist" icon={<Heart className="h-3.5 w-3.5" />} label="Wishlist" />
+            <QuickLink href="/backlog" icon={<BookOpen className="h-3.5 w-3.5" />} label="Backlog" />
+            <QuickLink href="/watchlist" icon={<Bell className="h-3.5 w-3.5" />} label="Watchlist" />
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  subtitle,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  subtitle: string;
-}) {
+function CompactStat({ href, icon, label, value }: { href: string; icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-card p-5 relative overflow-hidden group">
-      <div className="flex items-center gap-2 text-muted-foreground mb-2">
-        {icon}
-        <span className="text-[11px] font-label font-semibold uppercase tracking-[0.15em] text-primary">{label}</span>
+    <Link href={href} className="rounded-xl bg-card p-3.5 hover:bg-surface-high transition-colors group">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-muted-foreground group-hover:text-primary transition-colors">{icon}</span>
+        <span className="text-[10px] font-label font-semibold uppercase tracking-[0.15em] text-primary">{label}</span>
       </div>
-      <div className="text-2xl font-headline font-extrabold">{value}</div>
-      <div className="text-xs text-muted-foreground mt-1">{subtitle}</div>
+      <div className="text-xl font-headline font-extrabold">{value}</div>
+    </Link>
+  );
+}
+
+function DashboardCard({ icon, title, action, children }: { icon: React.ReactNode; title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl bg-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-primary">{icon}</span>
+          <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">{title}</h2>
+        </div>
+        {action}
+      </div>
+      {children}
     </div>
+  );
+}
+
+function QuickLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+    >
+      {icon}
+      <span>{label}</span>
+    </Link>
   );
 }

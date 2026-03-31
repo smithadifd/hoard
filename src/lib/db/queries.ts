@@ -2314,3 +2314,169 @@ export function updateAutoAlertLastNotified(gameId: number, userId: string): voi
     .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
     .run();
 }
+
+// ============================================
+// Dashboard Charts
+// ============================================
+
+/**
+ * Top genres across all user games (owned + wishlisted), counted by game.
+ * Returns top N genres sorted by count descending.
+ */
+export function getGenreDistribution(userId: string, limit = 8): Array<{ name: string; count: number }> {
+  const db = getDb();
+  const rows = db.all(sql`
+    SELECT t.name, COUNT(DISTINCT gt.game_id) as count
+    FROM tags t
+    JOIN game_tags gt ON gt.tag_id = t.id
+    JOIN user_games ug ON ug.game_id = gt.game_id
+    WHERE t.type = 'genre'
+      AND ug.user_id = ${userId}
+      AND (ug.is_owned = 1 OR (ug.is_wishlisted = 1 AND ug.wishlist_removed_at IS NULL))
+    GROUP BY t.name
+    ORDER BY count DESC
+    LIMIT ${limit}
+  `) as Array<{ name: string; count: number }>;
+  return rows;
+}
+
+/**
+ * Distribution of deal scores across user's games with active pricing.
+ * Uses getLatestPriceSnapshots (the same function game cards use) to guarantee
+ * the chart buckets match what's displayed on wishlist/library pages.
+ */
+export function getDealScoreDistribution(userId: string): Array<{ bucket: string; count: number }> {
+  const db = getDb();
+  const { weights, thresholds } = getScoringConfig();
+
+  // Get all user game IDs (owned or wishlisted)
+  const userGameRows = db.all(sql`
+    SELECT ug.game_id as gameId, ug.personal_interest as personalInterest,
+           g.review_score as reviewScore, g.hltb_main as hltbMain
+    FROM user_games ug
+    JOIN games g ON g.id = ug.game_id
+    WHERE ug.user_id = ${userId}
+      AND (ug.is_owned = 1 OR (ug.is_wishlisted = 1 AND ug.wishlist_removed_at IS NULL))
+  `) as Array<{
+    gameId: number;
+    personalInterest: number | null;
+    reviewScore: number | null;
+    hltbMain: number | null;
+  }>;
+
+  if (userGameRows.length === 0) return [];
+
+  // Use the exact same snapshot function that game cards use
+  const gameIds = userGameRows.map((r) => r.gameId);
+  const snapshots = getLatestPriceSnapshots(gameIds);
+  const gameDataMap = new Map(userGameRows.map((r) => [r.gameId, r]));
+
+  const buckets: Record<string, number> = { Poor: 0, Okay: 0, Good: 0, Great: 0, Excellent: 0 };
+
+  for (const [gameId, snapshot] of snapshots) {
+    if (snapshot.priceCurrent <= 0) continue;
+    const gameData = gameDataMap.get(gameId);
+    if (!gameData) continue;
+
+    const score = calculateDealScore({
+      currentPrice: snapshot.priceCurrent,
+      regularPrice: snapshot.priceRegular,
+      historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
+      reviewPercent: gameData.reviewScore,
+      hltbMainHours: gameData.hltbMain,
+      personalInterest: gameData.personalInterest ?? 3,
+    }, weights, thresholds);
+
+    // Thresholds match getScoreRating() in scoring/engine.ts
+    if (score.overall >= 85) buckets.Excellent++;
+    else if (score.overall >= 70) buckets.Great++;
+    else if (score.overall >= 55) buckets.Good++;
+    else if (score.overall >= 40) buckets.Okay++;
+    else buckets.Poor++;
+  }
+
+  return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
+}
+
+/**
+ * Recent activity feed: price drops, newly wishlisted, recently played games.
+ * Returns a unified list sorted by date descending.
+ */
+export function getRecentActivity(userId: string, limit = 10): Array<{
+  type: 'price_drop' | 'wishlisted' | 'played';
+  gameId: number;
+  title: string;
+  detail: string;
+  date: string;
+}> {
+  const db = getDb();
+
+  // Recent price drops (games that went on sale in latest snapshot)
+  const priceDrops = db.all(sql`
+    SELECT
+      'price_drop' as type,
+      g.id as game_id,
+      g.title,
+      '$' || ROUND(ps.price_current, 2) || ' (-' || ps.discount_percent || '%)' as detail,
+      ps.snapshot_date as date
+    FROM price_snapshots ps
+    JOIN games g ON g.id = ps.game_id
+    JOIN user_games ug ON ug.game_id = g.id AND ug.user_id = ${userId}
+    WHERE ps.discount_percent > 0
+      AND ps.id = (
+        SELECT ps2.id FROM price_snapshots ps2
+        WHERE ps2.game_id = ps.game_id
+        ORDER BY ps2.snapshot_date DESC, ps2.deal_score DESC
+        LIMIT 1
+      )
+      AND (ug.is_owned = 1 OR (ug.is_wishlisted = 1 AND ug.wishlist_removed_at IS NULL))
+    ORDER BY ps.snapshot_date DESC
+    LIMIT ${limit}
+  `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
+
+  // Recently wishlisted games
+  const wishlisted = db.all(sql`
+    SELECT
+      'wishlisted' as type,
+      g.id as game_id,
+      g.title,
+      'Added to wishlist' as detail,
+      SUBSTR(ug.created_at, 1, 10) as date
+    FROM user_games ug
+    JOIN games g ON g.id = ug.game_id
+    WHERE ug.user_id = ${userId}
+      AND ug.is_wishlisted = 1
+      AND ug.wishlist_removed_at IS NULL
+    ORDER BY ug.created_at DESC
+    LIMIT ${limit}
+  `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
+
+  // Recently played games
+  const played = db.all(sql`
+    SELECT
+      'played' as type,
+      g.id as game_id,
+      g.title,
+      ROUND(ug.playtime_minutes / 60.0, 1) || 'h played' as detail,
+      ug.last_played as date
+    FROM user_games ug
+    JOIN games g ON g.id = ug.game_id
+    WHERE ug.user_id = ${userId}
+      AND ug.is_owned = 1
+      AND ug.last_played IS NOT NULL
+      AND ug.playtime_minutes > 0
+    ORDER BY ug.last_played DESC
+    LIMIT ${limit}
+  `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
+
+  // Merge, sort by date, take top N
+  const all = [
+    ...priceDrops.map((r) => ({ type: r.type as 'price_drop', gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
+    ...wishlisted.map((r) => ({ type: r.type as 'wishlisted', gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
+    ...played.map((r) => ({ type: r.type as 'played', gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
+  ]
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    .slice(0, limit);
+
+  return all;
+}
