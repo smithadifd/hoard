@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Shuffle, Coffee, Swords, Crown, Sparkles, TreePalm } from 'lucide-react';
+import { useState, useCallback, useRef } from 'react';
+import { Shuffle, Coffee, Swords, Crown, Sparkles, TreePalm, Loader2 } from 'lucide-react';
 import type { EnrichedGame, GameFilters } from '@/types';
 
 interface PickMood {
@@ -116,32 +116,83 @@ function filterByMood(games: EnrichedGame[], mood: PickMood, timeMax?: number, c
   return filtered;
 }
 
+const PICK_PAGE_SIZE = 100;
+
+function buildFetchUrl(baseFilters: GameFilters, page: number): string {
+  const params = new URLSearchParams();
+  params.set('pageSize', String(PICK_PAGE_SIZE));
+  params.set('page', String(page));
+  if (baseFilters.view) params.set('view', baseFilters.view);
+  if (baseFilters.search) params.set('search', baseFilters.search);
+  if (baseFilters.sortBy) params.set('sortBy', baseFilters.sortBy);
+  if (baseFilters.sortOrder) params.set('sortOrder', baseFilters.sortOrder);
+  if (baseFilters.playtimeStatus) params.set('playtimeStatus', baseFilters.playtimeStatus);
+  if (baseFilters.maxHours !== undefined) params.set('maxHours', String(baseFilters.maxHours));
+  if (baseFilters.minHours !== undefined) params.set('minHours', String(baseFilters.minHours));
+  if (baseFilters.coop !== undefined) params.set('coop', String(baseFilters.coop));
+  if (baseFilters.onSale !== undefined) params.set('onSale', String(baseFilters.onSale));
+  if (baseFilters.maxPrice !== undefined) params.set('maxPrice', String(baseFilters.maxPrice));
+  if (baseFilters.minReview !== undefined) params.set('minReview', String(baseFilters.minReview));
+  if (baseFilters.maxReviewCount !== undefined) params.set('maxReviewCount', String(baseFilters.maxReviewCount));
+  if (baseFilters.minInterest !== undefined) params.set('minInterest', String(baseFilters.minInterest));
+  if (baseFilters.strictFilters !== undefined) params.set('strictFilters', String(baseFilters.strictFilters));
+  if (baseFilters.genres?.length) params.set('genres', baseFilters.genres.join(','));
+  if (baseFilters.excludeTags?.length) params.set('excludeTags', baseFilters.excludeTags.join(','));
+  return `/api/games?${params.toString()}`;
+}
+
+async function fetchAllGames(baseFilters: GameFilters): Promise<EnrichedGame[]> {
+  const allGames: EnrichedGame[] = [];
+  let page = 1;
+  let total = Infinity;
+  while (allGames.length < total) {
+    const res = await fetch(buildFetchUrl(baseFilters, page));
+    if (!res.ok) break;
+    const json = await res.json();
+    total = json.meta?.total ?? 0;
+    const batch = json.data as EnrichedGame[];
+    allGames.push(...batch);
+    if (batch.length < PICK_PAGE_SIZE) break;
+    page++;
+  }
+  return allGames;
+}
+
 interface PickForMePanelProps {
-  games: EnrichedGame[];
+  baseFilters: GameFilters;
+  totalCount: number;
   onPick: (pick: EnrichedGame, candidates: EnrichedGame[]) => void;
 }
 
-export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
+export function PickForMePanel({ baseFilters, totalCount, onPick }: PickForMePanelProps) {
   const [mood, setMood] = useState<string>('any');
   const [time, setTime] = useState<string>('any');
   const [coopSetting, setCoopSetting] = useState<string>('either');
+  const [isFetching, setIsFetching] = useState(false);
+  const isFetchingRef = useRef(false);
 
-  const handlePick = useCallback(() => {
-    const selectedMood = MOODS.find((m) => m.id === mood) ?? MOODS[0];
-    const timeOption = TIME_OPTIONS.find((t) => t.id === time);
-    const coopOption = COOP_OPTIONS.find((c) => c.id === coopSetting);
+  const handlePick = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    setIsFetching(true);
+    try {
+      const allGames = await fetchAllGames(baseFilters);
+      if (allGames.length === 0) return;
 
-    const candidates = filterByMood(games, selectedMood, timeOption?.value, coopOption?.value);
-    if (candidates.length === 0) return;
+      const selectedMood = MOODS.find((m) => m.id === mood) ?? MOODS[0];
+      const timeOption = TIME_OPTIONS.find((t) => t.id === time);
+      const coopOption = COOP_OPTIONS.find((c) => c.id === coopSetting);
 
-    const pick = weightedPick(candidates);
-    onPick(pick, candidates);
-  }, [games, mood, time, coopSetting, onPick]);
+      const candidates = filterByMood(allGames, selectedMood, timeOption?.value, coopOption?.value);
+      if (candidates.length === 0) return;
 
-  const selectedMood = MOODS.find((m) => m.id === mood) ?? MOODS[0];
-  const timeOption = TIME_OPTIONS.find((t) => t.id === time);
-  const coopOption = COOP_OPTIONS.find((c) => c.id === coopSetting);
-  const candidateCount = filterByMood(games, selectedMood, timeOption?.value, coopOption?.value).length;
+      const pick = weightedPick(candidates);
+      onPick(pick, candidates);
+    } finally {
+      setIsFetching(false);
+      isFetchingRef.current = false;
+    }
+  }, [baseFilters, mood, time, coopSetting, onPick]);
 
   return (
     <div className="rounded-xl bg-card p-4 space-y-3">
@@ -151,7 +202,7 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
           Pick For Me
         </h3>
         <span className="text-xs text-muted-foreground">
-          {candidateCount} game{candidateCount !== 1 ? 's' : ''} in pool
+          {totalCount} game{totalCount !== 1 ? 's' : ''} in pool
         </span>
       </div>
 
@@ -220,11 +271,20 @@ export function PickForMePanel({ games, onPick }: PickForMePanelProps) {
 
       <button
         onClick={handlePick}
-        disabled={candidateCount === 0}
+        disabled={totalCount === 0 || isFetching}
         className="w-full px-4 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
       >
-        <Shuffle className="h-4 w-4" />
-        {candidateCount === 0 ? 'No games match' : 'Pick a Game'}
+        {isFetching ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Finding a game...
+          </>
+        ) : (
+          <>
+            <Shuffle className="h-4 w-4" />
+            {totalCount === 0 ? 'No games match' : 'Pick a Game'}
+          </>
+        )}
       </button>
     </div>
   );

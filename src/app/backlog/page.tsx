@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getEnrichedGames, getAllGenres, countGames } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
-import { GameGrid } from '@/components/games/GameGrid';
+import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
 import { BacklogFilters } from '@/components/backlog/BacklogFilters';
-import { Pagination } from '@/components/ui/Pagination';
 import { BACKLOG_PRESETS } from '@/lib/backlog/presets';
 import { parseGameFiltersFromParams } from '@/lib/utils/filters';
 import type { GameFilters } from '@/types';
@@ -34,9 +33,8 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
     filters.strictFilters = false;
   }
 
-  const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
-  const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
+  const { games, total } = getEnrichedGames(filters, 1, pageSize, session.user.id);
   const availableGenres = getAllGenres();
 
   // Count how many games are hidden by strict filters (missing HLTB/review data)
@@ -63,13 +61,6 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
     return true;
   });
 
-  const paginationParams: Record<string, string> = {};
-  for (const [key, value] of Object.entries(params)) {
-    if (key !== 'page' && typeof value === 'string') {
-      paginationParams[key] = value;
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -85,7 +76,7 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
 
       <BacklogFilters
         currentFilters={filters}
-        games={games}
+        totalCount={total}
         availableGenres={availableGenres}
         presetCounts={presetCounts}
         hiddenByStrictCount={hiddenByStrictCount}
@@ -99,19 +90,14 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
           </p>
         </div>
       ) : (
-        <GameGrid
-          games={games}
+        <InfiniteGameGrid
+          initialGames={games}
+          initialTotal={total}
+          filters={filters}
+          pageSize={pageSize}
           emptyMessage="No games match your filters. Try adjusting the filters or sync your library from Settings."
         />
       )}
-
-      <Pagination
-        current={page}
-        total={total}
-        pageSize={pageSize}
-        basePath="/backlog"
-        searchParams={paginationParams}
-      />
     </div>
   );
 }

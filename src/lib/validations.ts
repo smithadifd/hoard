@@ -53,6 +53,17 @@ export const gameFiltersSchema = z.object({
   maxPrice: z.coerce.number().min(0).max(10000).optional(),
   onSale: booleanString.optional(),
   strictFilters: booleanString.optional(),
+  requireCompleteData: booleanString.optional(),
+  hideUnreleased: booleanString.optional(),
+  minInterest: z.coerce.number().int().min(1).max(5).optional(),
+  genres: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(',').filter(Boolean) : undefined)),
+  excludeTags: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(',').filter(Boolean) : undefined)),
   sortBy: z.enum(['title', 'playtime', 'review', 'price', 'dealScore', 'hltbMain', 'releaseDate', 'lastPlayed']).default('title'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),

@@ -262,7 +262,7 @@ npm run lint
 - [x] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
 - [ ] Post-purchase enjoyment rating (two-field model: interest + enjoyment, expected value metrics)
 - [ ] Onboarding wizard (multi-step setup with background sync)
-- [ ] Dashboard overhaul (charts/visualizations via Recharts)
+- [x] Dashboard overhaul (genre bar chart, deal score histogram, activity feed via Recharts)
 
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
