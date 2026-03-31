@@ -2,9 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getEnrichedGames, getUnreleasedCount } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
-import { WishlistGrid } from './WishlistGrid';
+import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
 import { GameListFilters } from '@/components/filters/GameListFilters';
-import { Pagination } from '@/components/ui/Pagination';
 import { parseGameFiltersFromParams } from '@/lib/utils/filters';
 import type { GameFilters } from '@/types';
 
@@ -29,18 +28,15 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
     ...parseGameFiltersFromParams(params),
   };
 
-  const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
-  const { games, total, totalUnfiltered } = getEnrichedGames(filters, page, pageSize, session.user.id);
+  const { games, total, totalUnfiltered } = getEnrichedGames(filters, 1, pageSize, session.user.id);
 
   const hiddenCount = totalUnfiltered !== undefined ? totalUnfiltered - total : 0;
   const unreleasedCount = getUnreleasedCount(session.user.id);
 
-  const paginationParams: Record<string, string> = {};
   const showAllSearchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (key !== 'page' && typeof value === 'string') {
-      paginationParams[key] = value;
       if (key !== 'showAll' && key !== 'showUnreleased') showAllSearchParams.set(key, value);
     }
   }
@@ -86,8 +82,11 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
           </a>
         </div>
       ) : (
-        <WishlistGrid
-          games={games}
+        <InfiniteGameGrid
+          initialGames={games}
+          initialTotal={total}
+          filters={filters}
+          pageSize={pageSize}
           emptyMessage={
             filters.search
               ? 'No games found matching your search.'
@@ -95,14 +94,6 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
           }
         />
       )}
-
-      <Pagination
-        current={page}
-        total={total}
-        pageSize={pageSize}
-        basePath="/wishlist"
-        searchParams={paginationParams}
-      />
     </div>
   );
 }

@@ -12,13 +12,13 @@ import type { EnrichedGame } from '@/types';
 
 interface BacklogFiltersProps {
   currentFilters: GameFiltersType;
-  games: EnrichedGame[];
+  totalCount: number;
   availableGenres: string[];
   presetCounts?: Record<string, number>;
   hiddenByStrictCount?: number;
 }
 
-export function BacklogFilters({ currentFilters, games, availableGenres, presetCounts, hiddenByStrictCount = 0 }: BacklogFiltersProps) {
+export function BacklogFilters({ currentFilters, totalCount, availableGenres, presetCounts, hiddenByStrictCount = 0 }: BacklogFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -117,7 +117,7 @@ export function BacklogFilters({ currentFilters, games, availableGenres, presetC
           </button>
         </div>
       )}
-      <PickForMePanel games={games} onPick={handlePick} />
+      <PickForMePanel baseFilters={currentFilters} totalCount={totalCount} onPick={handlePick} />
       <RandomPickModal
         finalPick={pickedGame}
         candidates={candidates}
