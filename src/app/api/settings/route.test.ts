@@ -102,7 +102,7 @@ describe('PUT /api/settings', () => {
           steam_api_key: 'key',
           steam_user_id: 'id',
           itad_api_key: 'itad',
-          discord_webhook_url: 'url',
+          discord_webhook_url: 'https://discord.com/api/webhooks/123/abc',
           discord_ops_webhook_url: '',
           scoring_weights: '{}',
           scoring_thresholds: '{}',

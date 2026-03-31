@@ -501,7 +501,7 @@ describe('price alerts', () => {
 
   it('updatePriceAlert updates alert settings', () => {
     const alertId = upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
-    const updated = updatePriceAlert(alertId, { isActive: false });
+    const updated = updatePriceAlert(alertId, { isActive: false }, 'default');
     expect(updated).toBe(true);
 
     const alert = getPriceAlertForGame(gameId, 'default');
@@ -509,13 +509,13 @@ describe('price alerts', () => {
   });
 
   it('updatePriceAlert returns false for non-existent alert', () => {
-    const updated = updatePriceAlert(99999, { isActive: false });
+    const updated = updatePriceAlert(99999, { isActive: false }, 'default');
     expect(updated).toBe(false);
   });
 
   it('deletePriceAlert removes alert', () => {
     const alertId = upsertPriceAlert(gameId, { targetPrice: 10 }, 'default');
-    const deleted = deletePriceAlert(alertId);
+    const deleted = deletePriceAlert(alertId, 'default');
     expect(deleted).toBe(true);
 
     const alert = getPriceAlertForGame(gameId, 'default');
@@ -523,7 +523,7 @@ describe('price alerts', () => {
   });
 
   it('deletePriceAlert returns false for non-existent alert', () => {
-    const deleted = deletePriceAlert(99999);
+    const deleted = deletePriceAlert(99999, 'default');
     expect(deleted).toBe(false);
   });
 
@@ -548,7 +548,7 @@ describe('price alerts', () => {
     const g2 = seedGame(testDb, { steamAppId: 570, title: 'Dota 2' });
     seedUserGame(testDb, g2, { isOwned: true, isWatchlisted: true });
     const alertId2 = upsertPriceAlert(g2, { targetPrice: 5 }, 'default');
-    updatePriceAlert(alertId2, { isActive: false });
+    updatePriceAlert(alertId2, { isActive: false }, 'default');
 
     const stats = getAlertStats('default');
     expect(stats.activeCount).toBe(1);

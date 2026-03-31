@@ -3,9 +3,6 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { getDb } from './db';
 
-type Auth = ReturnType<typeof betterAuth>;
-let _auth: Auth | null = null;
-
 function getTrustedOrigins(): string[] {
   const origins = ['http://localhost:3000'];
   const extra = process.env.TRUSTED_ORIGINS; // comma-separated
@@ -15,7 +12,7 @@ function getTrustedOrigins(): string[] {
   return origins;
 }
 
-function createAuth(): Auth {
+function createAuth() {
   return betterAuth({
     baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
     secret: process.env.BETTER_AUTH_SECRET,
@@ -48,6 +45,9 @@ function createAuth(): Auth {
     ],
   });
 }
+
+type Auth = ReturnType<typeof createAuth>;
+let _auth: Auth | null = null;
 
 function ensureAuth(): Auth {
   if (!_auth) _auth = createAuth();
