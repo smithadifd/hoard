@@ -18,6 +18,18 @@ export interface HLTBResult {
 }
 
 /**
+ * Subset of HLTBResult used by search UI components.
+ */
+export interface HLTBSearchResult {
+  id: string;
+  name: string;
+  gameplayMain: number;
+  gameplayMainExtra: number;
+  gameplayCompletionist: number;
+  similarity: number;
+}
+
+/**
  * Cached HLTB data stored in our database.
  */
 export interface HLTBCachedData {

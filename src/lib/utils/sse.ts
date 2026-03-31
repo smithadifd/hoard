@@ -1,3 +1,71 @@
+import type { NextRequest } from 'next/server';
+import type { SyncResult, ProgressCallback } from '@/lib/sync/types';
+
+type SyncFn = (
+  onProgress: ProgressCallback,
+  signal?: AbortSignal,
+  userId?: string
+) => Promise<SyncResult>;
+
+/**
+ * Create an SSE Response that streams progress from a sync function.
+ * Supports cancellation via AbortController when the client disconnects.
+ */
+export function createSyncSSEResponse(
+  syncFn: SyncFn,
+  label: string,
+  request: NextRequest,
+  userId: string
+): Response {
+  const encoder = new TextEncoder();
+  const abortController = new AbortController();
+
+  request.signal.addEventListener('abort', () => {
+    abortController.abort();
+  });
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // Controller already closed
+        }
+      };
+
+      try {
+        const result = await syncFn((processed, total, context) => {
+          send('progress', { processed, total, ...context });
+        }, abortController.signal, userId);
+
+        if (abortController.signal.aborted) {
+          send('done', { gamesProcessed: result.stats.succeeded, cancelled: true });
+        } else {
+          send('done', { gamesProcessed: result.stats.succeeded, message: result.message });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `${label} sync failed`;
+        console.error(`[${label} Sync]`, error);
+        send('error', { error: message });
+      } finally {
+        controller.close();
+      }
+    },
+    cancel() {
+      abortController.abort();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
+}
+
 export interface SSEProgressEvent {
   type: 'progress';
   processed: number;

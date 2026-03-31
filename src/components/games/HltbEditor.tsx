@@ -2,15 +2,8 @@
 
 import { useState, useRef } from 'react';
 import { Clock, Search, Loader2, Check, Pencil, X, RefreshCw, Ban } from 'lucide-react';
-
-interface HLTBSearchResult {
-  id: string;
-  name: string;
-  gameplayMain: number;
-  gameplayMainExtra: number;
-  gameplayCompletionist: number;
-  similarity: number;
-}
+import { useHltbSearch } from '@/hooks/useHltbSearch';
+import type { HLTBSearchResult } from '@/hooks/useHltbSearch';
 
 interface HltbEditorProps {
   gameId: number;
@@ -32,11 +25,9 @@ export function HltbEditor({
   hltbMissCount,
 }: HltbEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [results, setResults] = useState<HLTBSearchResult[]>([]);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const { results, searching, searchError, search, clearResults } = useHltbSearch();
 
   const mainRef = useRef<HTMLInputElement>(null);
   const mainExtraRef = useRef<HTMLInputElement>(null);
@@ -61,40 +52,13 @@ export function HltbEditor({
     }
   };
 
-  const handleSearch = async () => {
-    setSearching(true);
-    setSearchError(null);
-    setResults([]);
-
-    try {
-      const resp = await fetch('/api/hltb/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: gameTitle }),
-      });
-
-      if (!resp.ok) {
-        setSearchError('Search failed');
-        return;
-      }
-
-      const json = await resp.json();
-      setResults(json.data.results ?? []);
-      if ((json.data.results ?? []).length === 0) {
-        setSearchError('No results found on HLTB');
-      }
-    } catch {
-      setSearchError('Search failed');
-    } finally {
-      setSearching(false);
-    }
-  };
+  const handleSearch = () => search(gameTitle);
 
   const handleUseResult = (result: HLTBSearchResult) => {
     if (mainRef.current) mainRef.current.value = result.gameplayMain > 0 ? String(result.gameplayMain) : '';
     if (mainExtraRef.current) mainExtraRef.current.value = result.gameplayMainExtra > 0 ? String(result.gameplayMainExtra) : '';
     if (completionistRef.current) completionistRef.current.value = result.gameplayCompletionist > 0 ? String(result.gameplayCompletionist) : '';
-    setResults([]);
+    clearResults();
   };
 
   const handleSave = async () => {
@@ -266,8 +230,7 @@ export function HltbEditor({
         <button
           onClick={() => {
             setIsEditing(false);
-            setResults([]);
-            setSearchError(null);
+            clearResults();
           }}
           className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
         >

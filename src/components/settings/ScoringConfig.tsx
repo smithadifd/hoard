@@ -2,25 +2,9 @@
 
 import { useState } from 'react';
 import { Save, Loader2, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
+import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { useApiMutation } from '@/hooks/useApiMutation';
-
-const DEFAULT_WEIGHTS: ScoringWeights = {
-  priceWeight: 0.30,
-  reviewWeight: 0.25,
-  valueWeight: 0.25,
-  interestWeight: 0.20,
-};
-
-const DEFAULT_THRESHOLDS: ScoringThresholds = {
-  maxDollarsPerHour: {
-    overwhelminglyPositive: 4.00,
-    veryPositive: 3.00,
-    positive: 2.00,
-    mixed: 1.00,
-    negative: 0.50,
-  },
-};
 
 interface ScoringConfigProps {
   initialWeights: ScoringWeights;

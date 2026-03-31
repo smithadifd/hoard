@@ -3,6 +3,7 @@ import { syncLibrary } from '@/lib/sync/library';
 import { getEnrichedGames } from '@/lib/db/queries';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized } from '@/lib/utils/api';
+import { createSyncSSEResponse } from '@/lib/utils/sse';
 
 /**
  * POST /api/steam/library
@@ -17,48 +18,7 @@ export async function POST(request: NextRequest) {
     return apiUnauthorized();
   }
 
-  const encoder = new TextEncoder();
-  const abortController = new AbortController();
-
-  request.signal.addEventListener('abort', () => {
-    abortController.abort();
-  });
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (event: string, data: unknown) => {
-        try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        } catch {
-          // Controller already closed
-        }
-      };
-
-      try {
-        const result = await syncLibrary((processed, total, context) => {
-          send('progress', { processed, total, ...context });
-        }, abortController.signal, userId);
-        send('done', { gamesProcessed: result.stats.succeeded, cancelled: abortController.signal.aborted });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Library sync failed';
-        console.error('[POST /api/steam/library] Library sync failed:', error);
-        send('error', { error: message });
-      } finally {
-        controller.close();
-      }
-    },
-    cancel() {
-      abortController.abort();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    },
-  });
+  return createSyncSSEResponse(syncLibrary, 'Library', request, userId);
 }
 
 /**
