@@ -5,20 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Star, Clock, ChevronLeft, ChevronRight, Ban, HelpCircle } from 'lucide-react';
 import { TriageHltbEditor } from './TriageHltbEditor';
-
-interface TriageGame {
-  id: number;
-  steamAppId: number;
-  title: string;
-  headerImageUrl: string | null;
-  developer: string | null;
-  reviewScore: number | null;
-  reviewDescription: string | null;
-  hltbMain: number | null;
-  currentPrice: number | null;
-  personalInterest: number;
-  interestRatedAt: string | null;
-}
+import type { TriageGame } from '@/app/triage/types';
 
 interface TriageCardProps {
   game: TriageGame;

@@ -5,6 +5,7 @@ import { GameGrid } from '@/components/games/GameGrid';
 import { BacklogFilters } from '@/components/backlog/BacklogFilters';
 import { Pagination } from '@/components/ui/Pagination';
 import { BACKLOG_PRESETS } from '@/lib/backlog/presets';
+import { parseGameFiltersFromParams } from '@/lib/utils/filters';
 import type { GameFilters } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -22,21 +23,10 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
   const filters: GameFilters = {
     view: 'library',
     strictFilters: true, // Backlog always uses strict filters — no NULL pass-through
-    search: typeof params.search === 'string' ? params.search : undefined,
-    sortBy: (typeof params.sortBy === 'string' ? params.sortBy : 'title') as GameFilters['sortBy'],
-    sortOrder: (typeof params.sortOrder === 'string' ? params.sortOrder : 'asc') as GameFilters['sortOrder'],
-    maxHours: typeof params.maxHours === 'string' ? Number(params.maxHours) : undefined,
-    minHours: typeof params.minHours === 'string' ? Number(params.minHours) : undefined,
-    coop: typeof params.coop === 'string' ? params.coop === 'true' : undefined,
-    onSale: typeof params.onSale === 'string' ? params.onSale === 'true' : undefined,
-    playtimeStatus: typeof params.playtime === 'string'
-      ? (params.playtime as GameFilters['playtimeStatus'])
-      : 'backlog', // Default to smart backlog (unplayed + barely started)
-    genres: typeof params.genres === 'string' && params.genres
-      ? params.genres.split(',')
-      : undefined,
-    minReview: typeof params.minReview === 'string' ? Number(params.minReview) : undefined,
-    minInterest: typeof params.minInterest === 'string' && Number(params.minInterest) >= 1 && Number(params.minInterest) <= 5 ? Number(params.minInterest) : undefined,
+    sortBy: 'title',
+    sortOrder: 'asc',
+    playtimeStatus: 'backlog', // Default to smart backlog (unplayed + barely started)
+    ...parseGameFiltersFromParams(params),
   };
 
   // Allow toggling strict filters off via URL param

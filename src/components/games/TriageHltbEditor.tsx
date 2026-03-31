@@ -1,16 +1,9 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Search, Loader2, Check } from 'lucide-react';
-
-interface HLTBSearchResult {
-  id: string;
-  name: string;
-  gameplayMain: number;
-  gameplayMainExtra: number;
-  gameplayCompletionist: number;
-  similarity: number;
-}
+import { useHltbSearch } from '@/hooks/useHltbSearch';
+import type { HLTBSearchResult } from '@/hooks/useHltbSearch';
 
 interface TriageHltbEditorProps {
   gameId: number;
@@ -20,52 +13,29 @@ interface TriageHltbEditorProps {
 }
 
 export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: TriageHltbEditorProps) {
-  const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [results, setResults] = useState<HLTBSearchResult[]>([]);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedResult, setSelectedResult] = useState<HLTBSearchResult | null>(null);
   const [showManual, setShowManual] = useState(false);
+  const { results, searching, searchError, search, clearResults } = useHltbSearch();
 
   const mainRef = useRef<HTMLInputElement>(null);
 
-  const handleSearch = async () => {
-    setSearching(true);
-    setSearchError(null);
-    setResults([]);
-    setSelectedResult(null);
-
-    try {
-      const resp = await fetch('/api/hltb/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: gameTitle }),
-      });
-
-      if (!resp.ok) {
-        const errorBody = await resp.json().catch(() => null);
-        setSearchError(`Search failed (${resp.status}): ${errorBody?.error || 'unknown error'}`);
-        return;
-      }
-
-      const json = await resp.json();
-      const items = json.data?.results ?? [];
-      setResults(items);
-      if (items.length === 0) {
-        setSearchError('No HLTB results found');
-        setShowManual(true);
-      }
-    } catch (err) {
-      setSearchError(`Search failed: ${err instanceof Error ? err.message : 'network error'}`);
-    } finally {
-      setSearching(false);
+  // Show manual entry when search returns no results
+  useEffect(() => {
+    if (searchError && results.length === 0) {
+      setShowManual(true);
     }
+  }, [searchError, results.length]);
+
+  const handleSearch = async () => {
+    setSelectedResult(null);
+    await search(gameTitle);
   };
 
   const handleSelectResult = (result: HLTBSearchResult) => {
     setSelectedResult(result);
-    setResults([]);
+    clearResults();
   };
 
   const handleSave = async (main: number, mainExtra?: number, completionist?: number) => {
@@ -141,7 +111,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
               </button>
             ))}
             <button
-              onClick={() => { setResults([]); setShowManual(true); }}
+              onClick={() => { clearResults(); setShowManual(true); }}
               className="w-full text-xs text-muted-foreground hover:text-foreground py-1"
             >
               Enter manually instead
@@ -168,7 +138,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
               Save
             </button>
             <button
-              onClick={() => { setSelectedResult(null); setResults([]); }}
+              onClick={() => { setSelectedResult(null); clearResults(); }}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
               Back
@@ -197,7 +167,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
               Save
             </button>
             <button
-              onClick={() => { setShowManual(false); setSearchError(null); }}
+              onClick={() => { setShowManual(false); clearResults(); }}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
               Back
@@ -277,7 +247,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
             ))}
           </div>
           <button
-            onClick={() => { setResults([]); setShowManual(true); }}
+            onClick={() => { clearResults(); setShowManual(true); }}
             className="w-full py-2 text-xs text-muted-foreground hover:text-foreground"
           >
             None of these? Enter manually
@@ -345,7 +315,7 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
               Save
             </button>
             <button
-              onClick={() => { setShowManual(false); setSearchError(null); }}
+              onClick={() => { setShowManual(false); clearResults(); }}
               className="px-4 py-3 rounded-md bg-secondary text-sm text-secondary-foreground hover:bg-secondary/80 transition-colors min-h-[44px]"
             >
               Back
