@@ -23,6 +23,20 @@ interface ScheduledTask {
   isRunning: boolean;
 }
 
+const TASK_TO_SOURCE: Record<string, string> = {
+  'price-check':       'itad_prices',
+  'library-sync':      'steam_library',
+  'wishlist-sync':     'steam_wishlist',
+  'hltb-sync':         'hltb',
+  'review-enrichment': 'reviews',
+  'database-backup':   'backup',
+  'health-summary':    'health_summary',
+};
+
+function taskToSource(name: string): string {
+  return TASK_TO_SOURCE[name] ?? name;
+}
+
 const tasks = new Map<string, ScheduledTask>();
 
 /**
@@ -59,7 +73,7 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
       if (result?.stats) {
         try {
           const { evaluateSyncHealth } = await import('../sync/health');
-          await evaluateSyncHealth(name === 'price-check' ? 'itad_prices' : name === 'hltb-sync' ? 'hltb' : name === 'review-enrichment' ? 'reviews' : name, result.stats);
+          await evaluateSyncHealth(taskToSource(name), result.stats);
         } catch {
           // Don't let health eval crash the scheduler
         }
@@ -72,8 +86,7 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
         const msg = error instanceof Error ? error.message : 'Unknown error';
 
         // Build context from recent runs
-        const sourceName = name === 'price-check' ? 'itad_prices' : name === 'hltb-sync' ? 'hltb' : name === 'review-enrichment' ? 'reviews' : name;
-        const recentRuns = getRecentSyncStats(sourceName, 3);
+        const recentRuns = getRecentSyncStats(taskToSource(name), 3);
         const contextLines = recentRuns
           .filter(r => r.itemsAttempted && r.itemsAttempted > 0)
           .map(r => `${r.itemsProcessed}/${r.itemsAttempted} (${r.status})`);
@@ -81,9 +94,12 @@ export function registerTask(name: string, schedule: string, fn: TaskFn): void {
         await getDiscordClient().sendOperationalAlert({
           title: `Sync Failed: ${name}`,
           description: msg,
-          fields: contextLines.length > 0
-            ? [{ name: 'Recent Runs', value: contextLines.join(', '), inline: false }]
-            : undefined,
+          fields: [
+            { name: 'Schedule', value: taskInfo.schedule, inline: true },
+            ...(contextLines.length > 0
+              ? [{ name: 'Recent Runs', value: contextLines.join(', '), inline: false }]
+              : []),
+          ],
         });
       } catch {
         // Don't let notification failure crash the scheduler

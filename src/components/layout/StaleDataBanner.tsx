@@ -8,6 +8,7 @@ const STALE_THRESHOLDS: Record<string, { label: string; hours: number }> = {
   steam_wishlist: { label: 'Wishlist', hours: 48 },
   itad_prices: { label: 'Prices', hours: 24 },
   hltb: { label: 'HLTB', hours: 336 }, // 14 days
+  backup: { label: 'Backup', hours: 25 }, // daily cron at 4am
 };
 
 export function StaleDataBanner() {

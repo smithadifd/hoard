@@ -54,9 +54,9 @@ export async function sendWeeklyHealthSummary(): Promise<void> {
   weekAgo.setDate(weekAgo.getDate() - 7);
   const sinceDate = weekAgo.toISOString();
 
-  const sources = ['steam_library', 'steam_wishlist', 'hltb', 'reviews', 'itad_prices', 'alert_check'];
+  const sources = ['steam_library', 'steam_wishlist', 'hltb', 'reviews', 'itad_prices', 'alert_check', 'release_check', 'backup'];
   // Sources that must run at least once per week — "No runs" is unhealthy
-  const requiredSources = new Set(['steam_library', 'steam_wishlist', 'itad_prices']);
+  const requiredSources = new Set(['steam_library', 'steam_wishlist', 'itad_prices', 'backup']);
   const fields: Array<{ name: string; value: string; inline: boolean }> = [];
   let allHealthy = true;
 
