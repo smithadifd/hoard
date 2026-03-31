@@ -12,8 +12,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let userId: string;
   try {
-    await requireUserIdFromRequest(request);
+    userId = await requireUserIdFromRequest(request);
   } catch {
     return apiUnauthorized();
   }
@@ -31,7 +32,7 @@ export async function PATCH(
       return apiValidationError(formatZodError(parsed.error));
     }
 
-    const updated = updatePriceAlert(idResult.data.id, parsed.data);
+    const updated = updatePriceAlert(idResult.data.id, parsed.data, userId);
     if (!updated) {
       return apiNotFound('Alert');
     }
@@ -51,8 +52,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let userId: string;
   try {
-    await requireUserIdFromRequest(request);
+    userId = await requireUserIdFromRequest(request);
   } catch {
     return apiUnauthorized();
   }
@@ -64,7 +66,7 @@ export async function DELETE(
       return apiValidationError('Invalid alert ID');
     }
 
-    const deleted = deletePriceAlert(idResult.data.id);
+    const deleted = deletePriceAlert(idResult.data.id, userId);
     if (!deleted) {
       return apiNotFound('Alert');
     }

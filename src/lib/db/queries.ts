@@ -2172,22 +2172,23 @@ export function updatePriceAlert(
     notifyOnAllTimeLow: boolean;
     notifyOnThreshold: boolean;
     isActive: boolean;
-  }>
+  }>,
+  userId: string
 ): boolean {
   const db = getDb();
   const result = db
     .update(priceAlerts)
     .set(updates)
-    .where(eq(priceAlerts.id, alertId))
+    .where(and(eq(priceAlerts.id, alertId), eq(priceAlerts.userId, userId)))
     .run();
   return result.changes > 0;
 }
 
-export function deletePriceAlert(alertId: number): boolean {
+export function deletePriceAlert(alertId: number, userId: string): boolean {
   const db = getDb();
   const result = db
     .delete(priceAlerts)
-    .where(eq(priceAlerts.id, alertId))
+    .where(and(eq(priceAlerts.id, alertId), eq(priceAlerts.userId, userId)))
     .run();
   return result.changes > 0;
 }

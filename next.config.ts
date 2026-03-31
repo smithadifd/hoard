@@ -27,7 +27,8 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              // 'unsafe-eval' required by Next.js 16 / Turbopack; nonce-based approach deferred
+              "script-src 'self' 'unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https://cdn.akamai.steamstatic.com https://shared.akamai.steamstatic.com https://steamcdn-a.akamaihd.net",
               "font-src 'self' data:",

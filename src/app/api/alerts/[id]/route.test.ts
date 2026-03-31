@@ -44,7 +44,7 @@ describe('PATCH /api/alerts/:id', () => {
 
     expect(res.status).toBe(200);
     expect(body.data.message).toBe('Alert updated');
-    expect(mockUpdate).toHaveBeenCalledWith(1, { isActive: false });
+    expect(mockUpdate).toHaveBeenCalledWith(1, { isActive: false }, 'test-user-id');
   });
 
   it('returns 404 for non-existent alert', async () => {
