@@ -23,6 +23,16 @@ const STEAM_STORE_API = 'https://store.steampowered.com/api';
 const STEAM_STORE_BASE = 'https://store.steampowered.com';
 
 export class SteamClient {
+  private async fetchWithTimeout(url: string, timeoutMs = 30_000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
    * Read credentials lazily so they always reflect the latest value
    * from the DB settings table, even if the user changes them mid-session.
@@ -47,7 +57,7 @@ export class SteamClient {
     url.searchParams.set('include_played_free_games', '1');
     url.searchParams.set('format', 'json');
 
-    const response = await fetch(url.toString());
+    const response = await this.fetchWithTimeout(url.toString());
     if (!response.ok) {
       if (response.status === 400) {
         throw new Error(
@@ -84,7 +94,7 @@ export class SteamClient {
     url.searchParams.set('steamid', userId);
     url.searchParams.set('format', 'json');
 
-    const response = await fetch(url.toString());
+    const response = await this.fetchWithTimeout(url.toString());
     if (!response.ok) {
       if (response.status === 400) {
         throw new Error(
@@ -106,7 +116,7 @@ export class SteamClient {
     const url = `${STEAM_STORE_API}/appdetails?appids=${appId}&l=english`;
 
     try {
-      const response = await fetch(url);
+      const response = await this.fetchWithTimeout(url);
       if (!response.ok) {
         console.log(`[Steam] getAppDetails(${appId}): HTTP ${response.status}`);
         return null;
@@ -140,7 +150,7 @@ export class SteamClient {
     const url = `${STEAM_STORE_BASE}/appreviews/${appId}?json=1&purchase_type=all&num_per_page=0`;
 
     try {
-      const response = await fetch(url);
+      const response = await this.fetchWithTimeout(url);
       if (!response.ok) {
         console.log(`[Steam] getReviewSummary(${appId}): HTTP ${response.status}`);
         return null;
