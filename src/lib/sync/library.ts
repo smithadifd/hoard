@@ -14,6 +14,7 @@ import {
   completeSyncLog,
   getFirstUserId,
 } from '../db/queries';
+import { getDb } from '../db';
 import type { SyncResult, ProgressCallback } from './types';
 
 export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
@@ -26,31 +27,35 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
 
     const total = response.games.length;
     let processed = 0;
-    for (const steamGame of response.games) {
-      if (signal?.aborted) {
-        console.log(`[LibrarySync] Cancelled after ${processed} games`);
-        break;
+
+    const sqlite = getDb().$client;
+    const runSync = sqlite.transaction(() => {
+      for (const steamGame of response.games) {
+        if (signal?.aborted) {
+          console.log(`[LibrarySync] Cancelled after ${processed} games`);
+          break;
+        }
+
+        const gameId = upsertGameFromSteam({
+          steamAppId: steamGame.appid,
+          title: steamGame.name,
+        });
+
+        upsertUserGame(gameId, {
+          isOwned: true,
+          playtimeMinutes: steamGame.playtime_forever,
+          playtimeRecentMinutes: steamGame.playtime_2weeks ?? 0,
+          lastPlayed:
+            steamGame.rtime_last_played > 0
+              ? new Date(steamGame.rtime_last_played * 1000).toISOString()
+              : undefined,
+        }, effectiveUserId);
+
+        processed++;
+        onProgress?.(processed, total, { gameName: steamGame.name });
       }
-
-      const gameId = upsertGameFromSteam({
-        steamAppId: steamGame.appid,
-        title: steamGame.name,
-        // Header image auto-generated from appid
-      });
-
-      upsertUserGame(gameId, {
-        isOwned: true,
-        playtimeMinutes: steamGame.playtime_forever,
-        playtimeRecentMinutes: steamGame.playtime_2weeks ?? 0,
-        lastPlayed:
-          steamGame.rtime_last_played > 0
-            ? new Date(steamGame.rtime_last_played * 1000).toISOString()
-            : undefined,
-      }, effectiveUserId);
-
-      processed++;
-      onProgress?.(processed, total, { gameName: steamGame.name });
-    }
+    });
+    runSync();
 
     completeSyncLog(syncLogId, 'success', processed, undefined, total, 0);
     return { stats: { attempted: total, succeeded: processed, failed: 0, skipped: 0 }, syncLogId };

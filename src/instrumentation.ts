@@ -42,6 +42,12 @@ export async function register() {
       }
     });
 
+    registerTask('snapshot-prune', '0 3 1 * *', async () => {
+      const { pruneOldPriceSnapshots } = await import('@/lib/db/queries');
+      const deleted = pruneOldPriceSnapshots(180);
+      console.log(`[SnapshotPrune] Deleted ${deleted} old snapshots`);
+    });
+
     registerTask('health-summary', '0 9 * * 1', async () => {
       const { sendWeeklyHealthSummary } = await import('@/lib/sync/health');
       await sendWeeklyHealthSummary();

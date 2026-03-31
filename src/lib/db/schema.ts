@@ -88,6 +88,9 @@ export const userGames = sqliteTable('user_games', {
 }, (table) => ({
   userGameIdx: uniqueIndex('user_game_idx').on(table.userId, table.gameId),
   gameIdx: index('ug_game_idx').on(table.gameId),
+  ownedIdx: index('ug_owned_idx').on(table.userId, table.isOwned),
+  wishlistedIdx: index('ug_wishlisted_idx').on(table.userId, table.isWishlisted),
+  watchlistedIdx: index('ug_watchlisted_idx').on(table.userId, table.isWatchlisted),
 }));
 
 // ===========================================
@@ -126,6 +129,7 @@ export const priceAlerts = sqliteTable('price_alerts', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({
   userGameIdx: uniqueIndex('alert_user_game_idx').on(table.userId, table.gameId),
+  activeIdx: index('alert_active_idx').on(table.userId, table.isActive),
 }));
 
 // ===========================================

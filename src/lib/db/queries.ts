@@ -317,25 +317,29 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
 
 export function upsertTags(gameId: number, tagNames: string[], type: string): void {
   const db = getDb();
+  const sqlite = db.$client;
 
-  for (const name of tagNames) {
-    // Upsert the tag itself
-    const tag = db
-      .insert(tags)
-      .values({ name, type })
-      .onConflictDoUpdate({
-        target: [tags.name, tags.type],
-        set: { name }, // no-op update to get the returning id
-      })
-      .returning({ id: tags.id })
-      .get();
+  const runUpserts = sqlite.transaction(() => {
+    for (const name of tagNames) {
+      // Upsert the tag itself
+      const tag = db
+        .insert(tags)
+        .values({ name, type })
+        .onConflictDoUpdate({
+          target: [tags.name, tags.type],
+          set: { name }, // no-op update to get the returning id
+        })
+        .returning({ id: tags.id })
+        .get();
 
-    // Upsert the game-tag association
-    db.insert(gameTags)
-      .values({ gameId, tagId: tag.id })
-      .onConflictDoNothing()
-      .run();
-  }
+      // Upsert the game-tag association
+      db.insert(gameTags)
+        .values({ gameId, tagId: tag.id })
+        .onConflictDoNothing()
+        .run();
+    }
+  });
+  runUpserts();
 }
 
 // ============================================
@@ -558,8 +562,6 @@ export function getEnrichedGames(
       id: games.id,
       steamAppId: games.steamAppId,
       title: games.title,
-      description: games.description,
-      shortDescription: games.shortDescription,
       headerImageUrl: games.headerImageUrl,
       releaseDate: games.releaseDate,
       developer: games.developer,
@@ -584,7 +586,6 @@ export function getEnrichedGames(
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
-      notes: userGames.notes,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
@@ -653,7 +654,6 @@ export function getEnrichedGames(
       id: r.id,
       steamAppId: r.steamAppId,
       title: r.title,
-      description: r.description ?? undefined,
       headerImageUrl: r.headerImageUrl ?? undefined,
       releaseDate: r.releaseDate ?? undefined,
       developer: r.developer ?? undefined,
@@ -1200,13 +1200,17 @@ export function getGamesForPriceSync(userId: string): Array<{
 export function bulkUpdateGameItadIds(updates: Array<{ steamAppId: number; itadGameId: string }>): void {
   const db = getDb();
   const now = new Date().toISOString();
+  const sqlite = db.$client;
 
-  for (const { steamAppId, itadGameId } of updates) {
-    db.update(games)
-      .set({ itadGameId, updatedAt: now })
-      .where(eq(games.steamAppId, steamAppId))
-      .run();
-  }
+  const runUpdates = sqlite.transaction(() => {
+    for (const { steamAppId, itadGameId } of updates) {
+      db.update(games)
+        .set({ itadGameId, updatedAt: now })
+        .where(eq(games.steamAppId, steamAppId))
+        .run();
+    }
+  });
+  runUpdates();
 }
 
 // ============================================
@@ -1562,6 +1566,24 @@ export function getPriceHistory(gameId: number, limit: number = 90): PriceSnapsh
   }));
 }
 
+/**
+ * Prune old price snapshots, keeping only the most recent N days.
+ * Returns the number of rows deleted.
+ */
+export function pruneOldPriceSnapshots(retainDays: number = 180): number {
+  const db = getDb();
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - retainDays);
+  const cutoff = cutoffDate.toISOString().split('T')[0];
+
+  const result = db
+    .delete(priceSnapshots)
+    .where(sql`${priceSnapshots.snapshotDate} < ${cutoff}`)
+    .run();
+
+  return result.changes;
+}
+
 export function getDealsCount(): number {
   const db = getDb();
   const row = db
@@ -1752,7 +1774,6 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       id: games.id,
       steamAppId: games.steamAppId,
       title: games.title,
-      description: games.description,
       headerImageUrl: games.headerImageUrl,
       releaseDate: games.releaseDate,
       developer: games.developer,
@@ -1815,7 +1836,6 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
     id: r.id,
     steamAppId: r.steamAppId,
     title: r.title,
-    description: r.description ?? undefined,
     headerImageUrl: r.headerImageUrl ?? undefined,
     releaseDate: r.releaseDate ?? undefined,
     developer: r.developer ?? undefined,
