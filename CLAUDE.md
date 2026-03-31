@@ -257,6 +257,7 @@ npm run lint
 - [x] Plan 15: Wishlist Game Removal (local removal, sync guard, Steam source-of-truth auto-removal, cascade deactivation)
 - [x] Plan 16: Separate Releases from Wishlist (/releases page, nav overhaul, release date parsing, release status sync, Discord notifications)
 - [x] Filters & Quick Wins: Price/free filter, interest filter, backlog fixes, default wishlist sort, auto alerts button, dynamic version (v1.0.0)
+- [x] Plan 25: Infinite Scroll (IntersectionObserver, skeleton loading, scroll restoration, PickForMe fetch-on-click)
 
 ### Planned Features
 - [x] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
