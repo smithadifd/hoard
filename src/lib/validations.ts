@@ -127,6 +127,21 @@ const settingsKeyEnum = z.enum([
 
 export const settingsUpdateSchema = z.object({
   settings: z.record(settingsKeyEnum, z.string().max(5000).optional()),
+}).superRefine((data, ctx) => {
+  const webhookKeys = ['discord_webhook_url', 'discord_ops_webhook_url'] as const;
+  for (const key of webhookKeys) {
+    const val = data.settings[key];
+    if (val) {
+      try {
+        const url = new URL(val);
+        if (url.hostname !== 'discord.com' && url.hostname !== 'discordapp.com') {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', key], message: 'Must be a discord.com webhook URL' });
+        }
+      } catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', key], message: 'Invalid URL' });
+      }
+    }
+  }
 });
 
 // ============================================
