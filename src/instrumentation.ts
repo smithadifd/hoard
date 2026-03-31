@@ -50,10 +50,31 @@ export async function register() {
 
     registerTask('health-summary', '0 9 * * 1', async () => {
       const { sendWeeklyHealthSummary } = await import('@/lib/sync/health');
-      await sendWeeklyHealthSummary();
+      try {
+        await sendWeeklyHealthSummary();
+      } catch (err) {
+        console.error('[Scheduler] Weekly health summary failed:', err);
+      }
     });
 
     startScheduler();
+
+    // Clean up abandoned sync_log rows from previous process
+    try {
+      const { getDb } = await import('@/lib/db');
+      const { sql } = await import('drizzle-orm');
+      const db = getDb();
+      const cleaned = db.run(sql`
+        UPDATE sync_log
+        SET status = 'error', error_message = 'Process restarted — sync did not complete', completed_at = datetime('now')
+        WHERE status = 'running' AND started_at < datetime('now', '-5 minutes')
+      `);
+      if (cleaned.changes > 0) {
+        console.log(`[Startup] Cleaned ${cleaned.changes} abandoned sync_log row(s)`);
+      }
+    } catch {
+      // Non-fatal
+    }
 
     // Send startup notification to Discord
     try {

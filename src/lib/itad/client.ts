@@ -22,6 +22,16 @@ const ITAD_API_BASE = 'https://api.isthereanydeal.com';
 const BATCH_SIZE = 200;
 
 export class ITADClient {
+  private async fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 30_000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
    * Read the API key lazily so it always reflects the latest value
    * from the DB settings table, even if the user changes it mid-session.
@@ -38,7 +48,7 @@ export class ITADClient {
       url.searchParams.set(key, value);
     }
 
-    const response = await fetch(url.toString());
+    const response = await this.fetchWithTimeout(url.toString());
     if (!response.ok) {
       throw new Error(`ITAD API error: ${response.status} ${response.statusText}`);
     }
@@ -57,7 +67,7 @@ export class ITADClient {
       url.searchParams.set(key, value);
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await this.fetchWithTimeout(url.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

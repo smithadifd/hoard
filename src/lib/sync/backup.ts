@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { getConfig } from '../config';
+import { createSyncLog, completeSyncLog } from '../db/queries';
 
 export interface BackupResult {
   success: boolean;
@@ -29,9 +30,13 @@ export async function runDatabaseBackup(options?: { tag?: string }): Promise<Bac
   const tag = options?.tag ? `_${options.tag}` : '';
   const backupFile = join(backupDir, `hoard_${timestamp}${tag}.db`);
 
+  const syncLogId = createSyncLog('backup');
+
   try {
     if (!existsSync(dbPath)) {
-      return { success: false, error: `Database not found at: ${dbPath}` };
+      const error = `Database not found at: ${dbPath}`;
+      completeSyncLog(syncLogId, 'error', 0, error);
+      return { success: false, error };
     }
 
     mkdirSync(backupDir, { recursive: true });
@@ -56,7 +61,9 @@ export async function runDatabaseBackup(options?: { tag?: string }): Promise<Bac
 
     if (integrity[0]?.integrity_check !== 'ok') {
       unlinkSync(backupFile);
-      return { success: false, error: `Integrity check failed: ${integrity[0]?.integrity_check}` };
+      const error = `Integrity check failed: ${integrity[0]?.integrity_check}`;
+      completeSyncLog(syncLogId, 'error', 0, error);
+      return { success: false, error };
     }
     console.log('[backup] Integrity check passed');
 
@@ -69,10 +76,12 @@ export async function runDatabaseBackup(options?: { tag?: string }): Promise<Bac
     const backupCount = readdirSync(backupDir).filter((f) => f.startsWith('hoard_') && f.endsWith('.db')).length;
     console.log(`[backup] Done. ${backupCount} backup(s) in ${backupDir}`);
 
+    completeSyncLog(syncLogId, 'success', 1, undefined, 1, 0);
     return { success: true, filePath: backupFile, fileSize, backupCount, cleanedUp };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[backup] Failed:`, message);
+    completeSyncLog(syncLogId, 'error', 0, message);
     return { success: false, error: message };
   }
 }

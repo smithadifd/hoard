@@ -13,6 +13,7 @@ export async function GET() {
   const checks = {
     database: false,
     scheduler: false,
+    stuckSyncs: 0,
     lastSyncs: {} as Record<string, string>,
   };
 
@@ -29,7 +30,13 @@ export async function GET() {
     // Get last successful sync per source
     checks.lastSyncs = getLastSuccessfulSyncBySource();
 
-    const healthy = checks.database && checks.scheduler;
+    // Check for stuck sync_log rows (running for >2 hours)
+    const stuckResult = db.get<{ count: number }>(
+      sql`SELECT COUNT(*) as count FROM sync_log WHERE status = 'running' AND started_at < datetime('now', '-2 hours')`
+    );
+    checks.stuckSyncs = stuckResult?.count ?? 0;
+
+    const healthy = checks.database && checks.scheduler && checks.stuckSyncs === 0;
     // Always return 200 if the database is reachable — scheduler state
     // may report false due to module isolation in server components.
     // Docker healthcheck and deploy script rely on this endpoint.
