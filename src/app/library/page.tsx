@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getEnrichedGames } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
-import { GameGrid } from '@/components/games/GameGrid';
+import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
 import { GameListFilters } from '@/components/filters/GameListFilters';
-import { Pagination } from '@/components/ui/Pagination';
 import { parseGameFiltersFromParams } from '@/lib/utils/filters';
 import type { GameFilters } from '@/types';
 
@@ -26,17 +25,8 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
     ...parseGameFiltersFromParams(params),
   };
 
-  const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
   const pageSize = 24;
-  const { games, total } = getEnrichedGames(filters, page, pageSize, session.user.id);
-
-  // Build searchParams for pagination links (excluding page)
-  const paginationParams: Record<string, string> = {};
-  for (const [key, value] of Object.entries(params)) {
-    if (key !== 'page' && typeof value === 'string') {
-      paginationParams[key] = value;
-    }
-  }
+  const { games, total } = getEnrichedGames(filters, 1, pageSize, session.user.id);
 
   return (
     <div className="space-y-6">
@@ -49,17 +39,12 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
 
       <GameListFilters currentFilters={filters} />
 
-      <GameGrid
-        games={games}
-        emptyMessage="No games found. Sync your Steam library from Settings to get started."
-      />
-
-      <Pagination
-        current={page}
-        total={total}
+      <InfiniteGameGrid
+        initialGames={games}
+        initialTotal={total}
+        filters={filters}
         pageSize={pageSize}
-        basePath="/library"
-        searchParams={paginationParams}
+        emptyMessage="No games found. Sync your Steam library from Settings to get started."
       />
     </div>
   );
