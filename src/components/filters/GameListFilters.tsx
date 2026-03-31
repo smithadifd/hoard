@@ -18,8 +18,8 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
     (newFilters: GameFiltersType) => {
       const params = new URLSearchParams();
       if (newFilters.search) params.set('search', newFilters.search);
-      if (newFilters.sortBy && newFilters.sortBy !== 'title') params.set('sortBy', newFilters.sortBy);
-      if (newFilters.sortOrder && newFilters.sortOrder !== 'asc') params.set('sortOrder', newFilters.sortOrder);
+      if (newFilters.sortBy) params.set('sortBy', newFilters.sortBy);
+      if (newFilters.sortOrder) params.set('sortOrder', newFilters.sortOrder);
       if (newFilters.maxHours !== undefined) params.set('maxHours', String(newFilters.maxHours));
       if (newFilters.coop !== undefined) params.set('coop', String(newFilters.coop));
       if (newFilters.maxPrice !== undefined) params.set('maxPrice', String(newFilters.maxPrice));
