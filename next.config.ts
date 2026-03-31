@@ -23,21 +23,7 @@ const nextConfig: NextConfig = {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
           },
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              // 'unsafe-eval' required by Next.js 16 / Turbopack; nonce-based approach deferred
-              "script-src 'self' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https://cdn.akamai.steamstatic.com https://shared.akamai.steamstatic.com https://steamcdn-a.akamaihd.net",
-              "font-src 'self' data:",
-              "connect-src 'self'",
-              "frame-src 'none'",
-              "object-src 'none'",
-              "base-uri 'self'",
-            ].join('; '),
-          },
+          // CSP is set per-request in proxy.ts with a nonce for inline scripts
         ],
       },
     ];
