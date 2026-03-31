@@ -1,12 +1,7 @@
-import { z } from 'zod';
 import { getHLTBClient } from '@/lib/hltb/client';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
-import { formatZodError } from '@/lib/validations';
-
-const hltbSearchSchema = z.object({
-  query: z.string().min(1).max(200),
-});
+import { hltbSearchSchema, formatZodError } from '@/lib/validations';
 
 /**
  * POST /api/hltb/search

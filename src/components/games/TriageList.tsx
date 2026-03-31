@@ -9,20 +9,7 @@ import { TriageCard } from './TriageCard';
 import { TriageHltbEditor } from './TriageHltbEditor';
 import { Toast } from '@/components/ui/Toast';
 import type { ToastData } from '@/components/ui/Toast';
-
-interface TriageGame {
-  id: number;
-  steamAppId: number;
-  title: string;
-  headerImageUrl: string | null;
-  developer: string | null;
-  reviewScore: number | null;
-  reviewDescription: string | null;
-  hltbMain: number | null;
-  currentPrice: number | null;
-  personalInterest: number;
-  interestRatedAt: string | null;
-}
+import type { TriageGame } from '@/app/triage/types';
 
 interface TriageListProps {
   initialGames: TriageGame[];
