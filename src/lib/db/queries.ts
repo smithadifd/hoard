@@ -1922,6 +1922,8 @@ export interface ActiveAlertRow extends PriceAlertRow {
   isHistoricalLow: boolean;
   store: string;
   storeUrl: string | null;
+  // Previous snapshot's ATL for new-vs-still-at-ATL classification
+  prevHistoricalLowPrice: number | null;
 }
 
 export interface AlertWithGame extends PriceAlertRow {
@@ -2028,6 +2030,7 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     isHistoricalLow: number;
     store: string;
     storeUrl: string | null;
+    prevHistoricalLowPrice: number | null;
   }
 
   const rows = db.all(sql`
@@ -2050,7 +2053,14 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
       ps.historical_low_price as historicalLowPrice,
       ps.is_historical_low as isHistoricalLow,
       ps.store,
-      ps.url as storeUrl
+      ps.url as storeUrl,
+      (SELECT ps_prev.historical_low_price
+       FROM price_snapshots ps_prev
+       WHERE ps_prev.game_id = g.id
+         AND (ps_prev.snapshot_date < ps.snapshot_date
+              OR (ps_prev.snapshot_date = ps.snapshot_date AND ps_prev.id < ps.id))
+       ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
+       LIMIT 1) as prevHistoricalLowPrice
     FROM price_alerts pa
     INNER JOIN games g ON pa.game_id = g.id
     INNER JOIN user_games ug ON g.id = ug.game_id AND ug.user_id = ${userId}
@@ -2085,6 +2095,7 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     isHistoricalLow: Boolean(r.isHistoricalLow),
     store: r.store,
     storeUrl: r.storeUrl,
+    prevHistoricalLowPrice: r.prevHistoricalLowPrice,
   }));
 }
 
@@ -2241,6 +2252,8 @@ export interface AutoAlertCandidate {
   store: string;
   storeUrl: string | null;
   lastAutoAlertAt: string | null;
+  // Previous snapshot's ATL for new-vs-still-at-ATL classification
+  prevHistoricalLowPrice: number | null;
 }
 
 /**
@@ -2265,6 +2278,7 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
     store: string;
     storeUrl: string | null;
     lastAutoAlertAt: string | null;
+    prevHistoricalLowPrice: number | null;
   }
 
   const rows = db.all(sql`
@@ -2282,7 +2296,14 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
       ps.deal_score as dealScore,
       ps.store,
       ps.url as storeUrl,
-      ug.last_auto_alert_at as lastAutoAlertAt
+      ug.last_auto_alert_at as lastAutoAlertAt,
+      (SELECT ps_prev.historical_low_price
+       FROM price_snapshots ps_prev
+       WHERE ps_prev.game_id = g.id
+         AND (ps_prev.snapshot_date < ps.snapshot_date
+              OR (ps_prev.snapshot_date = ps.snapshot_date AND ps_prev.id < ps.id))
+       ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
+       LIMIT 1) as prevHistoricalLowPrice
     FROM user_games ug
     INNER JOIN games g ON ug.game_id = g.id
     INNER JOIN price_snapshots ps ON g.id = ps.game_id

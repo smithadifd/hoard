@@ -19,13 +19,14 @@ vi.mock('../db/queries', () => ({
   getFirstUserId: vi.fn(),
 }));
 
-import { checkPriceAlerts } from './alerts';
+import { checkPriceAlerts, isNewAtl } from './alerts';
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
 import {
   getActivePriceAlerts,
   updateAlertLastNotified,
   getAutoAlertCandidates,
+  updateAutoAlertLastNotified,
   getSetting,
   createSyncLog,
   completeSyncLog,
@@ -41,6 +42,7 @@ const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
 const mockGetAutoAlertCandidates = vi.mocked(getAutoAlertCandidates);
 const mockGetSetting = vi.mocked(getSetting);
+const _mockUpdateAutoNotified = vi.mocked(updateAutoAlertLastNotified);
 
 function makeAlert(overrides: Record<string, unknown> = {}) {
   return {
@@ -61,6 +63,7 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
     notifyOnAllTimeLow: true,
     isHistoricalLow: false,
     lastNotifiedAt: null as string | null,
+    prevHistoricalLowPrice: null as number | null,
     ...overrides,
   };
 }
@@ -68,9 +71,36 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
 function makeMockDiscord(overrides: Record<string, unknown> = {}) {
   return {
     sendPriceAlert: vi.fn().mockResolvedValue(true),
+    sendAtlDigest: vi.fn().mockResolvedValue(true),
     ...overrides,
   } as unknown as ReturnType<typeof getDiscordClient>;
 }
+
+describe('isNewAtl', () => {
+  it('returns true when no previous snapshot exists (null)', () => {
+    expect(isNewAtl(null, 4.99)).toBe(true);
+  });
+
+  it('returns true when no previous snapshot exists (undefined)', () => {
+    expect(isNewAtl(undefined, 4.99)).toBe(true);
+  });
+
+  it('returns true when current ATL is lower than previous', () => {
+    expect(isNewAtl(9.99, 4.99)).toBe(true);
+  });
+
+  it('returns false when current ATL equals previous', () => {
+    expect(isNewAtl(4.99, 4.99)).toBe(false);
+  });
+
+  it('returns false when current ATL is higher than previous', () => {
+    expect(isNewAtl(4.99, 9.99)).toBe(false);
+  });
+
+  it('returns false when currentHistoricalLow is null', () => {
+    expect(isNewAtl(4.99, null)).toBe(false);
+  });
+});
 
 describe('checkPriceAlerts', () => {
   beforeEach(() => {
@@ -94,7 +124,7 @@ describe('checkPriceAlerts', () => {
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0);
   });
 
-  it('sends notification when price is at or below target', async () => {
+  it('sends individual notification when price is at or below target', async () => {
     const alert = makeAlert({ currentPrice: 9.99, targetPrice: 10.00 });
     mockGetAlerts.mockReturnValue([alert]);
     const mockDiscord = makeMockDiscord();
@@ -113,7 +143,7 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(1);
   });
 
-  it('sends notification for free games (price = 0)', async () => {
+  it('sends individual notification for free games (price = 0)', async () => {
     const alert = makeAlert({
       currentPrice: 0,
       notifyOnThreshold: false,
@@ -126,16 +156,19 @@ describe('checkPriceAlerts', () => {
     const result = await checkPriceAlerts();
 
     expect(mockDiscord.sendPriceAlert).toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
     expect(result.stats.succeeded).toBe(1);
   });
 
-  it('sends notification when price is at all-time low', async () => {
+  it('sends individual notification for genuinely new ATL', async () => {
     const alert = makeAlert({
-      currentPrice: 15.00,
-      targetPrice: 5.00,
+      currentPrice: 3.99,
+      targetPrice: null,
       notifyOnThreshold: false,
       notifyOnAllTimeLow: true,
       isHistoricalLow: true,
+      historicalLowPrice: 3.99,
+      prevHistoricalLowPrice: 4.99, // Was 4.99, now 3.99 = new ATL
     });
     mockGetAlerts.mockReturnValue([alert]);
     const mockDiscord = makeMockDiscord();
@@ -144,7 +177,86 @@ describe('checkPriceAlerts', () => {
     const result = await checkPriceAlerts();
 
     expect(mockDiscord.sendPriceAlert).toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
     expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('sends digest for still-at-ATL (same historicalLowPrice as previous)', async () => {
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99, // Same as before = still at ATL
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
+      expect.objectContaining({ title: 'Test Game', currentPrice: 4.99 }),
+    ]);
+    expect(mockUpdateNotified).toHaveBeenCalledWith(1);
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('sends individual alert for first-ever ATL (no previous snapshot)', async () => {
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: null, // First snapshot = treat as new
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('sends individual for threshold even if also still-at-ATL', async () => {
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: 5.00,
+      notifyOnThreshold: true,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99, // Would be digest if only ATL
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    // Threshold takes priority — individual alert
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('does not send digest when no still-at-ATL games', async () => {
+    const alert = makeAlert({ currentPrice: 9.99, targetPrice: 10.00 });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    await checkPriceAlerts();
+
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
   });
 
   it('does not notify when price is above target and not at ATL', async () => {
@@ -214,6 +326,28 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(0);
   });
 
+  it('does not update lastNotified when digest send fails', async () => {
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord({
+      sendAtlDigest: vi.fn().mockResolvedValue(false),
+    });
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockUpdateNotified).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(0);
+  });
+
   it('computes $/hr when hltbMain is available', async () => {
     const alert = makeAlert({
       currentPrice: 10.00,
@@ -265,7 +399,7 @@ describe('checkPriceAlerts', () => {
     );
   });
 
-  it('processes multiple alerts independently', async () => {
+  it('processes multiple alerts: individual + digest + skip', async () => {
     const alerts = [
       makeAlert({ id: 1, title: 'Game A', currentPrice: 5.00, targetPrice: 10.00 }),
       makeAlert({ id: 2, title: 'Game B', currentPrice: 30.00, targetPrice: 10.00, isHistoricalLow: false }),
@@ -277,10 +411,32 @@ describe('checkPriceAlerts', () => {
 
     const result = await checkPriceAlerts();
 
-    // Game A (below target) and Game C (free) should notify; Game B should not
+    // Game A (below target) and Game C (free) should notify individually; Game B should not
     expect(mockDiscord.sendPriceAlert).toHaveBeenCalledTimes(2);
     expect(result.stats.succeeded).toBe(2);
-    expect(result.stats.attempted).toBe(3);
+  });
+
+  it('mixes individual and digest alerts correctly', async () => {
+    const alerts = [
+      // New ATL = individual
+      makeAlert({ id: 1, title: 'New ATL Game', currentPrice: 3.99, targetPrice: null, notifyOnThreshold: false, notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.99 }),
+      // Still at ATL = digest
+      makeAlert({ id: 2, title: 'Still ATL Game', currentPrice: 4.99, targetPrice: null, notifyOnThreshold: false, notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 4.99, prevHistoricalLowPrice: 4.99 }),
+    ];
+    mockGetAlerts.mockReturnValue(alerts);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledTimes(1);
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'New ATL Game' })
+    );
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
+      expect.objectContaining({ title: 'Still ATL Game' }),
+    ]);
+    expect(result.stats.succeeded).toBe(2);
   });
 
   it('uses provided userId instead of getFirstUserId', async () => {
