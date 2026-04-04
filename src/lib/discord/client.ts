@@ -176,6 +176,66 @@ export class DiscordClient {
   }
 
   /**
+   * Send a digest of games still sitting at their known all-time low.
+   * Condenses multiple "still at ATL" games into a single compact embed.
+   */
+  async sendAtlDigest(games: Array<{
+    title: string;
+    currentPrice: number;
+    regularPrice: number;
+    discountPercent: number;
+    store: string;
+    storeUrl: string;
+  }>): Promise<boolean> {
+    if (games.length === 0) return true;
+
+    const MAX_DESCRIPTION_LENGTH = 4000;
+    const lines: string[] = [];
+    for (const game of games) {
+      const price = game.currentPrice === 0
+        ? '**FREE**'
+        : `~~$${game.regularPrice.toFixed(2)}~~ **$${game.currentPrice.toFixed(2)}** (-${game.discountPercent}%)`;
+      lines.push(`[${game.title}](${game.storeUrl}) — ${price} @ ${game.store}`);
+    }
+
+    // Chunk into multiple embeds if description exceeds safe limit
+    const embeds: DiscordEmbed[] = [];
+    const chunks: string[][] = [];
+    let currentLines: string[] = [];
+    let currentLength = 0;
+
+    for (const line of lines) {
+      if (currentLength + line.length + 1 > MAX_DESCRIPTION_LENGTH && currentLines.length > 0) {
+        chunks.push(currentLines);
+        currentLines = [];
+        currentLength = 0;
+      }
+      currentLines.push(line);
+      currentLength += line.length + 1; // +1 for newline
+    }
+    if (currentLines.length > 0) {
+      chunks.push(currentLines);
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      embeds.push(this.buildDigestEmbed(chunks[i], games.length, chunks.length > 1 ? i + 1 : undefined, chunks.length > 1 ? chunks.length : undefined));
+    }
+
+    return this.send('', embeds);
+  }
+
+  private buildDigestEmbed(lines: string[], totalCount: number, part?: number, totalParts?: number): DiscordEmbed {
+    const suffix = part && totalParts ? ` (part ${part}/${totalParts})` : '';
+    return {
+      title: `Still at All-Time Low (${totalCount} game${totalCount === 1 ? '' : 's'})${suffix}`,
+      description: lines.join('\n'),
+      color: 0x6b7280, // Gray — distinct from green "new ATL"
+      footer: { text: 'Hoard — These games remain at their historical low price' },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
    * Send an operational alert (sync failures, startup, etc.).
    */
   async sendOperationalAlert(alert: {
