@@ -25,6 +25,14 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Features',
+          items: [
+            { label: 'Overview', link: '/features/' },
+            { label: 'Discord alerts', link: '/features/alerts/' },
+            { label: 'Backlog recommender', link: '/features/backlog/' },
+          ],
+        },
+        {
           label: 'Self-hosting',
           items: [
             { label: 'Guide', link: '/self-hosting/' },
@@ -39,6 +47,7 @@ export default defineConfig({
             { label: 'Design decisions', link: '/design-decisions/' },
             { label: 'Data sources', link: '/data-sources/' },
             { label: 'Demo mode', link: '/demo/' },
+            { label: 'Changelog', link: '/changelog/' },
           ],
         },
       ],
