@@ -44,7 +44,7 @@
     "@serwist/turbopack": "^9.5.7",
     "@swc/helpers": "0.5.21",
     "@types/better-sqlite3": "^7.6.0",
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.6.0",
     "@types/node-cron": "^3.0.11",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
