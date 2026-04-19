@@ -55,7 +55,7 @@
     "esbuild": "^0.27.4",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.2.1",
-    "postcss": "^8.5.8",
+    "postcss": "^8.5.10",
     "serwist": "^9.5.7",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.0",
