@@ -81,4 +81,4 @@ Two variables control demo mode. You don't need either for a normal self-hosted 
 
 Both must be `true` for a fully working demo deployment. Setting only `DEMO_MODE` blocks mutations server-side but leaves the UI unchanged.
 
-For full details on the demo deployment setup, see the Demo mode page.
+For full details on the demo deployment setup, see [Demo mode](/demo/).

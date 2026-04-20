@@ -23,7 +23,7 @@ Every game card links to its detail page at `/games/[id]`, where you can see the
 
 ## Wishlist (`/wishlist`)
 
-Your Steam wishlist, sorted by deal score (highest first) by default. The page filters out unreleased games and games with incomplete price/review data by default — the subtitle shows a count of what's hidden and links to toggle it back in. A separate link points to `/releases` for the unreleased games.
+Your Steam wishlist, sorted by [deal score](/architecture/scoring-engine/) (highest first) by default. The page filters out unreleased games and games with incomplete price/review data by default — the subtitle shows a count of what's hidden and links to toggle it back in. A separate link points to `/releases` for the unreleased games.
 
 Filter and sort controls are the same `GameListFilters` component as the library. Like the library, the grid is infinite-scrolling.
 

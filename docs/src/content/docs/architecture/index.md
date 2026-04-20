@@ -63,6 +63,27 @@ The `snapshot-prune` and `health-summary` tasks have hardcoded schedules and no 
 
 These two run inside the price-check's own execution, not as separate scheduled tasks. If either fails, the error is logged but does not fail the price-check itself.
 
+```mermaid
+sequenceDiagram
+    participant Cron as node-cron tick
+    participant Price as syncPrices
+    participant DB as SQLite
+    participant Alerts as checkPriceAlerts
+    participant Releases as checkReleaseStatus
+    participant Discord
+
+    Cron->>Price: fire price-check
+    Price->>DB: write price snapshots
+    Price->>Alerts: await (dynamic import)
+    Alerts->>DB: read watchlist + auto-ATL candidates
+    Alerts->>Discord: individual ATL + digest
+    Price->>Releases: await
+    Releases->>Discord: release notifications
+    Price-->>Cron: mark sync_log success
+```
+
+Alert behavior is covered in more detail on [Discord alerts](/features/alerts/).
+
 ### Concurrent-run guard
 
 `registerTask` wraps each function with an `isRunning` boolean stored on the task record in the scheduler's `Map<string, ScheduledTask>`. When a cron tick fires, the wrapper checks `taskInfo.isRunning` before calling the function. If it's `true`, the tick is skipped and logged. This is a simple in-process mutex — adequate for a single-instance deployment.
@@ -81,7 +102,7 @@ The schema is defined in `src/lib/db/schema.ts`. Core tables:
 - `tags` — genres, categories, and Steam tags (type: `'genre'`, `'category'`, or `'tag'`)
 - `game_tags` — many-to-many join between `games` and `tags`
 - `user_games` — per-user relationship to a game: ownership, wishlist status, watchlist status, playtime, personal interest (1-5), price threshold, notes
-- `price_snapshots` — one row per store per sync run; includes current price, regular price, discount percent, historical low, and computed deal score
+- `price_snapshots` — one row per store per sync run; includes current price, regular price, discount percent, historical low, and computed [deal score](/architecture/scoring-engine/)
 - `price_alerts` — watchlist configuration: target price, notify-on-ATL flag, throttle tracking
 - `settings` — key/value store for app config (scoring weights, API keys)
 - `sync_log` — one row per sync run; source, status (`'running'` / `'success'` / `'partial'` / `'error'`), item counts, timestamps

@@ -56,4 +56,6 @@ The value scoring engine lives in `src/lib/scoring/`. Weights are user-configura
 
 - [Self-hosting](/self-hosting/) — Docker setup, environment variables, NAS deployment
 - [Architecture](/architecture/) — data flow, service layer, scoring engine, cron design
+- [Features](/features/) — a tour of every page: Dashboard, Library, Wishlist, Releases, Backlog, Watchlist
+- [Data sources](/data-sources/) — Steam, ITAD, HLTB, Discord — what each provides and the quirks to know
 - [Design decisions](/design-decisions/) — why SQLite, in-process cron, cache-first reads, and other tradeoffs

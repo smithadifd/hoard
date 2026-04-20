@@ -100,7 +100,7 @@ A result must clear a similarity score of 0.4 (computed as a character-overlap r
 
 **Default schedule:** twice a week, Sunday and Wednesday at 2:00 am (`CRON_HLTB_SYNC`, default `0 2 * * 0,3`).
 
-**Fragility:** this is the most fragile source. HLTB can break with any of these changes:
+**Fragility:** this is the most fragile source — see [Design decisions](/design-decisions/#custom-hltb-client) for the why. HLTB can break with any of these changes:
 
 - The search path changes in the JS bundle (the discovery regex would need updating)
 - The `init` endpoint moves or changes its response shape
@@ -125,6 +125,8 @@ The API returns durations in seconds; the client converts to hours before storin
 | `DISCORD_OPS_WEBHOOK_URL` | Ops alerts channel (sync failures, backup failures, weekly health summary) |
 
 If `DISCORD_OPS_WEBHOOK_URL` is not set, ops alerts fall back to the main `DISCORD_WEBHOOK_URL`. Both are read from config at send time, so you can update them in Settings without restarting.
+
+See [Discord alerts](/features/alerts/) for alert types, throttle behavior, and what each embed looks like. A short summary below.
 
 **Message types:**
 

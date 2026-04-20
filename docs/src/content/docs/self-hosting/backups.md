@@ -105,3 +105,5 @@ Stagger this from the in-app backup schedule if you're running both, so they don
 ## Before destructive operations
 
 Always take a manual backup before running `npm run db:push`, pulling a new Docker image with schema changes, or running `restore.sh`. The in-app scheduler runs nightly, but a manual backup gives you a known-good snapshot from exactly before the operation.
+
+For the full upgrade + migration flow, see [Upgrading](/self-hosting/upgrading/).

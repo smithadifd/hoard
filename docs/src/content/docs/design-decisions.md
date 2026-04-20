@@ -3,7 +3,7 @@ title: Design decisions
 description: The interesting tradeoffs behind Hoard's architecture — SQLite, in-process cron, cache-first reads, custom HLTB client, Better Auth, and more.
 ---
 
-This is the "why" page. If you're returning after a few months and want to reload context, or you're evaluating whether the architecture makes sense before self-hosting, this covers the reasoning behind the non-obvious choices.
+This is the "why" page. If you're returning after a few months and want to reload context, or you're evaluating whether the architecture makes sense before self-hosting, this covers the reasoning behind the non-obvious choices. For the "what" — data flow, tables, the scheduler — see [Architecture](/architecture/).
 
 ## SQLite instead of Postgres
 

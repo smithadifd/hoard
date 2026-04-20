@@ -100,3 +100,5 @@ with status `403`. Add new entries in the same `{ method, prefix }` shape before
 ## Running demo mode on your own deployment
 
 Set `DEMO_MODE=true` and `NEXT_PUBLIC_DEMO_MODE=true` in your environment. This is intended for sharing a read-only view with others (family link, portfolio, etc.) without exposing your API keys or allowing sync operations. You will still need a database — either export your own with `export-demo-db.mjs` or start from scratch. No other configuration changes are required.
+
+See [Configuration → Demo mode flags](/self-hosting/configuration/#demo-mode-flags) for the env var reference and build-vs-runtime distinction.
