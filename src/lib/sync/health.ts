@@ -15,6 +15,13 @@ export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
   itad_prices: 0.50, // Batch API, partial failures rare
 };
 
+// HLTB's queue is a retry-backoff stream. When it drains to just the hard-to-match
+// tail (unreleased/niche games HLTB genuinely doesn't index), small batches will
+// always look 0% — not a real health signal. Require a floor before alerting.
+export const MIN_ATTEMPTS_FOR_ALERT: Record<string, number> = {
+  hltb: 10,
+};
+
 /**
  * Evaluate sync health after a completed run.
  * If success rate is below threshold, send an amber Discord ops alert.
@@ -22,6 +29,9 @@ export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
 export async function evaluateSyncHealth(source: string, stats: SyncStats): Promise<void> {
   const threshold = SUCCESS_RATE_THRESHOLDS[source];
   if (threshold === undefined || stats.attempted === 0) return;
+
+  const minAttempts = MIN_ATTEMPTS_FOR_ALERT[source] ?? 0;
+  if (stats.attempted < minAttempts) return;
 
   const rate = stats.succeeded / stats.attempted;
   if (rate >= threshold) return;
