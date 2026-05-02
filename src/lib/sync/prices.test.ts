@@ -401,4 +401,18 @@ describe('syncPrices', () => {
       })
     );
   });
+
+  it('does not include source=lookup games that getGamesForPriceSync excludes', async () => {
+    // getGamesForPriceSync uses INNER JOIN user_games, so source='lookup' games
+    // with no user_games row will never appear in its results.
+    // This test verifies that syncPrices only processes what the query returns —
+    // if getGamesForPriceSync returns nothing (as it would for a lookup-only game),
+    // no price snapshots are inserted.
+    mockGetGamesForPriceSync.mockReturnValue([]); // simulates no user-linked games
+
+    const result = await syncPrices();
+
+    expect(result.stats.attempted).toBe(0);
+    expect(mockInsertPriceSnapshot).not.toHaveBeenCalled();
+  });
 });

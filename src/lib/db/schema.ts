@@ -34,6 +34,9 @@ export const games = sqliteTable('games', {
   isCoop: integer('is_coop', { mode: 'boolean' }).default(false),
   isMultiplayer: integer('is_multiplayer', { mode: 'boolean' }).default(false),
   isReleased: integer('is_released', { mode: 'boolean' }),
+  // Source tracking
+  source: text('source').notNull().default('sync'), // 'sync' = imported via Steam library/wishlist; 'lookup' = created via search
+  lastViewedAt: integer('last_viewed_at', { mode: 'timestamp' }), // Updated when a lookup-mode detail page is viewed
   // Timestamps
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),

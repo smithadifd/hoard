@@ -71,6 +71,10 @@ export interface EnrichedGame {
   reviewLastUpdated?: string;
   hltbLastUpdated?: string;
   priceLastUpdated?: string;
+
+  // Source tracking — 'sync' (came from Steam library/wishlist sync) or 'lookup'
+  // (created on-demand via the search Cmd+K Steam result click)
+  source: 'sync' | 'lookup';
 }
 
 /**

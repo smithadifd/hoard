@@ -16,6 +16,7 @@ import type {
   SteamWishlistEntry,
   SteamAppDetails,
   SteamReviewSummary,
+  SteamSearchResult,
 } from './types';
 
 const STEAM_API_BASE = 'https://api.steampowered.com';
@@ -172,6 +173,55 @@ export class SteamClient {
     } catch (err) {
       console.log(`[Steam] getReviewSummary(${appId}): fetch error: ${err instanceof Error ? err.message : err}`);
       return null;
+    }
+  }
+
+  /**
+   * Search the Steam store by keyword.
+   * Uses the unofficial storesearch endpoint — no API key required.
+   * Returns [] on any failure, never throws to callers.
+   */
+  async searchStore(term: string, limit: number = 10): Promise<SteamSearchResult[]> {
+    const url = `${STEAM_STORE_API}/storesearch/?term=${encodeURIComponent(term)}&l=en&cc=us`;
+
+    try {
+      const response = await this.fetchWithTimeout(url);
+      if (!response.ok) {
+        console.log(`[Steam] searchStore("${term}"): HTTP ${response.status}`);
+        return [];
+      }
+
+      const text = await response.text();
+      try {
+        const data = JSON.parse(text) as {
+          items?: Array<{
+            id: number;
+            name: string;
+            tiny_image?: string;
+            price?: { initial: number; final: number; discount_percent: number };
+          }>;
+        };
+
+        const items = data.items ?? [];
+        return items.slice(0, limit).map((item) => ({
+          appId: item.id,
+          name: item.name,
+          tinyImage: item.tiny_image ?? null,
+          price: item.price
+            ? {
+                initial: item.price.initial,
+                final: item.price.final,
+                discountPercent: item.price.discount_percent,
+              }
+            : null,
+        }));
+      } catch {
+        console.log(`[Steam] searchStore("${term}"): JSON parse failed, response starts with: ${text.substring(0, 100)}`);
+        return [];
+      }
+    } catch (err) {
+      console.log(`[Steam] searchStore("${term}"): fetch error: ${err instanceof Error ? err.message : err}`);
+      return [];
     }
   }
 

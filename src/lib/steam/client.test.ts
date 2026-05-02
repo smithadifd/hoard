@@ -150,6 +150,75 @@ describe('SteamClient', () => {
     });
   });
 
+  describe('searchStore', () => {
+    it('maps storesearch response to SteamSearchResult[]', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({
+          total: 2,
+          items: [
+            {
+              id: 1145360,
+              name: 'Hades',
+              tiny_image: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/capsule_sm_120.jpg',
+              price: { initial: 2499, final: 1249, discount_percent: 50 },
+            },
+            {
+              id: 1145361,
+              name: 'Hades II',
+              tiny_image: null,
+            },
+          ],
+        }), { status: 200 })
+      );
+
+      const results = await client.searchStore('hades');
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({
+        appId: 1145360,
+        name: 'Hades',
+        tinyImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/capsule_sm_120.jpg',
+        price: { initial: 2499, final: 1249, discountPercent: 50 },
+      });
+      expect(results[1].price).toBeNull();
+      expect(results[1].tinyImage).toBeNull();
+    });
+
+    it('respects the limit parameter', async () => {
+      const items = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `Game ${i + 1}` }));
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ items }), { status: 200 })
+      );
+
+      const results = await client.searchStore('game', 5);
+      expect(results).toHaveLength(5);
+    });
+
+    it('returns [] on HTTP error', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+        new Response(null, { status: 503 })
+      );
+
+      const results = await client.searchStore('hades');
+      expect(results).toEqual([]);
+    });
+
+    it('returns [] on network error', async () => {
+      vi.spyOn(global, 'fetch').mockRejectedValue(new Error('Network error'));
+
+      const results = await client.searchStore('hades');
+      expect(results).toEqual([]);
+    });
+
+    it('returns [] on invalid JSON', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+        new Response('<html>Not JSON</html>', { status: 200 })
+      );
+
+      const results = await client.searchStore('hades');
+      expect(results).toEqual([]);
+    });
+  });
+
   describe('getReviewSummary', () => {
     it('parses valid response', async () => {
       vi.spyOn(global, 'fetch').mockResolvedValue(
