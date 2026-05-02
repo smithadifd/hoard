@@ -72,6 +72,16 @@ describe('evaluateSyncHealth', () => {
     );
   });
 
+  it('does not alert for hltb when attempts are below the per-source floor', async () => {
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    // hltb requires ≥10 attempts before firing; 4 attempts at 0% should be silent
+    await evaluateSyncHealth('hltb', { attempted: 4, succeeded: 0, failed: 0, skipped: 4 });
+
+    expect(mockDiscord.sendOperationalAlert).not.toHaveBeenCalled();
+  });
+
   it('includes recent run summary in Discord embed when prior runs exist', async () => {
     const mockDiscord = makeMockDiscord();
     mockGetDiscordClient.mockReturnValue(mockDiscord);
