@@ -30,7 +30,7 @@ const DEMO_BLOCKED: { method: string; prefix: string }[] = [
 ];
 
 // --- Public paths that bypass auth ---
-const PUBLIC_PATHS = ['/login', '/setup', '/api/auth', '/api/setup', '/api/health'];
+const PUBLIC_PATHS = ['/login', '/setup', '/api/auth', '/api/setup', '/api/health', '/api/version'];
 
 const STATIC_PREFIXES = [
   '/_next',
