@@ -40,6 +40,8 @@ const SCHEMA_SQL = `
     is_coop INTEGER DEFAULT 0,
     is_multiplayer INTEGER DEFAULT 0,
     is_released INTEGER,
+    source TEXT NOT NULL DEFAULT 'sync',
+    last_viewed_at INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );

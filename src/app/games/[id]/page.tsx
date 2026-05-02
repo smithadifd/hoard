@@ -12,6 +12,10 @@ import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
 import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
 import { DataStatus } from '@/components/games/DataStatus';
 import { HltbEditor } from '@/components/games/HltbEditor';
+import { LookupModeBanner } from '@/components/games/LookupModeBanner';
+import { ITADOverviewCard } from '@/components/games/ITADOverviewCard';
+import { AddToWishlistCTA } from '@/components/games/AddToWishlistCTA';
+import { HltbAutoFetch } from '@/components/games/HltbAutoFetch';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +34,11 @@ export default async function GameDetailPage({
   const game = getEnrichedGameById(gameId, session.user.id);
   if (!game) notFound();
 
+  // Lookup mode: game exists in DB from a search lookup but not yet in user's library/wishlist.
+  // lastViewedAt is stamped by /api/games/lookup on click (both insert and existing-row paths),
+  // so we don't need a side-effecting write here in the render path.
+  const isLookupMode = game.source === 'lookup' && !game.isOwned && !game.isWishlisted && !game.isWatchlisted;
+
   const alert = getPriceAlertForGame(gameId, session.user.id);
 
   // Compute full deal score breakdown for transparency display
@@ -47,6 +56,11 @@ export default async function GameDetailPage({
 
   return (
     <div className="space-y-6">
+      {/* HLTB auto-fetch trigger (lookup mode only, invisible) */}
+      {isLookupMode && game.hltbMain === undefined && (
+        <HltbAutoFetch gameId={game.id} />
+      )}
+
       {/* Back Link */}
       <Link
         href="/library"
@@ -55,6 +69,9 @@ export default async function GameDetailPage({
         <ArrowLeft className="h-4 w-4" />
         Back to Library
       </Link>
+
+      {/* Lookup mode banner */}
+      {isLookupMode && <LookupModeBanner />}
 
       {/* Header Image */}
       {game.headerImageUrl && (
@@ -102,7 +119,7 @@ export default async function GameDetailPage({
               </div>
             )}
 
-            {game.isOwned && game.playtimeMinutes > 0 && (
+            {!isLookupMode && game.isOwned && game.playtimeMinutes > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card">
                 <Gamepad2 className="h-4 w-4 text-primary" />
                 <div>
@@ -131,69 +148,76 @@ export default async function GameDetailPage({
             )}
           </div>
 
-          {/* Price Section */}
-          {game.currentPrice !== undefined && (
-            <section className="rounded-xl bg-card p-5 space-y-3">
-              <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">Pricing</h2>
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-4">
-                  <PriceBadge
-                    currentPrice={game.currentPrice}
-                    regularPrice={game.regularPrice}
-                    discountPercent={game.discountPercent}
-                    historicalLow={game.historicalLow}
-                  />
-                  {game.dealRating && (
-                    <DealIndicator
-                      rating={game.dealRating}
-                      score={game.dealScore}
+          {/* Price Section — lookup mode shows live ITAD overview, library mode shows history */}
+          {isLookupMode ? (
+            <>
+              <ITADOverviewCard gameId={game.id} />
+              <AddToWishlistCTA gameId={game.id} />
+            </>
+          ) : (
+            game.currentPrice !== undefined && (
+              <section className="rounded-xl bg-card p-5 space-y-3">
+                <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">Pricing</h2>
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <PriceBadge
+                      currentPrice={game.currentPrice}
+                      regularPrice={game.regularPrice}
+                      discountPercent={game.discountPercent}
+                      historicalLow={game.historicalLow}
                     />
-                  )}
+                    {game.dealRating && (
+                      <DealIndicator
+                        rating={game.dealRating}
+                        score={game.dealScore}
+                      />
+                    )}
+                  </div>
+                  <div className="text-right text-sm">
+                    {game.bestStore && (
+                      <div className="text-muted-foreground">
+                        Best at{' '}
+                        {game.storeUrl ? (
+                          <a
+                            href={game.storeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline font-medium"
+                          >
+                            {game.bestStore} <ExternalLink className="inline h-3 w-3" />
+                          </a>
+                        ) : (
+                          <span className="text-foreground font-medium">{game.bestStore}</span>
+                        )}
+                      </div>
+                    )}
+                    {game.dollarsPerHour !== undefined && (
+                      <div className="flex items-center gap-1 text-muted-foreground justify-end">
+                        <DollarSign className="h-3 w-3" />
+                        <span>{game.dollarsPerHour.toFixed(2)}/hr</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right text-sm">
-                  {game.bestStore && (
-                    <div className="text-muted-foreground">
-                      Best at{' '}
-                      {game.storeUrl ? (
-                        <a
-                          href={game.storeUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline font-medium"
-                        >
-                          {game.bestStore} <ExternalLink className="inline h-3 w-3" />
-                        </a>
-                      ) : (
-                        <span className="text-foreground font-medium">{game.bestStore}</span>
-                      )}
-                    </div>
-                  )}
-                  {game.dollarsPerHour !== undefined && (
-                    <div className="flex items-center gap-1 text-muted-foreground justify-end">
-                      <DollarSign className="h-3 w-3" />
-                      <span>{game.dollarsPerHour.toFixed(2)}/hr</span>
-                    </div>
-                  )}
+                {game.dealSummary && (
+                  <p className="text-xs text-muted-foreground">{game.dealSummary}</p>
+                )}
+                {game.historicalLow !== undefined && (
+                  <p className="text-xs text-muted-foreground">
+                    Historical low: ${game.historicalLow.toFixed(2)}
+                    {game.isAtHistoricalLow && (
+                      <span className="ml-1 text-deal-great font-bold">Currently at ATL!</span>
+                    )}
+                  </p>
+                )}
+                <div className="mt-4 pt-3 border-t border-white/[0.06]">
+                  <h3 className="text-xs font-label font-medium uppercase tracking-widest text-muted-foreground mb-3">
+                    Price History
+                  </h3>
+                  <PriceHistoryChart gameId={game.id} />
                 </div>
-              </div>
-              {game.dealSummary && (
-                <p className="text-xs text-muted-foreground">{game.dealSummary}</p>
-              )}
-              {game.historicalLow !== undefined && (
-                <p className="text-xs text-muted-foreground">
-                  Historical low: ${game.historicalLow.toFixed(2)}
-                  {game.isAtHistoricalLow && (
-                    <span className="ml-1 text-deal-great font-bold">Currently at ATL!</span>
-                  )}
-                </p>
-              )}
-              <div className="mt-4 pt-3 border-t border-white/[0.06]">
-                <h3 className="text-xs font-label font-medium uppercase tracking-widest text-muted-foreground mb-3">
-                  Price History
-                </h3>
-                <PriceHistoryChart gameId={game.id} />
-              </div>
-            </section>
+              </section>
+            )
           )}
 
           {/* Score Breakdown */}
@@ -285,32 +309,36 @@ export default async function GameDetailPage({
 
         {/* Sidebar */}
         <div className="space-y-4">
-          {/* User Controls */}
-          <GameUserControls
-            gameId={game.id}
-            steamAppId={game.steamAppId}
-            isWishlisted={game.isWishlisted}
-            interest={game.personalInterest}
-            isWatchlisted={game.isWatchlisted}
-            isIgnored={game.isIgnored}
-            autoAlertDisabled={game.autoAlertDisabled}
-            priceThreshold={alert?.targetPrice ?? undefined}
-            notifyOnAllTimeLow={alert?.notifyOnAllTimeLow}
-            notifyOnThreshold={alert?.notifyOnThreshold}
-            currentPrice={game.currentPrice}
-            lastNotifiedAt={alert?.lastNotifiedAt ?? undefined}
-          />
+          {/* User Controls — hidden in lookup mode */}
+          {!isLookupMode && (
+            <GameUserControls
+              gameId={game.id}
+              steamAppId={game.steamAppId}
+              isWishlisted={game.isWishlisted}
+              interest={game.personalInterest}
+              isWatchlisted={game.isWatchlisted}
+              isIgnored={game.isIgnored}
+              autoAlertDisabled={game.autoAlertDisabled}
+              priceThreshold={alert?.targetPrice ?? undefined}
+              notifyOnAllTimeLow={alert?.notifyOnAllTimeLow}
+              notifyOnThreshold={alert?.notifyOnThreshold}
+              currentPrice={game.currentPrice}
+              lastNotifiedAt={alert?.lastNotifiedAt ?? undefined}
+            />
+          )}
 
-          {/* HLTB Duration Editor */}
-          <HltbEditor
-            gameId={game.id}
-            gameTitle={game.title}
-            hltbMain={game.hltbMain}
-            hltbMainExtra={game.hltbMainExtra}
-            hltbCompletionist={game.hltbCompletionist}
-            hltbManual={game.hltbManual}
-            hltbMissCount={game.hltbMissCount}
-          />
+          {/* HLTB Duration Editor — hidden in lookup mode */}
+          {!isLookupMode && (
+            <HltbEditor
+              gameId={game.id}
+              gameTitle={game.title}
+              hltbMain={game.hltbMain}
+              hltbMainExtra={game.hltbMainExtra}
+              hltbCompletionist={game.hltbCompletionist}
+              hltbManual={game.hltbManual}
+              hltbMissCount={game.hltbMissCount}
+            />
+          )}
 
           {/* External Links */}
           <div className="rounded-xl bg-card p-5">

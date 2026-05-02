@@ -577,6 +577,7 @@ export function getEnrichedGames(
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
+      source: games.source,
       reviewLastUpdated: games.reviewLastUpdated,
       hltbLastUpdated: games.hltbLastUpdated,
       isOwned: userGames.isOwned,
@@ -655,6 +656,7 @@ export function getEnrichedGames(
       id: r.id,
       steamAppId: r.steamAppId,
       title: r.title,
+      source: r.source === 'lookup' ? 'lookup' : 'sync',
       headerImageUrl: r.headerImageUrl ?? undefined,
       releaseDate: r.releaseDate ?? undefined,
       developer: r.developer ?? undefined,
@@ -763,6 +765,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       isReleased: games.isReleased,
       reviewLastUpdated: games.reviewLastUpdated,
       hltbLastUpdated: games.hltbLastUpdated,
+      source: games.source,
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
@@ -806,6 +809,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     id: row.id,
     steamAppId: row.steamAppId,
     title: row.title,
+    source: row.source === 'lookup' ? 'lookup' : 'sync',
     description: row.description ?? undefined,
     headerImageUrl: row.headerImageUrl ?? undefined,
     releaseDate: row.releaseDate ?? undefined,
@@ -1177,6 +1181,7 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMi
       hltbMissCount: games.hltbMissCount,
     })
     .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
     .where(
       and(
         or(
@@ -1189,6 +1194,12 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMi
           INNER JOIN tags t ON gt.tag_id = t.id
           WHERE t.name IN (${sql.join(SOFTWARE_TAGS.map(t => sql`${t}`), sql`, `)})
         )`,
+        // Only sync games the user has a relationship with (excludes source='lookup' orphans)
+        or(
+          eq(userGames.isOwned, true),
+          eq(userGames.isWishlisted, true),
+          eq(userGames.isWatchlisted, true),
+        ),
         or(
           // Never checked
           isNull(games.hltbLastUpdated),
@@ -1259,6 +1270,14 @@ export function updateManualHltbData(
       hltbLastUpdated: isClearing ? null : new Date().toISOString(),
     })
     .where(eq(games.id, gameId))
+    .run();
+}
+
+export function updateGameLastViewedAt(gameId: number): void {
+  const db = getDb();
+  db.update(games)
+    .set({ lastViewedAt: new Date() })
+    .where(and(eq(games.id, gameId), eq(games.source, 'lookup')))
     .run();
 }
 
@@ -1666,6 +1685,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
+      source: games.source,
       reviewLastUpdated: games.reviewLastUpdated,
       hltbLastUpdated: games.hltbLastUpdated,
       isOwned: userGames.isOwned,
@@ -1714,6 +1734,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
     id: r.id,
     steamAppId: r.steamAppId,
     title: r.title,
+    source: (r.source === 'lookup' ? 'lookup' : 'sync') as 'sync' | 'lookup',
     headerImageUrl: r.headerImageUrl ?? undefined,
     releaseDate: r.releaseDate ?? undefined,
     developer: r.developer ?? undefined,
