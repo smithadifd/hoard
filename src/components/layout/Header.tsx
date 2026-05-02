@@ -2,6 +2,7 @@
 
 import { TrendingDown } from 'lucide-react';
 import { UserMenu } from './UserMenu';
+import { SearchTrigger } from '@/components/search/SearchTrigger';
 
 interface HeaderProps {
   userName: string;
@@ -21,8 +22,11 @@ export function Header({ userName, userEmail }: HeaderProps) {
         {/* Spacer on desktop (sidebar visible) */}
         <div className="hidden lg:block" />
 
-        {/* User menu — always visible */}
-        <UserMenu userName={userName} userEmail={userEmail} />
+        {/* Search + User menu */}
+        <div className="flex items-center gap-1">
+          <SearchTrigger />
+          <UserMenu userName={userName} userEmail={userEmail} />
+        </div>
       </div>
     </header>
   );

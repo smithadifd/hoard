@@ -112,6 +112,13 @@ export interface SteamAppDetails {
   };
 }
 
+export interface SteamSearchResult {
+  appId: number;
+  name: string;
+  tinyImage: string | null;
+  price: { initial: number; final: number; discountPercent: number } | null;
+}
+
 export interface SteamReviewSummary {
   success: number;
   query_summary: {
