@@ -261,6 +261,7 @@ npm run lint
 
 ### Planned Features
 - [x] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
+- [x] Smart Discord notifications (new ATL individual alerts, still-at-ATL digest, reduced noise)
 - [ ] Post-purchase enjoyment rating (two-field model: interest + enjoyment, expected value metrics)
 - [ ] Onboarding wizard (multi-step setup with background sync)
 - [x] Dashboard overhaul (genre bar chart, deal score histogram, activity feed via Recharts)

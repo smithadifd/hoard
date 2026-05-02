@@ -233,8 +233,11 @@ export class HLTBClient {
 
   /**
    * Search HLTB for a game by title.
-   * If the original title doesn't match, retries with a normalized title
-   * (stripped of edition suffixes, parenthetical years, etc.).
+   * Falls back progressively when the original title doesn't clear the
+   * similarity threshold:
+   *   1. Original title
+   *   2. Edition-normalized (strips "Deluxe Edition", year parens, etc.)
+   *   3. Subtitle-stripped (keeps only the part before the first colon)
    */
   async search(title: string): Promise<HLTBResult | null> {
     const cached = this.cache.get(title.toLowerCase());
@@ -244,14 +247,28 @@ export class HLTBClient {
       const result = await this._searchInner(title, true);
       if (result && result.similarity >= 0.4) return result;
 
-      // Retry with normalized title if it differs
+      // Retry with edition-normalized title if it differs
       const normalized = normalizeGameTitle(title);
       if (normalized !== title && normalized.length > 0) {
         const normalizedResult = await this._searchInner(normalized, true);
         if (normalizedResult && normalizedResult.similarity >= 0.4) {
-          // Cache under original title too
           this.cache.set(title.toLowerCase(), normalizedResult);
           return normalizedResult;
+        }
+      }
+
+      // Final fallback: strip subtitle after the first colon. Catches cases like
+      // "Horticular: Build a Garden, Attract Wildlife" where HLTB indexes just "Horticular".
+      // Require the prefix to be ≥8 chars so we don't search for stubs like "Re:" or "FF:".
+      const colonIdx = title.indexOf(':');
+      if (colonIdx >= 8) {
+        const prefix = title.substring(0, colonIdx).trim();
+        if (prefix.length > 0 && prefix !== normalized && prefix !== title) {
+          const prefixResult = await this._searchInner(prefix, true);
+          if (prefixResult && prefixResult.similarity >= 0.4) {
+            this.cache.set(title.toLowerCase(), prefixResult);
+            return prefixResult;
+          }
         }
       }
 
