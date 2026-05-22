@@ -1375,7 +1375,72 @@ export function insertPriceSnapshot(data: {
       dealScore: data.dealScore,
       snapshotDate: now,
     })
+    .onConflictDoNothing({
+      target: [priceSnapshots.gameId, priceSnapshots.store, priceSnapshots.snapshotDate],
+    })
     .run();
+}
+
+export interface PriceSnapshotInsert {
+  gameId: number;
+  store: string;
+  priceCurrent: number;
+  priceRegular: number;
+  discountPercent: number;
+  currency?: string;
+  snapshotDate: string;
+}
+
+/**
+ * Bulk-insert historical price snapshots, ignoring rows that would collide
+ * with the (gameId, store, snapshotDate) unique index. Returns the count of
+ * rows actually inserted vs. skipped.
+ */
+export function bulkInsertPriceSnapshots(
+  rows: PriceSnapshotInsert[]
+): { inserted: number; skipped: number } {
+  if (rows.length === 0) return { inserted: 0, skipped: 0 };
+  const db = getDb();
+
+  let inserted = 0;
+  // Chunk to keep SQLite happy with very large arrays (e.g. multi-store
+  // multi-year history can run into the thousands per game).
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const result = db
+      .insert(priceSnapshots)
+      .values(
+        chunk.map((r) => ({
+          gameId: r.gameId,
+          store: r.store,
+          priceCurrent: r.priceCurrent,
+          priceRegular: r.priceRegular,
+          discountPercent: r.discountPercent,
+          currency: r.currency ?? 'USD',
+          snapshotDate: r.snapshotDate,
+        }))
+      )
+      .onConflictDoNothing({
+        target: [priceSnapshots.gameId, priceSnapshots.store, priceSnapshots.snapshotDate],
+      })
+      .run();
+    inserted += result.changes;
+  }
+
+  return { inserted, skipped: rows.length - inserted };
+}
+
+export function getGameItadInfo(
+  gameId: number
+): { id: number; itadGameId: string | null; title: string } | null {
+  const db = getDb();
+  const row = db
+    .select({ id: games.id, itadGameId: games.itadGameId, title: games.title })
+    .from(games)
+    .where(eq(games.id, gameId))
+    .get();
+  return row ?? null;
 }
 
 export function getLatestPriceSnapshots(gameIds: number[]): Map<number, PriceSnapshotRow> {
