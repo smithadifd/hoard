@@ -234,6 +234,9 @@ export class ITADClient {
    * Fetch the per-sale price-change history for one game.
    * Without `since`, ITAD returns the last 3 months only — pass an early
    * date to backfill further. Rate limit is 1000 requests / 5 minutes.
+   *
+   * ITAD's `since` validation rejects ISO 8601 with milliseconds
+   * ("Invalid 'since' format"), so we strip the .NNN component.
    */
   async getPriceHistory(
     itadGameId: string,
@@ -243,7 +246,9 @@ export class ITADClient {
       id: itadGameId,
       country: options.country ?? 'US',
     };
-    if (options.since) params.since = options.since.toISOString();
+    if (options.since) {
+      params.since = options.since.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    }
     if (options.shops && options.shops.length > 0) {
       params.shops = options.shops.join(',');
     }
