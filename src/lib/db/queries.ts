@@ -374,6 +374,17 @@ function buildGameFilterConditions(filters: GameFilters, userId: string): SQL[] 
   if (filters.view === 'watchlist') {
     conditions.push(eq(userGames.isWatchlisted, true));
   }
+  if (filters.view === 'recent-deals') {
+    // Surface games where any snapshot in the last N days was at the all-time low.
+    // No wishlist/library/watchlist scope — anything we've tracked qualifies.
+    const days = Math.floor(filters.daysBack && filters.daysBack > 0 ? filters.daysBack : 30);
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM price_snapshots ps_atl
+      WHERE ps_atl.game_id = ${games.id}
+        AND ps_atl.is_historical_low = 1
+        AND ps_atl.snapshot_date >= date('now', '-' || ${days} || ' days')
+    )`);
+  }
 
   if (filters.search) {
     conditions.push(like(games.title, `%${filters.search}%`));
@@ -551,6 +562,7 @@ export function getEnrichedGames(
     lastPlayed: userGames.lastPlayed,
     price: sql`(SELECT ps.price_current FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
     dealScore: sql`(SELECT ps.deal_score FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
+    atlHitDate: sql`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`,
   } as const;
   type SortKey = keyof typeof sortMap;
   const sortKey = (filters.sortBy && filters.sortBy in sortMap ? filters.sortBy : 'title') as SortKey;
@@ -588,6 +600,10 @@ export function getEnrichedGames(
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
+      atlHitDate:
+        filters.view === 'recent-deals'
+          ? sql<string | null>`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`
+          : sql<string | null>`NULL`,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
@@ -683,6 +699,7 @@ export function getEnrichedGames(
       dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
       reviewLastUpdated: r.reviewLastUpdated ?? undefined,
       hltbLastUpdated: r.hltbLastUpdated ?? undefined,
+      atlHitDate: r.atlHitDate ?? undefined,
     };
 
     if (snapshot) {
@@ -1945,6 +1962,8 @@ export interface ActiveAlertRow extends PriceAlertRow {
   storeUrl: string | null;
   // Previous snapshot's ATL for new-vs-still-at-ATL classification
   prevHistoricalLowPrice: number | null;
+  // Total snapshots observed for this game (gate against firing alerts on too little history)
+  snapshotCount: number;
 }
 
 export interface AlertWithGame extends PriceAlertRow {
@@ -2052,6 +2071,7 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     store: string;
     storeUrl: string | null;
     prevHistoricalLowPrice: number | null;
+    snapshotCount: number;
   }
 
   const rows = db.all(sql`
@@ -2081,7 +2101,8 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
          AND (ps_prev.snapshot_date < ps.snapshot_date
               OR (ps_prev.snapshot_date = ps.snapshot_date AND ps_prev.id < ps.id))
        ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
-       LIMIT 1) as prevHistoricalLowPrice
+       LIMIT 1) as prevHistoricalLowPrice,
+      (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount
     FROM price_alerts pa
     INNER JOIN games g ON pa.game_id = g.id
     INNER JOIN user_games ug ON g.id = ug.game_id AND ug.user_id = ${userId}
@@ -2117,6 +2138,7 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     store: r.store,
     storeUrl: r.storeUrl,
     prevHistoricalLowPrice: r.prevHistoricalLowPrice,
+    snapshotCount: r.snapshotCount,
   }));
 }
 
@@ -2275,6 +2297,8 @@ export interface AutoAlertCandidate {
   lastAutoAlertAt: string | null;
   // Previous snapshot's ATL for new-vs-still-at-ATL classification
   prevHistoricalLowPrice: number | null;
+  // Total snapshots observed for this game (gate against firing alerts on too little history)
+  snapshotCount: number;
 }
 
 /**
@@ -2300,6 +2324,7 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
     storeUrl: string | null;
     lastAutoAlertAt: string | null;
     prevHistoricalLowPrice: number | null;
+    snapshotCount: number;
   }
 
   const rows = db.all(sql`
@@ -2324,7 +2349,8 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
          AND (ps_prev.snapshot_date < ps.snapshot_date
               OR (ps_prev.snapshot_date = ps.snapshot_date AND ps_prev.id < ps.id))
        ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
-       LIMIT 1) as prevHistoricalLowPrice
+       LIMIT 1) as prevHistoricalLowPrice,
+      (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount
     FROM user_games ug
     INNER JOIN games g ON ug.game_id = g.id
     INNER JOIN price_snapshots ps ON g.id = ps.game_id

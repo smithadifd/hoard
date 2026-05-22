@@ -72,6 +72,9 @@ export interface EnrichedGame {
   hltbLastUpdated?: string;
   priceLastUpdated?: string;
 
+  // Most recent date this game's price hit an all-time low (only populated for view='recent-deals')
+  atlHitDate?: string;
+
   // Source tracking — 'sync' (came from Steam library/wishlist sync) or 'lookup'
   // (created on-demand via the search Cmd+K Steam result click)
   source: 'sync' | 'lookup';
@@ -82,7 +85,9 @@ export interface EnrichedGame {
  */
 export interface GameFilters {
   search?: string;
-  view?: 'library' | 'wishlist' | 'watchlist';
+  view?: 'library' | 'wishlist' | 'watchlist' | 'recent-deals';
+  /** For view='recent-deals': only include games whose most recent ATL is within the last N days. */
+  daysBack?: number;
   owned?: boolean;
   played?: boolean; // Has any playtime
   playtimeStatus?: 'unplayed' | 'underplayed' | 'backlog' | 'play-again'; // unplayed=0min, underplayed=1-60min, backlog=unplayed OR barely started (<X% of HLTB), play-again=played significantly + dormant
@@ -101,7 +106,7 @@ export interface GameFilters {
   excludeTags?: string[]; // Exclude games with these tags
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
-  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed';
+  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate';
   sortOrder?: 'asc' | 'desc';
 }
 
