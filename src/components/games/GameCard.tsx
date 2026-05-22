@@ -1,8 +1,23 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Clock, Star, DollarSign } from 'lucide-react';
+import { Clock, Star, DollarSign, Sparkles } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
 import { DealIndicator } from '@/components/prices/DealIndicator';
+
+/** "Hit ATL <relative>" label for the recent-deals card footer. */
+function formatAtlAge(atlHitDate: string): string {
+  const hit = new Date(atlHitDate + 'T00:00:00Z').getTime();
+  if (Number.isNaN(hit)) return 'recently';
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const days = Math.max(0, Math.round((todayUtc - hit) / (1000 * 60 * 60 * 24)));
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return 'last week';
+  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
 
 /**
  * GameCard - Displays a game in the grid view with key info at a glance.
@@ -135,6 +150,14 @@ export function GameCard({ game }: GameCardProps) {
           </div>
         ) : (
           <div className="text-[10px] text-muted-foreground/60">No price data</div>
+        )}
+
+        {/* Recent ATL marker — only present when surfaced via the recent-deals view */}
+        {game.atlHitDate && (
+          <div className="flex items-center gap-1 text-[10px] font-label uppercase tracking-wide text-teal/80">
+            <Sparkles className="h-3 w-3" />
+            Hit ATL {formatAtlAge(game.atlHitDate)}
+          </div>
         )}
       </div>
     </Link>

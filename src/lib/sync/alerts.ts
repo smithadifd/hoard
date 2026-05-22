@@ -27,8 +27,8 @@ import type { SyncResult, ProgressCallback } from './types';
 
 /** True if the ATL is genuinely new (lower than previously known). */
 export function isNewAtl(prevHistoricalLow: number | null | undefined, currentHistoricalLow: number | null): boolean {
-  // No previous snapshot = first time we've seen this game — treat as new
-  if (prevHistoricalLow == null) return true;
+  // No previous snapshot = no baseline; we can't claim this is "new" yet
+  if (prevHistoricalLow == null) return false;
   // Current ATL is lower than what we previously knew = genuine new record
   if (currentHistoricalLow != null && currentHistoricalLow < prevHistoricalLow) return true;
   // Same or higher = still at previously known ATL
@@ -86,8 +86,16 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     const discord = getDiscordClient();
     const now = new Date();
     let throttled = 0;
+    let insufficientHistory = 0;
 
-    console.log(`[AlertCheck] ${activeAlerts.length} active alerts to evaluate`);
+    // Minimum snapshots required before any ATL alert fires for a game.
+    // Guards against firing on the very first observation of a new wishlist game
+    // when ITAD's reported historical low happens to equal the current price.
+    const minSnapshotsRaw = getSetting('min_snapshots_for_atl_alert');
+    const parsedMin = Number(minSnapshotsRaw ?? '3');
+    const minSnapshots = Number.isFinite(parsedMin) && parsedMin >= 1 ? Math.floor(parsedMin) : 3;
+
+    console.log(`[AlertCheck] ${activeAlerts.length} active alerts to evaluate (min snapshots for ATL: ${minSnapshots})`);
 
     const pending: PendingNotification[] = [];
 
@@ -121,7 +129,12 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         }
       }
 
-      if (alert.notifyOnAllTimeLow && alert.isHistoricalLow) {
+      // Gate ATL trigger: need enough observed history before we can claim ATL.
+      // Threshold and free triggers above remain unguarded — those are explicit prices the user set.
+      const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
+      if (atlGated) insufficientHistory++;
+
+      if (alert.notifyOnAllTimeLow && alert.isHistoricalLow && !atlGated) {
         shouldNotify = true;
       }
 
@@ -167,6 +180,12 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       console.log(`[AlertCheck] ${candidates.length} auto ATL deal candidates`);
 
       for (const candidate of candidates) {
+        // Auto alerts only ever fire on ATL — fully skip when history is too thin.
+        if (candidate.snapshotCount < minSnapshots) {
+          insufficientHistory++;
+          continue;
+        }
+
         if (candidate.lastAutoAlertAt) {
           const lastNotified = new Date(candidate.lastAutoAlertAt);
           const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
@@ -233,10 +252,13 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     }
 
     const totalThrottled = throttled + autoThrottled;
-    const totalAttempted = pending.length + totalThrottled;
-    console.log(`[AlertCheck] Sent ${notifiedCount} notifications (${digestAlerts.length} in digest), ${totalThrottled} throttled`);
+    const totalSkipped = totalThrottled + insufficientHistory;
+    const totalAttempted = pending.length + totalSkipped;
+    console.log(
+      `[AlertCheck] Sent ${notifiedCount} notifications (${digestAlerts.length} in digest), ${totalThrottled} throttled, ${insufficientHistory} skipped for insufficient history`,
+    );
     completeSyncLog(syncLogId, 'success', notifiedCount, undefined, totalAttempted, 0);
-    return { stats: { attempted: totalAttempted, succeeded: notifiedCount, failed: 0, skipped: totalThrottled }, syncLogId };
+    return { stats: { attempted: totalAttempted, succeeded: notifiedCount, failed: 0, skipped: totalSkipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[AlertCheck] Failed:', error);

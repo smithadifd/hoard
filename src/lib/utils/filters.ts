@@ -37,5 +37,10 @@ export function parseGameFiltersFromParams(
     filters.minInterest = Number(params.minInterest);
   }
 
+  if (typeof params.days === 'string') {
+    const n = Number(params.days);
+    if (Number.isFinite(n) && n >= 1 && n <= 365) filters.daysBack = Math.floor(n);
+  }
+
   return filters;
 }
