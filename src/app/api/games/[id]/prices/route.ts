@@ -26,7 +26,9 @@ export async function GET(
 
     const url = new URL(request.url);
     const limitParam = parseInt(url.searchParams.get('limit') ?? '90', 10);
-    const limit = Math.min(Math.max(limitParam || 90, 1), 365);
+    // Cap at 5000 so backfilled history (per-day rows aggregated to best price)
+    // can be returned in a single request even for games with deep ITAD history.
+    const limit = Math.min(Math.max(limitParam || 90, 1), 5000);
 
     const history = getPriceHistory(idResult.data.id, limit);
     return apiSuccess(history);

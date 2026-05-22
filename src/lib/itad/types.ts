@@ -116,6 +116,20 @@ export interface ITADSearchResult {
 }
 
 // ============================================
+// /games/history/v2
+// ============================================
+
+export interface ITADHistoryEntry {
+  timestamp: string;
+  shop: ITADShop;
+  deal: {
+    price: ITADMoney;
+    regular: ITADMoney;
+    cut: number;
+  };
+}
+
+// ============================================
 // /games/prices/v3
 // ============================================
 

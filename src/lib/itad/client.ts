@@ -12,6 +12,7 @@ import { getEffectiveConfig } from '../config';
 import type {
   ITADDeal,
   ITADGameLookup,
+  ITADHistoryEntry,
   ITADOverviewResponse,
   ITADOverviewPrice,
   ITADPricesV3Game,
@@ -227,6 +228,26 @@ export class ITADClient {
     }
 
     return allResults;
+  }
+
+  /**
+   * Fetch the per-sale price-change history for one game.
+   * Without `since`, ITAD returns the last 3 months only — pass an early
+   * date to backfill further. Rate limit is 1000 requests / 5 minutes.
+   */
+  async getPriceHistory(
+    itadGameId: string,
+    options: { since?: Date; country?: string; shops?: number[] } = {}
+  ): Promise<ITADHistoryEntry[]> {
+    const params: Record<string, string> = {
+      id: itadGameId,
+      country: options.country ?? 'US',
+    };
+    if (options.since) params.since = options.since.toISOString();
+    if (options.shops && options.shops.length > 0) {
+      params.shops = options.shops.join(',');
+    }
+    return this.request<ITADHistoryEntry[]>('/games/history/v2', params);
   }
 
   /**

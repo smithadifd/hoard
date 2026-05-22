@@ -99,6 +99,9 @@ const SCHEMA_SQL = `
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE UNIQUE INDEX IF NOT EXISTS ps_game_store_snapshot_idx
+    ON price_snapshots (game_id, store, snapshot_date);
+
   CREATE TABLE IF NOT EXISTS price_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL DEFAULT 'default',
