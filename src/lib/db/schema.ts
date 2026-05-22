@@ -115,6 +115,8 @@ export const priceSnapshots = sqliteTable('price_snapshots', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({
   gameSnapshotIdx: index('ps_game_snapshot_idx').on(table.gameId, table.snapshotDate),
+  gameStoreSnapshotIdx: uniqueIndex('ps_game_store_snapshot_idx')
+    .on(table.gameId, table.store, table.snapshotDate),
 }));
 
 // ===========================================

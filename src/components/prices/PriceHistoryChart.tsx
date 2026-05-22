@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -11,7 +11,8 @@ import {
   ReferenceLine,
   CartesianGrid,
 } from 'recharts';
-import { TrendingDown } from 'lucide-react';
+import { Download, TrendingDown } from 'lucide-react';
+import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface PriceSnapshot {
   snapshotDate: string;
@@ -30,15 +31,24 @@ const RANGES = [
   { label: '30d', days: 30 },
   { label: '90d', days: 90 },
   { label: '1y', days: 365 },
+  { label: '2y', days: 365 * 2 },
+  { label: '5y', days: 365 * 5 },
   { label: 'All', days: Infinity },
 ] as const;
 
-// Colors from tailwind.config.ts (Recharts needs raw values, not Tailwind classes)
+const BACKFILL_DEPTHS = [
+  { label: '1 year', value: '1y' },
+  { label: '3 years', value: '3y' },
+  { label: 'All available', value: 'all' },
+] as const;
+
+type BackfillDepth = (typeof BACKFILL_DEPTHS)[number]['value'];
+
 const PRIMARY_AMBER = '#F59E0B';
 const TEAL = '#14B8A6';
 const MUTED_FG = '#D8C3AD';
-const BORDER_COLOR = '#2A2A2A'; // surface-high
-const CARD_BG = '#201F1F'; // card
+const BORDER_COLOR = '#2A2A2A';
+const CARD_BG = '#201F1F';
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -47,6 +57,14 @@ function formatDate(dateStr: string): string {
 
 function daysBetween(a: Date, b: Date): number {
   return Math.floor(Math.abs(b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function sinceFor(depth: BackfillDepth): string {
+  if (depth === 'all') return 'all';
+  const now = new Date();
+  if (depth === '1y') now.setFullYear(now.getFullYear() - 1);
+  else if (depth === '3y') now.setFullYear(now.getFullYear() - 3);
+  return now.toISOString();
 }
 
 interface TooltipPayloadItem {
@@ -97,34 +115,115 @@ function ChartSkeleton() {
   return <div className="w-full h-64 animate-pulse bg-muted rounded" />;
 }
 
+interface BackfillResponse {
+  data: {
+    gameId: number;
+    events: number;
+    inserted: number;
+    skipped: number;
+  };
+}
+
+function BackfillControl({
+  gameId,
+  onComplete,
+}: {
+  gameId: number;
+  onComplete: () => void;
+}) {
+  const [depth, setDepth] = useState<BackfillDepth>('all');
+  const [message, setMessage] = useState<string | null>(null);
+
+  const { mutate, isPending, error } = useApiMutation<
+    { since: string },
+    BackfillResponse
+  >(`/api/games/${gameId}/prices/history`, {
+    onSuccess: (resp) => {
+      const { inserted, events } = resp.data;
+      setMessage(
+        inserted > 0
+          ? `Added ${inserted} price point${inserted === 1 ? '' : 's'} (${events} events scanned).`
+          : `No new data — history is already up to date.`
+      );
+      onComplete();
+    },
+  });
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={depth}
+        onChange={(e) => setDepth(e.target.value as BackfillDepth)}
+        disabled={isPending}
+        className="rounded-md border border-white/[0.08] bg-card px-2 py-1 text-xs"
+        aria-label="Backfill depth"
+      >
+        {BACKFILL_DEPTHS.map((d) => (
+          <option key={d.value} value={d.value}>{d.label}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          setMessage(null);
+          mutate({ since: sinceFor(depth) });
+        }}
+        disabled={isPending}
+        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+      >
+        <Download className="h-3.5 w-3.5" />
+        {isPending ? 'Backfilling…' : 'Backfill from ITAD'}
+      </button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+      {message && !error && (
+        <span className="text-xs text-muted-foreground">{message}</span>
+      )}
+    </div>
+  );
+}
+
 export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
   const [data, setData] = useState<PriceSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedRange, setSelectedRange] = useState(90);
+  const [selectedRange, setSelectedRange] = useState<number>(90);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    fetch(`/api/games/${gameId}/prices?limit=365`)
+    let cancelled = false;
+    fetch(`/api/games/${gameId}/prices?limit=5000`)
       .then(res => res.json())
       .then(json => {
-        // API returns DESC order; reverse for chronological chart
+        if (cancelled) return;
         setData((json.data ?? []).reverse());
       })
-      .catch(() => setError('Failed to load price history'))
-      .finally(() => setLoading(false));
-  }, [gameId]);
+      .catch(() => {
+        if (!cancelled) setError('Failed to load price history');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [gameId, reloadKey]);
+
+  const handleBackfillComplete = useCallback(() => {
+    setReloadKey(k => k + 1);
+  }, []);
 
   if (loading) return <ChartSkeleton />;
   if (error) return <p className="text-sm text-muted-foreground">{error}</p>;
 
   if (data.length < 2) {
     return (
-      <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-        <TrendingDown className="h-8 w-8 mb-2 opacity-50" />
-        <p className="text-sm">Price tracking just started for this game.</p>
-        <p className="text-xs mt-1">
-          Data is collected daily — check back in a few days to see trends.
-        </p>
+      <div className="flex flex-col items-center justify-center gap-3 py-8 text-center text-muted-foreground">
+        <TrendingDown className="h-8 w-8 opacity-50" />
+        <div>
+          <p className="text-sm">Price tracking just started for this game.</p>
+          <p className="text-xs mt-1">
+            Pull in ITAD&apos;s historical prices to see trends right away:
+          </p>
+        </div>
+        <BackfillControl gameId={gameId} onComplete={handleBackfillComplete} />
       </div>
     );
   }
@@ -134,31 +233,37 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
     ? data
     : data.filter(d => daysBetween(new Date(d.snapshotDate + 'T00:00:00'), now) <= selectedRange);
 
-  // Use filteredData if it has enough points, otherwise fall back to all data
   const chartData = filteredData.length >= 2 ? filteredData : data;
 
-  const historicalLow = data[0]?.historicalLowPrice;
+  // Find the most recent non-null historicalLowPrice (older backfilled rows leave it null)
+  const historicalLow = (() => {
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (data[i].historicalLowPrice != null) return data[i].historicalLowPrice;
+    }
+    return null;
+  })();
 
   return (
     <div>
-      {/* Time range selector */}
-      <div className="flex gap-1 mb-3">
-        {RANGES.map(range => (
-          <button
-            key={range.label}
-            onClick={() => setSelectedRange(range.days)}
-            className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-              selectedRange === range.days
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-secondary text-secondary-foreground hover:bg-accent'
-            }`}
-          >
-            {range.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex flex-wrap gap-1">
+          {RANGES.map(range => (
+            <button
+              key={range.label}
+              onClick={() => setSelectedRange(range.days)}
+              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                selectedRange === range.days
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary text-secondary-foreground hover:bg-accent'
+              }`}
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
+        <BackfillControl gameId={gameId} onComplete={handleBackfillComplete} />
       </div>
 
-      {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: PRIMARY_AMBER }} />
@@ -195,7 +300,6 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
             />
             <Tooltip content={<CustomTooltip />} />
 
-            {/* Regular price line (dashed, subtle) */}
             <Area
               type="stepAfter"
               dataKey="priceRegular"
@@ -205,7 +309,6 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
               name="Regular"
             />
 
-            {/* Current/sale price area (filled, prominent) */}
             <Area
               type="stepAfter"
               dataKey="priceCurrent"
@@ -216,7 +319,6 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
               name="Price"
             />
 
-            {/* Historical low reference line (label in legend, not on chart) */}
             {historicalLow != null && (
               <ReferenceLine
                 y={historicalLow}
