@@ -13,6 +13,7 @@ import {
   Settings,
   TrendingDown,
   CalendarClock,
+  Sparkles,
   MoreHorizontal,
   X,
   ChevronsLeft,
@@ -42,6 +43,7 @@ const navSections: NavSection[] = [
     label: 'Browse',
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { name: 'Recent Deals', href: '/deals', icon: Sparkles },
     ],
   },
   {
@@ -78,6 +80,7 @@ const mobileTabItems: NavItem[] = [
 
 /** Secondary items (shown in More menu) */
 const mobileMoreItems: NavItem[] = [
+  { name: 'Recent Deals', href: '/deals', icon: Sparkles },
   { name: 'Releases', href: '/releases', icon: CalendarClock },
   { name: 'Watchlist', href: '/watchlist', icon: Bell },
   { name: 'Triage', href: '/triage', icon: ListChecks },

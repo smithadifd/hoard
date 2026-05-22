@@ -47,6 +47,7 @@ export function InfiniteGameGrid({
       if (filters.hideUnreleased !== undefined) params.set('hideUnreleased', String(filters.hideUnreleased));
       if (filters.genres?.length) params.set('genres', filters.genres.join(','));
       if (filters.excludeTags?.length) params.set('excludeTags', filters.excludeTags.join(','));
+      if (filters.daysBack !== undefined) params.set('daysBack', String(filters.daysBack));
       return `/api/games?${params.toString()}`;
     },
     [filters, pageSize],

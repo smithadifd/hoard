@@ -64,6 +64,8 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
     isHistoricalLow: false,
     lastNotifiedAt: null as string | null,
     prevHistoricalLowPrice: null as number | null,
+    // Default to plenty of history so existing tests bypass the min-snapshot gate
+    snapshotCount: 10,
     ...overrides,
   };
 }
@@ -77,12 +79,12 @@ function makeMockDiscord(overrides: Record<string, unknown> = {}) {
 }
 
 describe('isNewAtl', () => {
-  it('returns true when no previous snapshot exists (null)', () => {
-    expect(isNewAtl(null, 4.99)).toBe(true);
+  it('returns false when no previous snapshot exists (null) — no baseline to compare', () => {
+    expect(isNewAtl(null, 4.99)).toBe(false);
   });
 
-  it('returns true when no previous snapshot exists (undefined)', () => {
-    expect(isNewAtl(undefined, 4.99)).toBe(true);
+  it('returns false when no previous snapshot exists (undefined) — no baseline to compare', () => {
+    expect(isNewAtl(undefined, 4.99)).toBe(false);
   });
 
   it('returns true when current ATL is lower than previous', () => {
@@ -205,7 +207,9 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(1);
   });
 
-  it('sends individual alert for first-ever ATL (no previous snapshot)', async () => {
+  it('sends digest (not individual) for first-ever ATL once history threshold is met', async () => {
+    // No prior historical low recorded, but we have enough snapshots to trust the ATL flag.
+    // isNewAtl returns false (no baseline), so this becomes a still-at-ATL digest entry.
     const alert = makeAlert({
       currentPrice: 4.99,
       targetPrice: null,
@@ -213,7 +217,8 @@ describe('checkPriceAlerts', () => {
       notifyOnAllTimeLow: true,
       isHistoricalLow: true,
       historicalLowPrice: 4.99,
-      prevHistoricalLowPrice: null, // First snapshot = treat as new
+      prevHistoricalLowPrice: null,
+      snapshotCount: 10,
     });
     mockGetAlerts.mockReturnValue([alert]);
     const mockDiscord = makeMockDiscord();
@@ -221,9 +226,93 @@ describe('checkPriceAlerts', () => {
 
     const result = await checkPriceAlerts();
 
-    expect(mockDiscord.sendPriceAlert).toHaveBeenCalled();
-    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
+      expect.objectContaining({ title: 'Test Game' }),
+    ]);
     expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('does not fire ATL alert (individual or digest) when snapshotCount < minSnapshots', async () => {
+    // Brand-new wishlist add: first snapshot, equals ITAD historical low.
+    // Should be fully skipped.
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: null,
+      snapshotCount: 1,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    mockGetSetting.mockReturnValue('3');
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(0);
+  });
+
+  it('still fires threshold alert even when snapshotCount is below ATL threshold', async () => {
+    // Even with thin history, an explicit user threshold trigger is honored.
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: 5.00,
+      notifyOnThreshold: true,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: null,
+      snapshotCount: 1,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    mockGetSetting.mockReturnValue('3');
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('skips auto-alert candidate entirely when snapshotCount < minSnapshots', async () => {
+    mockGetAutoAlertCandidates.mockReturnValue([
+      {
+        gameId: 99,
+        title: 'New Wishlist Game',
+        headerImageUrl: null,
+        steamAppId: 999,
+        reviewDescription: 'Very Positive',
+        hltbMain: 10,
+        currentPrice: 4.99,
+        regularPrice: 9.99,
+        discountPercent: 50,
+        historicalLowPrice: 4.99,
+        dealScore: 80,
+        store: 'Steam',
+        storeUrl: 'https://store.steam/app/999',
+        lastAutoAlertAt: null,
+        prevHistoricalLowPrice: null,
+        snapshotCount: 1,
+      },
+    ]);
+    mockGetSetting.mockImplementation((key) =>
+      key === 'min_snapshots_for_atl_alert' ? '3' : null,
+    );
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(0);
   });
 
   it('sends individual for threshold even if also still-at-ATL', async () => {
