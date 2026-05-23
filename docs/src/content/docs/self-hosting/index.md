@@ -109,7 +109,7 @@ After account setup, run these from Settings → Sync in order:
 2. **Steam wishlist sync** — imports wishlisted games
 3. **ITAD price sync** — fetches current prices and historical lows across stores (requires `ITAD_API_KEY`)
 
-HLTB (game duration data) and review enrichment run on their own cron schedules — HLTB runs twice a week, reviews twice a week. Both can be triggered manually from Settings if you want data immediately. See [Architecture](/architecture/) for the full schedule table.
+HLTB (game duration data) and review enrichment run on their own cron schedules — HLTB runs twice a week, reviews twice a week. Both can be triggered manually from Settings if you want data immediately. Price history backfill runs nightly and fills in historical prices for every wishlisted/owned game one at a time, so deal charts populate without manual intervention. See [Architecture](/architecture/) for the full schedule table.
 
 Cron defaults if you don't override them:
 
@@ -120,6 +120,7 @@ Cron defaults if you don't override them:
 | Price check | Every 12 hours |
 | HLTB sync | 2 am Sunday and Wednesday |
 | Review enrichment | 4 am Tuesday and Friday |
+| Price history backfill | 5 am daily |
 | Database backup | 4 am daily |
 
 ## Data persistence

@@ -127,9 +127,11 @@ interface BackfillResponse {
 function BackfillControl({
   gameId,
   onComplete,
+  hasExistingData = false,
 }: {
   gameId: number;
   onComplete: () => void;
+  hasExistingData?: boolean;
 }) {
   const [depth, setDepth] = useState<BackfillDepth>('all');
   const [message, setMessage] = useState<string | null>(null);
@@ -148,6 +150,8 @@ function BackfillControl({
       onComplete();
     },
   });
+
+  const idleLabel = hasExistingData ? 'Refresh from ITAD' : 'Backfill from ITAD';
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -172,7 +176,7 @@ function BackfillControl({
         className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         <Download className="h-3.5 w-3.5" />
-        {isPending ? 'Backfilling…' : 'Backfill from ITAD'}
+        {isPending ? 'Backfilling…' : idleLabel}
       </button>
       {error && <span className="text-xs text-destructive">{error}</span>}
       {message && !error && (
@@ -235,6 +239,14 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
 
   const chartData = filteredData.length >= 2 ? filteredData : data;
 
+  const earliestDate = data[0]?.snapshotDate;
+  const earliestLabel = earliestDate
+    ? new Date(earliestDate + 'T00:00:00').toLocaleDateString('en-US', {
+        month: 'short',
+        year: 'numeric',
+      })
+    : null;
+
   // Find the most recent non-null historicalLowPrice (older backfilled rows leave it null)
   const historicalLow = (() => {
     for (let i = data.length - 1; i >= 0; i--) {
@@ -261,8 +273,18 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
             </button>
           ))}
         </div>
-        <BackfillControl gameId={gameId} onComplete={handleBackfillComplete} />
+        <BackfillControl
+          gameId={gameId}
+          onComplete={handleBackfillComplete}
+          hasExistingData
+        />
       </div>
+
+      {earliestLabel && (
+        <p className="text-xs text-muted-foreground mb-2">
+          Historical data from {earliestLabel}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">

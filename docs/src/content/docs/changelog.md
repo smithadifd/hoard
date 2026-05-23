@@ -47,6 +47,8 @@ Plan 15 added wishlist game removal: local removal with a sync guard, Steam-sour
 
 Smart Discord notifications tightened the alert signal: new all-time lows send individual messages, while games that are still at ATL from a previous alert are batched into a digest, reducing noise significantly.
 
+Automatic price history backfill turned a manual button into a nightly enrichment job: 100 games per run at ~60 requests per minute, scoped to owned/wishlisted/watchlisted games with a resolved ITAD ID, stamped per-game so already-enriched games are skipped on later runs. A drain-mode wrapper (`primePriceHistory`) loops batches until empty for future onboarding flows, scoped per user to avoid horizontal authz gaps. The job is wired into the existing Discord health alerts and the weekly summary digest.
+
 ## What's next
 
 Two features are planned but not yet built: a post-purchase enjoyment rating (a two-field model tracking expected versus actual enjoyment, feeding into expected value metrics) and an onboarding wizard that walks through initial setup with background sync running in parallel.

@@ -37,6 +37,8 @@ const SCHEMA_SQL = `
     hltb_manual INTEGER DEFAULT 0,
     hltb_miss_count INTEGER DEFAULT 0,
     review_last_updated TEXT,
+    price_history_backfilled_at INTEGER,
+    price_history_miss_count INTEGER DEFAULT 0,
     is_coop INTEGER DEFAULT 0,
     is_multiplayer INTEGER DEFAULT 0,
     is_released INTEGER,
