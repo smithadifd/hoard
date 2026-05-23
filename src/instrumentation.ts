@@ -15,6 +15,7 @@ export async function register() {
     const { syncWishlist } = await import('@/lib/sync/wishlist');
     const { syncHltb } = await import('@/lib/sync/hltb');
     const { syncReviews } = await import('@/lib/sync/reviews');
+    const { syncPriceHistoryBackfill } = await import('@/lib/sync/price-history-backfill');
     const { runDatabaseBackup } = await import('@/lib/sync/backup');
     const { getDiscordClient } = await import('@/lib/discord/client');
 
@@ -25,6 +26,7 @@ export async function register() {
     registerTask('wishlist-sync', config.cronWishlistSync, async () => syncWishlist());
     registerTask('hltb-sync', config.cronHltbSync, async () => syncHltb());
     registerTask('review-enrichment', config.cronReviewSync, async () => syncReviews());
+    registerTask('price-history-backfill', config.cronPriceHistoryBackfill, async () => syncPriceHistoryBackfill());
 
     registerTask('database-backup', config.cronBackup, async () => {
       try {

@@ -51,6 +51,7 @@ Hoard pulls from four external sources. Three of them feed into the database on 
 | `GET` | `/games/lookup/v1?appid={id}` | Resolve Steam App ID → ITAD game ID |
 | `POST` | `/games/overview/v2` | Current price + ATL for up to 200 games |
 | `POST` | `/games/prices/v3` | Per-store price breakdown for up to 200 games |
+| `GET` | `/games/history/v2` | Full per-store price-change history for one game |
 | `GET` | `/games/search/v1` | Title search |
 | `GET` | `/deals/v2` | General deal feed |
 
@@ -63,6 +64,12 @@ Hoard pulls from four external sources. Three of them feed into the database on 
 **Price sync scope:** runs against all wishlisted and watchlisted games on every scheduled run. There's no staleness guard — if a game is on your wishlist or watchlist, it gets a fresh price snapshot every cycle.
 
 **Default schedule:** every 12 hours (`CRON_PRICE_CHECK`, default `0 */12 * * *`).
+
+**Price history backfill:** the regular price sync only captures prices going forward, so charts for a newly-added game start empty. The `price-history-backfill` job fills in everything ITAD has tracked historically (back to 2012-01-01) by walking eligible games one per second and stamping `price_history_backfilled_at` on each game when done. Eligible games are owned/wishlisted/watchlisted games with a resolved `itadGameId` and `price_history_backfilled_at IS NULL` — already-backfilled games are skipped on subsequent runs, and newly added games get picked up automatically the next night. After three consecutive failures on a game, the column is stamped anyway so we stop hammering ITAD for bad IDs.
+
+**Default schedule:** nightly at 5:00 am, 100 games per run (`CRON_PRICE_HISTORY_BACKFILL`, default `0 5 * * *`). At ~1 second per game that's ~100 seconds wall time and ~60 requests per minute — well under ITAD's published ceiling of 1,000 requests per 5 minutes. For a 500-game library, first-time fill takes about five nights.
+
+**Onboarding prime:** the same logic can run in drain mode via `primePriceHistory()` — loops batches until no eligible games remain. Intended to be fired once after a new user's first library + wishlist sync so their charts populate within minutes instead of days. Exposed at `POST /api/sync` with `type: 'price-history-prime'`. A module-level concurrency guard prevents the nightly cron and any manual trigger from running the loop simultaneously.
 
 **Gotchas:**
 

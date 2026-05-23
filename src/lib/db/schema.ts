@@ -30,6 +30,9 @@ export const games = sqliteTable('games', {
   hltbMissCount: integer('hltb_miss_count').default(0), // Consecutive failed HLTB lookups (for backoff)
   // Review metadata tracking
   reviewLastUpdated: text('review_last_updated'), // ISO date — tracks when reviews were fetched
+  // ITAD price history backfill tracking
+  priceHistoryBackfilledAt: integer('price_history_backfilled_at', { mode: 'timestamp_ms' }), // Set when full ITAD history has been ingested; NULL = needs backfill
+  priceHistoryMissCount: integer('price_history_miss_count').default(0), // Consecutive backfill failures (for backoff)
   // Metadata
   isCoop: integer('is_coop', { mode: 'boolean' }).default(false),
   isMultiplayer: integer('is_multiplayer', { mode: 'boolean' }).default(false),

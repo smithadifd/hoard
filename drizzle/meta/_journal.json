@@ -43,6 +43,13 @@
       "when": 1779454139070,
       "tag": "0005_deep_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779538101279,
+      "tag": "0006_fair_diamondback",
+      "breakpoints": true
     }
   ]
 }

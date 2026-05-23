@@ -1312,6 +1312,114 @@ export function setHltbExcluded(gameId: number, excluded: boolean): void {
     .run();
 }
 
+// After this many consecutive failed backfill attempts, stop retrying so we
+// don't pound ITAD for games whose itadGameId is permanently bad.
+const PRICE_HISTORY_GIVE_UP_MISSES = 3;
+
+export function getGamesForPriceHistoryBackfill(
+  limit: number,
+  userId?: string,
+): Array<{ id: number; title: string; itadGameId: string }> {
+  const db = getDb();
+  return db
+    .selectDistinct({
+      id: games.id,
+      title: games.title,
+      itadGameId: games.itadGameId,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        isNull(games.priceHistoryBackfilledAt),
+        sql`${games.itadGameId} IS NOT NULL`,
+        sql`COALESCE(${games.priceHistoryMissCount}, 0) < ${PRICE_HISTORY_GIVE_UP_MISSES}`,
+        or(
+          eq(userGames.isOwned, true),
+          eq(userGames.isWishlisted, true),
+          eq(userGames.isWatchlisted, true),
+        ),
+        // Scope to a single user when provided — required for multi-user
+        // safety so an authenticated user can't trigger backfill across
+        // every other user's library.
+        ...(userId !== undefined ? [eq(userGames.userId, userId)] : []),
+      ),
+    )
+    // Process highest-interest games first so the chart fills in for
+    // the games the user is most likely to look at
+    .orderBy(desc(games.reviewCount))
+    .limit(limit)
+    .all() as Array<{ id: number; title: string; itadGameId: string }>;
+}
+
+export function markPriceHistoryBackfilled(gameId: number): void {
+  const db = getDb();
+  db.update(games)
+    .set({
+      priceHistoryBackfilledAt: new Date(),
+      priceHistoryMissCount: 0,
+    })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+export function incrementPriceHistoryMissCount(gameId: number): void {
+  // Single atomic UPDATE: increment the miss count and, if that pushes the
+  // game over the give-up threshold, stamp `price_history_backfilled_at` in
+  // the same statement so the candidate query stops picking it up. Doing
+  // both in one statement avoids a race when two callers (cron + manual
+  // trigger) operate on the same game.
+  const db = getDb();
+  const nowMs = Date.now();
+  db.run(sql`
+    UPDATE games
+    SET
+      price_history_miss_count = COALESCE(price_history_miss_count, 0) + 1,
+      price_history_backfilled_at = CASE
+        WHEN COALESCE(price_history_miss_count, 0) + 1 >= ${PRICE_HISTORY_GIVE_UP_MISSES}
+          AND price_history_backfilled_at IS NULL
+        THEN ${nowMs}
+        ELSE price_history_backfilled_at
+      END
+    WHERE id = ${gameId}
+  `);
+}
+
+export function getPriceHistoryBackfillCoverage(userId?: string): { backfilled: number; eligible: number } {
+  const db = getDb();
+  const baseConditions = [
+    sql`${games.itadGameId} IS NOT NULL`,
+    or(
+      eq(userGames.isOwned, true),
+      eq(userGames.isWishlisted, true),
+      eq(userGames.isWatchlisted, true),
+    ),
+    ...(userId !== undefined ? [eq(userGames.userId, userId)] : []),
+  ];
+
+  const eligibleRow = db
+    .select({ count: sql<number>`count(DISTINCT ${games.id})` })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(and(...baseConditions))
+    .get();
+  const backfilledRow = db
+    .select({ count: sql<number>`count(DISTINCT ${games.id})` })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        sql`${games.priceHistoryBackfilledAt} IS NOT NULL`,
+        ...baseConditions,
+      ),
+    )
+    .get();
+  return {
+    backfilled: backfilledRow?.count ?? 0,
+    eligible: eligibleRow?.count ?? 0,
+  };
+}
+
 export function getHltbCoverage(): { withHltb: number; total: number } {
   const db = getDb();
   const totalRow = db

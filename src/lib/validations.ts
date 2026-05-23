@@ -170,5 +170,13 @@ export const hltbSearchSchema = z.object({
 // ============================================
 
 export const syncTriggerSchema = z.object({
-  type: z.enum(['library', 'wishlist', 'prices', 'hltb', 'reviews']),
+  type: z.enum([
+    'library',
+    'wishlist',
+    'prices',
+    'hltb',
+    'reviews',
+    'price-history-backfill',
+    'price-history-prime',
+  ]),
 });
