@@ -4,6 +4,7 @@ import { syncWishlist } from '@/lib/sync/wishlist';
 import { syncPrices } from '@/lib/sync/prices';
 import { syncHltb } from '@/lib/sync/hltb';
 import { syncReviews } from '@/lib/sync/reviews';
+import { syncPriceHistoryBackfill, primePriceHistory } from '@/lib/sync/price-history-backfill';
 import { getRecentSyncLogs } from '@/lib/db/queries';
 import { getTaskStatus } from '@/lib/scheduler';
 import { syncTriggerSchema, formatZodError } from '@/lib/validations';
@@ -43,6 +44,10 @@ export async function POST(request: NextRequest) {
         return createSyncSSEResponse(syncHltb, 'HLTB', request, userId);
       case 'reviews':
         return createSyncSSEResponse(syncReviews, 'Review', request, userId);
+      case 'price-history-backfill':
+        return createSyncSSEResponse(syncPriceHistoryBackfill, 'Price History Backfill', request, userId);
+      case 'price-history-prime':
+        return createSyncSSEResponse(primePriceHistory, 'Price History Prime', request, userId);
     }
   } catch (error) {
     console.error('[POST /api/sync]', error);

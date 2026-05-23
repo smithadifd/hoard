@@ -24,13 +24,14 @@ interface ScheduledTask {
 }
 
 const TASK_TO_SOURCE: Record<string, string> = {
-  'price-check':       'itad_prices',
-  'library-sync':      'steam_library',
-  'wishlist-sync':     'steam_wishlist',
-  'hltb-sync':         'hltb',
-  'review-enrichment': 'reviews',
-  'database-backup':   'backup',
-  'health-summary':    'health_summary',
+  'price-check':              'itad_prices',
+  'library-sync':             'steam_library',
+  'wishlist-sync':            'steam_wishlist',
+  'hltb-sync':                'hltb',
+  'review-enrichment':        'reviews',
+  'price-history-backfill':   'price-history-backfill',
+  'database-backup':          'backup',
+  'health-summary':           'health_summary',
 };
 
 function taskToSource(name: string): string {

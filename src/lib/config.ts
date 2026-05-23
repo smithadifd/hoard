@@ -29,6 +29,7 @@ export interface AppConfig {
   cronWishlistSync: string;
   cronHltbSync: string;
   cronReviewSync: string;
+  cronPriceHistoryBackfill: string;
 
   // Alerts
   alertThrottleHours: number;
@@ -55,6 +56,7 @@ export function getConfig(): AppConfig {
       cronWishlistSync: process.env.CRON_WISHLIST_SYNC || '0 1 * * *',
       cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0,3',
       cronReviewSync: process.env.CRON_REVIEW_SYNC || '0 4 * * 2,5',
+      cronPriceHistoryBackfill: process.env.CRON_PRICE_HISTORY_BACKFILL || '0 5 * * *',
       alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),
       cronBackup: process.env.CRON_BACKUP || '0 4 * * *',
       backupRetentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10),

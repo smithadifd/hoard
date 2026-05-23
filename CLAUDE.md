@@ -258,6 +258,8 @@ npm run lint
 - [x] Plan 16: Separate Releases from Wishlist (/releases page, nav overhaul, release date parsing, release status sync, Discord notifications)
 - [x] Filters & Quick Wins: Price/free filter, interest filter, backlog fixes, default wishlist sort, auto alerts button, dynamic version (v1.0.0)
 - [x] Plan 25: Infinite Scroll (IntersectionObserver, skeleton loading, scroll restoration, PickForMe fetch-on-click)
+- [x] Manual ITAD price history backfill (per-game button on detail page, depth selector, dedup via unique index)
+- [x] Automatic ITAD price history enrichment (nightly cron, 100 games/run, per-user scoping, miss-count backoff, drain mode for future onboarding prime, wired into Discord health alerts and weekly summary)
 
 ### Planned Features
 - [x] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
