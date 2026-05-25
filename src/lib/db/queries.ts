@@ -186,16 +186,17 @@ export interface UpsertGameData {
 export function upsertGameFromSteam(data: UpsertGameData): number {
   const db = getDb();
   const now = new Date().toISOString();
-  const headerImage =
-    data.headerImageUrl ||
-    `https://cdn.akamai.steamstatic.com/steam/apps/${data.steamAppId}/header.jpg`;
+  // Only store image URLs supplied by Steam's API. The legacy CDN path
+  // (cdn.akamai.steamstatic.com/steam/apps/{id}/header.jpg) is not populated
+  // for newer apps — Steam serves them from asset-versioned URLs returned by
+  // the appdetails API. Storing null lets the UI render a placeholder.
 
   const result = db
     .insert(games)
     .values({
       steamAppId: data.steamAppId,
       title: data.title,
-      headerImageUrl: headerImage,
+      headerImageUrl: data.headerImageUrl,
       description: data.description,
       shortDescription: data.shortDescription,
       releaseDate: data.releaseDate,
@@ -213,8 +214,10 @@ export function upsertGameFromSteam(data: UpsertGameData): number {
       target: games.steamAppId,
       set: {
         title: data.title,
-        headerImageUrl: headerImage,
-        // Preserve existing values when new data is undefined
+        // Preserve existing image URL when new data has none, so subsequent
+        // library syncs (which never pass headerImageUrl) don't overwrite a
+        // good URL from an earlier wishlist sync with null.
+        headerImageUrl: data.headerImageUrl ?? sql`${games.headerImageUrl}`,
         description: data.description ?? sql`${games.description}`,
         shortDescription: data.shortDescription ?? sql`${games.shortDescription}`,
         releaseDate: data.releaseDate ?? sql`${games.releaseDate}`,
@@ -315,6 +318,74 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
     .run();
 }
 
+/**
+ * Returns gameIds for the given user where the user_games row currently has
+ * isOwned=false (or no row at all). Used by library sync to detect ownership
+ * transitions before the bulk upsert overwrites the prior state.
+ */
+export function getPreOwnershipState(
+  gameIds: number[],
+  userId: string,
+): { wasOwned: boolean; wasWishlisted: boolean; gameId: number }[] {
+  if (gameIds.length === 0) return [];
+  const db = getDb();
+  const rows = db
+    .select({
+      gameId: userGames.gameId,
+      isOwned: userGames.isOwned,
+      isWishlisted: userGames.isWishlisted,
+      wishlistRemovedAt: userGames.wishlistRemovedAt,
+    })
+    .from(userGames)
+    .where(and(
+      eq(userGames.userId, userId),
+      inArray(userGames.gameId, gameIds),
+    ))
+    .all();
+  return rows.map((r) => ({
+    gameId: r.gameId,
+    wasOwned: r.isOwned ?? false,
+    wasWishlisted: (r.isWishlisted ?? false) && r.wishlistRemovedAt == null,
+  }));
+}
+
+/**
+ * Cascade for ownership transitions (false → true). Steam is the source of
+ * truth for ownership, so once a wishlisted game shows up in the library:
+ *   - any active price alerts are deactivated (you own it, no reason to keep notifying)
+ *   - it's removed from the wishlist (you don't wishlist what you own)
+ *
+ * Caller passes the set of gameIds that just transitioned; runs in a single
+ * transaction with the library upserts (caller is responsible for the txn).
+ */
+export function cascadePurchaseCleanup(gameIds: number[], userId: string): void {
+  if (gameIds.length === 0) return;
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  db.update(priceAlerts)
+    .set({ isActive: false })
+    .where(and(
+      eq(priceAlerts.userId, userId),
+      eq(priceAlerts.isActive, true),
+      inArray(priceAlerts.gameId, gameIds),
+    ))
+    .run();
+
+  db.update(userGames)
+    .set({
+      isWishlisted: false,
+      isWatchlisted: false,
+      wishlistRemovedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(userGames.userId, userId),
+      inArray(userGames.gameId, gameIds),
+    ))
+    .run();
+}
+
 export function upsertTags(gameId: number, tagNames: string[], type: string): void {
   const db = getDb();
   const sqlite = db.$client;
@@ -384,6 +455,70 @@ function buildGameFilterConditions(filters: GameFilters, userId: string): SQL[] 
         AND ps_atl.is_historical_low = 1
         AND ps_atl.snapshot_date >= date('now', '-' || ${days} || ' days')
     )`);
+  }
+  if (filters.view === 'new-atls') {
+    // Games whose FIRST-EVER hit at the current ATL price falls within the window.
+    // "First-ever" means no prior snapshot has a price equal to or lower than this one.
+    const days = Math.floor(filters.daysBack && filters.daysBack > 0 ? filters.daysBack : 14);
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM price_snapshots ps_atl
+      WHERE ps_atl.game_id = ${games.id}
+        AND ps_atl.is_historical_low = 1
+        AND ps_atl.snapshot_date >= date('now', '-' || ${days} || ' days')
+        AND NOT EXISTS (
+          SELECT 1 FROM price_snapshots ps_prior
+          WHERE ps_prior.game_id = ps_atl.game_id
+            AND ps_prior.snapshot_date < ps_atl.snapshot_date
+            AND ps_prior.price_current <= ps_atl.price_current
+        )
+    )`);
+  }
+  if (filters.view === 'deepest-discounts') {
+    // Wishlisted (not owned) games sorted by latest discount %.
+    conditions.push(eq(userGames.isWishlisted, true));
+    conditions.push(sql`${userGames.wishlistRemovedAt} IS NULL`);
+    conditions.push(sql`(${userGames.isOwned} IS NULL OR ${userGames.isOwned} = 0)`);
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM price_snapshots ps
+      WHERE ps.game_id = ${games.id}
+        AND ps.id = (
+          SELECT ps2.id FROM price_snapshots ps2
+          WHERE ps2.game_id = ${games.id}
+          ORDER BY ps2.snapshot_date DESC, ps2.deal_score DESC
+          LIMIT 1
+        )
+        AND ps.discount_percent > 0
+    )`);
+  }
+  if (filters.view === 'heating-up') {
+    // Wishlisted (not owned) games whose current price is at least 15% below
+    // the average of the last 90 days (a meaningful step beyond the baseline).
+    conditions.push(eq(userGames.isWishlisted, true));
+    conditions.push(sql`${userGames.wishlistRemovedAt} IS NULL`);
+    conditions.push(sql`(${userGames.isOwned} IS NULL OR ${userGames.isOwned} = 0)`);
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM price_snapshots ps_latest
+      WHERE ps_latest.game_id = ${games.id}
+        AND ps_latest.id = (
+          SELECT ps2.id FROM price_snapshots ps2
+          WHERE ps2.game_id = ${games.id}
+          ORDER BY ps2.snapshot_date DESC LIMIT 1
+        )
+        AND (
+          SELECT AVG(ps_avg.price_current) FROM price_snapshots ps_avg
+          WHERE ps_avg.game_id = ${games.id}
+            AND ps_avg.snapshot_date >= date('now', '-90 days')
+        ) IS NOT NULL
+        AND ps_latest.price_current <= 0.85 * (
+          SELECT AVG(ps_avg.price_current) FROM price_snapshots ps_avg
+          WHERE ps_avg.game_id = ${games.id}
+            AND ps_avg.snapshot_date >= date('now', '-90 days')
+        )
+    )`);
+  }
+
+  if (filters.excludeGameIds && filters.excludeGameIds.length > 0) {
+    conditions.push(sql`${games.id} NOT IN (${sql.join(filters.excludeGameIds.map((id) => sql`${id}`), sql`, `)})`);
   }
 
   if (filters.search) {
@@ -562,7 +697,36 @@ export function getEnrichedGames(
     lastPlayed: userGames.lastPlayed,
     price: sql`(SELECT ps.price_current FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
     dealScore: sql`(SELECT ps.deal_score FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
-    atlHitDate: sql`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`,
+    // For view='new-atls', filter to genuinely-new ATL hits (matches the
+    // displayed atlHitDate field) so sort order and badge date agree.
+    atlHitDate: filters.view === 'new-atls'
+      ? sql`(
+          SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
+          WHERE ps.game_id = ${games.id}
+            AND ps.is_historical_low = 1
+            AND NOT EXISTS (
+              SELECT 1 FROM price_snapshots ps_prior
+              WHERE ps_prior.game_id = ps.game_id
+                AND ps_prior.snapshot_date < ps.snapshot_date
+                AND ps_prior.price_current <= ps.price_current
+            )
+        )`
+      : sql`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`,
+    discount: sql`(SELECT ps.discount_percent FROM price_snapshots ps WHERE ps.game_id = ${games.id} ORDER BY ps.snapshot_date DESC LIMIT 1)`,
+    belowAvgPercent: sql`(
+      SELECT 100.0 * (1.0 - ps_latest.price_current / NULLIF((
+        SELECT AVG(ps_avg.price_current) FROM price_snapshots ps_avg
+        WHERE ps_avg.game_id = ${games.id}
+          AND ps_avg.snapshot_date >= date('now', '-90 days')
+      ), 0))
+      FROM price_snapshots ps_latest
+      WHERE ps_latest.game_id = ${games.id}
+        AND ps_latest.id = (
+          SELECT ps2.id FROM price_snapshots ps2
+          WHERE ps2.game_id = ${games.id}
+          ORDER BY ps2.snapshot_date DESC LIMIT 1
+        )
+    )`,
   } as const;
   type SortKey = keyof typeof sortMap;
   const sortKey = (filters.sortBy && filters.sortBy in sortMap ? filters.sortBy : 'title') as SortKey;
@@ -603,7 +767,39 @@ export function getEnrichedGames(
       atlHitDate:
         filters.view === 'recent-deals'
           ? sql<string | null>`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`
+          : filters.view === 'new-atls'
+          ? sql<string | null>`(
+              SELECT MAX(ps.snapshot_date) FROM price_snapshots ps
+              WHERE ps.game_id = ${games.id}
+                AND ps.is_historical_low = 1
+                AND NOT EXISTS (
+                  SELECT 1 FROM price_snapshots ps_prior
+                  WHERE ps_prior.game_id = ps.game_id
+                    AND ps_prior.snapshot_date < ps.snapshot_date
+                    AND ps_prior.price_current <= ps.price_current
+                )
+            )`
           : sql<string | null>`NULL`,
+      belowAvgPercent:
+        filters.view === 'heating-up'
+          ? sql<number | null>`(
+              SELECT
+                ROUND(
+                  100.0 * (1.0 - ps_latest.price_current / NULLIF((
+                    SELECT AVG(ps_avg.price_current) FROM price_snapshots ps_avg
+                    WHERE ps_avg.game_id = ${games.id}
+                      AND ps_avg.snapshot_date >= date('now', '-90 days')
+                  ), 0))
+                )
+              FROM price_snapshots ps_latest
+              WHERE ps_latest.game_id = ${games.id}
+                AND ps_latest.id = (
+                  SELECT ps2.id FROM price_snapshots ps2
+                  WHERE ps2.game_id = ${games.id}
+                  ORDER BY ps2.snapshot_date DESC LIMIT 1
+                )
+            )`
+          : sql<number | null>`NULL`,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
@@ -700,6 +896,15 @@ export function getEnrichedGames(
       reviewLastUpdated: r.reviewLastUpdated ?? undefined,
       hltbLastUpdated: r.hltbLastUpdated ?? undefined,
       atlHitDate: r.atlHitDate ?? undefined,
+      belowAvgPercent: r.belowAvgPercent ?? undefined,
+      dealBadge:
+        filters.view === 'new-atls'
+          ? ('new-atl' as const)
+          : filters.view === 'deepest-discounts'
+            ? ('discount' as const)
+            : filters.view === 'heating-up'
+              ? ('below-avg' as const)
+              : undefined,
     };
 
     if (snapshot) {
@@ -2639,41 +2844,22 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
   return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
 }
 
-/**
- * Recent activity feed: price drops, newly wishlisted, recently played games.
- * Returns a unified list sorted by date descending.
- */
-export function getRecentActivity(userId: string, limit = 10): Array<{
-  type: 'price_drop' | 'wishlisted' | 'played';
+export type ActivityType = 'wishlisted' | 'played' | 'new_atl';
+
+export interface ActivityEvent {
+  type: ActivityType;
   gameId: number;
   title: string;
   detail: string;
   date: string;
-}> {
-  const db = getDb();
+}
 
-  // Recent price drops (games that went on sale in latest snapshot)
-  const priceDrops = db.all(sql`
-    SELECT
-      'price_drop' as type,
-      g.id as game_id,
-      g.title,
-      '$' || ROUND(ps.price_current, 2) || ' (-' || ps.discount_percent || '%)' as detail,
-      ps.snapshot_date as date
-    FROM price_snapshots ps
-    JOIN games g ON g.id = ps.game_id
-    JOIN user_games ug ON ug.game_id = g.id AND ug.user_id = ${userId}
-    WHERE ps.discount_percent > 0
-      AND ps.id = (
-        SELECT ps2.id FROM price_snapshots ps2
-        WHERE ps2.game_id = ps.game_id
-        ORDER BY ps2.snapshot_date DESC, ps2.deal_score DESC
-        LIMIT 1
-      )
-      AND (ug.is_owned = 1 OR (ug.is_wishlisted = 1 AND ug.wishlist_removed_at IS NULL))
-    ORDER BY ps.snapshot_date DESC
-    LIMIT ${limit}
-  `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
+/**
+ * Lifecycle activity feed: recently played + recently wishlisted games.
+ * Deal/price events live on the New ATLs tab via {@link getRecentAtlEvents}.
+ */
+export function getRecentActivity(userId: string, limit = 10): ActivityEvent[] {
+  const db = getDb();
 
   // Recently wishlisted games
   const wishlisted = db.all(sql`
@@ -2710,14 +2896,72 @@ export function getRecentActivity(userId: string, limit = 10): Array<{
     LIMIT ${limit}
   `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
 
-  // Merge, sort by date, take top N
-  const all = [
-    ...priceDrops.map((r) => ({ type: r.type as 'price_drop', gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
-    ...wishlisted.map((r) => ({ type: r.type as 'wishlisted', gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
-    ...played.map((r) => ({ type: r.type as 'played', gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
+  return [
+    ...wishlisted.map((r) => ({ type: 'wishlisted' as const, gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
+    ...played.map((r) => ({ type: 'played' as const, gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
   ]
     .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
     .slice(0, limit);
+}
 
-  return all;
+/**
+ * New all-time-low events from the past N days. A NEW ATL is a snapshot where
+ * is_historical_low=1 AND no prior snapshot (including backfilled history) had
+ * a price equal to or lower than this one. Filters out games sitting at a
+ * previously-known ATL — those are not news.
+ */
+export function getRecentAtlEvents(
+  userId: string,
+  daysBack = 14,
+  limit = 10,
+): ActivityEvent[] {
+  const db = getDb();
+
+  const rows = db.all(sql`
+    SELECT
+      g.id as game_id,
+      g.title,
+      ps.price_current as price_current,
+      ps.discount_percent as discount_percent,
+      ps.snapshot_date as date
+    FROM price_snapshots ps
+    JOIN games g ON g.id = ps.game_id
+    JOIN user_games ug ON ug.game_id = g.id AND ug.user_id = ${userId}
+    WHERE ps.is_historical_low = 1
+      AND ps.snapshot_date >= date('now', '-' || ${daysBack} || ' days')
+      AND (ug.is_owned = 1 OR (ug.is_wishlisted = 1 AND ug.wishlist_removed_at IS NULL))
+      AND NOT EXISTS (
+        SELECT 1 FROM price_snapshots ps_prior
+        WHERE ps_prior.game_id = ps.game_id
+          AND ps_prior.snapshot_date < ps.snapshot_date
+          AND ps_prior.price_current <= ps.price_current
+      )
+      -- Pin to the most recent qualifying new-ATL snapshot per game so the
+      -- displayed price/discount/date match the row that drives ordering.
+      AND ps.snapshot_date = (
+        SELECT MAX(ps_latest.snapshot_date) FROM price_snapshots ps_latest
+        WHERE ps_latest.game_id = ps.game_id
+          AND ps_latest.is_historical_low = 1
+          AND ps_latest.snapshot_date >= date('now', '-' || ${daysBack} || ' days')
+          AND NOT EXISTS (
+            SELECT 1 FROM price_snapshots ps_prior2
+            WHERE ps_prior2.game_id = ps_latest.game_id
+              AND ps_prior2.snapshot_date < ps_latest.snapshot_date
+              AND ps_prior2.price_current <= ps_latest.price_current
+          )
+      )
+    GROUP BY g.id
+    ORDER BY ps.snapshot_date DESC
+    LIMIT ${limit}
+  `) as Array<{ game_id: number; title: string; price_current: number; discount_percent: number; date: string }>;
+
+  return rows.map((r) => ({
+    type: 'new_atl' as const,
+    gameId: r.game_id,
+    title: r.title,
+    detail: r.discount_percent > 0
+      ? `$${r.price_current.toFixed(2)} (-${r.discount_percent}%) new low`
+      : `$${r.price_current.toFixed(2)} new low`,
+    date: r.date,
+  }));
 }

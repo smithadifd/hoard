@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity } from '@/lib/db/queries';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents } from '@/lib/db/queries';
+import type { ActivityEvent } from '@/lib/db/queries';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
 import GenreChart from '@/components/dashboard/GenreChart';
@@ -21,7 +22,8 @@ export default async function DashboardPage() {
   let upcomingReleases: Array<{ title: string; releaseLabel: string; id: number }> = [];
   let genreData: Array<{ name: string; count: number }> = [];
   let dealScoreData: Array<{ bucket: string; count: number }> = [];
-  let recentActivity: Array<{ type: 'price_drop' | 'wishlisted' | 'played'; gameId: number; title: string; detail: string; date: string }> = [];
+  let recentActivity: ActivityEvent[] = [];
+  let recentAtls: ActivityEvent[] = [];
 
   try {
     stats = getDashboardStats(session.user.id);
@@ -31,6 +33,7 @@ export default async function DashboardPage() {
     genreData = getGenreDistribution(session.user.id);
     dealScoreData = getDealScoreDistribution(session.user.id);
     recentActivity = getRecentActivity(session.user.id);
+    recentAtls = getRecentAtlEvents(session.user.id);
 
     // Get upcoming releases for the dashboard card
     const unreleasedGames = getUnreleasedWishlistGames(session.user.id);
@@ -115,7 +118,7 @@ export default async function DashboardPage() {
           {/* Activity + Upcoming Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DashboardCard icon={<Activity className="h-4 w-4" />} title="Recent Activity">
-              <RecentActivityFeed items={recentActivity} />
+              <RecentActivityFeed played={recentActivity} newAtls={recentAtls} />
             </DashboardCard>
 
             {upcomingReleases.length > 0 && (

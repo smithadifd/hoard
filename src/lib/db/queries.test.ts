@@ -157,10 +157,22 @@ describe('upsertGameFromSteam', () => {
     expect(typeof id).toBe('number');
   });
 
-  it('generates header image URL if not provided', () => {
+  it('stores null header image when none is provided (no legacy URL fabrication)', () => {
     const id = upsertGameFromSteam({ steamAppId: 440, title: 'TF2' });
     const game = getEnrichedGameById(id, 'default');
-    expect(game?.headerImageUrl).toContain('440');
+    expect(game?.headerImageUrl).toBeFalsy();
+  });
+
+  it('preserves an existing header image URL on conflict-update with no new URL', () => {
+    upsertGameFromSteam({
+      steamAppId: 440,
+      title: 'TF2',
+      headerImageUrl: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/440/hash/header.jpg?t=1',
+    });
+    // Library sync would call this again without an image URL
+    const id = upsertGameFromSteam({ steamAppId: 440, title: 'TF2' });
+    const game = getEnrichedGameById(id, 'default');
+    expect(game?.headerImageUrl).toContain('shared.akamai.steamstatic.com');
   });
 });
 

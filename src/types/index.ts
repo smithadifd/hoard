@@ -72,8 +72,12 @@ export interface EnrichedGame {
   hltbLastUpdated?: string;
   priceLastUpdated?: string;
 
-  // Most recent date this game's price hit an all-time low (only populated for view='recent-deals')
+  // Date a new ATL was hit (populated for view='new-atls'/'recent-deals')
   atlHitDate?: string;
+  /** UI hint for which deal-section badge to render. */
+  dealBadge?: 'new-atl' | 'discount' | 'below-avg';
+  /** % below 90-day average price (populated for view='heating-up'). */
+  belowAvgPercent?: number;
 
   // Source tracking — 'sync' (came from Steam library/wishlist sync) or 'lookup'
   // (created on-demand via the search Cmd+K Steam result click)
@@ -85,9 +89,11 @@ export interface EnrichedGame {
  */
 export interface GameFilters {
   search?: string;
-  view?: 'library' | 'wishlist' | 'watchlist' | 'recent-deals';
-  /** For view='recent-deals': only include games whose most recent ATL is within the last N days. */
+  view?: 'library' | 'wishlist' | 'watchlist' | 'recent-deals' | 'new-atls' | 'deepest-discounts' | 'heating-up';
+  /** For view='recent-deals'|'new-atls': window in days to consider. */
   daysBack?: number;
+  /** Game IDs to exclude from the result. Used to dedupe across deal-page sections. */
+  excludeGameIds?: number[];
   owned?: boolean;
   played?: boolean; // Has any playtime
   playtimeStatus?: 'unplayed' | 'underplayed' | 'backlog' | 'play-again'; // unplayed=0min, underplayed=1-60min, backlog=unplayed OR barely started (<X% of HLTB), play-again=played significantly + dormant
@@ -106,7 +112,7 @@ export interface GameFilters {
   excludeTags?: string[]; // Exclude games with these tags
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
-  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate';
+  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent';
   sortOrder?: 'asc' | 'desc';
 }
 
