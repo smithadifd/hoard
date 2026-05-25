@@ -1,10 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink } from 'lucide-react';
 import { getEnrichedGameById, getPriceAlertForGame, getScoringConfig } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { calculateDealScore } from '@/lib/scoring/engine';
+import { GameImage } from '@/components/games/GameImage';
 import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
@@ -74,19 +74,17 @@ export default async function GameDetailPage({
       {isLookupMode && <LookupModeBanner />}
 
       {/* Header Image */}
-      {game.headerImageUrl && (
-        <div className="relative aspect-[460/215] max-w-2xl rounded-xl overflow-hidden bg-surface-lowest">
-          <Image
-            src={game.headerImageUrl}
-            alt={game.title}
-            fill
-            className="object-cover"
-            sizes="(max-width: 768px) 100vw, 672px"
-            priority
-          />
-          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
-        </div>
-      )}
+      <div className="relative aspect-[460/215] max-w-2xl rounded-xl overflow-hidden bg-surface-lowest">
+        <GameImage
+          src={game.headerImageUrl}
+          title={game.title}
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, 672px"
+          priority
+        />
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}

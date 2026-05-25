@@ -13,6 +13,9 @@ import {
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
+  getExistingGamesByAppIds,
+  getPreOwnershipState,
+  cascadePurchaseCleanup,
 } from '../db/queries';
 import { getDb } from '../db';
 import type { SyncResult, ProgressCallback } from './types';
@@ -27,9 +30,23 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
 
     const total = response.games.length;
     let processed = 0;
+    let newlyPurchasedCount = 0;
+
+    const appIds = response.games.map((g) => g.appid);
 
     const sqlite = getDb().$client;
     const runSync = sqlite.transaction(() => {
+      // Read prior ownership state INSIDE the transaction so a concurrent
+      // wishlist sync can't race in between the read and the upserts. Any
+      // game that was wishlisted-but-not-owned and is about to be marked
+      // owned is a new purchase — cascade its alerts + wishlist cleanup.
+      const existing = getExistingGamesByAppIds(appIds);
+      const existingGameIds = Array.from(existing.values()).map((g) => g.id);
+      const priors = getPreOwnershipState(existingGameIds, effectiveUserId);
+      const newlyPurchasedIds = priors
+        .filter((p) => p.wasWishlisted && !p.wasOwned)
+        .map((p) => p.gameId);
+
       for (const steamGame of response.games) {
         if (signal?.aborted) {
           console.log(`[LibrarySync] Cancelled after ${processed} games`);
@@ -54,8 +71,19 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
         processed++;
         onProgress?.(processed, total, { gameName: steamGame.name });
       }
+
+      if (newlyPurchasedIds.length > 0) {
+        cascadePurchaseCleanup(newlyPurchasedIds, effectiveUserId);
+        newlyPurchasedCount = newlyPurchasedIds.length;
+      }
     });
     runSync();
+
+    if (newlyPurchasedCount > 0) {
+      console.log(
+        `[LibrarySync] Detected ${newlyPurchasedCount} purchase(s) — deactivated alerts, removed from wishlist`,
+      );
+    }
 
     completeSyncLog(syncLogId, 'success', processed, undefined, total, 0);
     return { stats: { attempted: total, succeeded: processed, failed: 0, skipped: 0 }, syncLogId };

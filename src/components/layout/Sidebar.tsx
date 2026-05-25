@@ -89,6 +89,12 @@ const mobileMoreItems: NavItem[] = [
 
 const STORAGE_KEY = 'hoard-sidebar-collapsed';
 
+/**
+ * Between lg (1024px) and xl (1280px), the sidebar + content gets cramped.
+ * Force icon-only collapse in that range; restore user preference above xl.
+ */
+const NARROW_QUERY = '(min-width: 1024px) and (max-width: 1279px)';
+
 function isNavActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(href + '/');
@@ -102,7 +108,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const collapsed = useSyncExternalStore(
+  const userCollapsed = useSyncExternalStore(
     (onStoreChange) => {
       const handler = (e: StorageEvent) => {
         if (e.key === STORAGE_KEY) onStoreChange();
@@ -114,7 +120,22 @@ export function Sidebar() {
     () => false,
   );
 
+  const isNarrow = useSyncExternalStore(
+    (onStoreChange) => {
+      const mql = window.matchMedia(NARROW_QUERY);
+      mql.addEventListener('change', onStoreChange);
+      return () => mql.removeEventListener('change', onStoreChange);
+    },
+    () => window.matchMedia(NARROW_QUERY).matches,
+    () => false,
+  );
+
+  const collapsed = isNarrow || userCollapsed;
+
   const toggleCollapsed = useCallback(() => {
+    // Only honor user toggle above the narrow range — the auto-collapse below
+    // 1280px is enforced regardless of preference.
+    if (window.matchMedia(NARROW_QUERY).matches) return;
     const current = localStorage.getItem(STORAGE_KEY) === 'true';
     localStorage.setItem(STORAGE_KEY, String(!current));
     window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY }));

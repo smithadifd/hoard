@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -55,8 +55,74 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function formatMonthYear(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+}
+
+function formatYear(dateStr: string): string {
+  return dateStr.slice(0, 4);
+}
+
 function daysBetween(a: Date, b: Date): number {
   return Math.floor(Math.abs(b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/** Monday-start ISO week key (YYYY-MM-DD of the Monday). */
+function weekKey(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const dow = d.getUTCDay(); // 0 = Sun, 1 = Mon, ...
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + mondayOffset);
+  return d.toISOString().slice(0, 10);
+}
+
+/** YYYY-MM-01 month key. */
+function monthKey(dateStr: string): string {
+  return dateStr.slice(0, 7) + '-01';
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Bucket snapshots by week or month for long ranges, picking the minimum sale
+ * price and median regular price per bucket. Preserves the chronological order
+ * Recharts expects.
+ */
+function bucketSnapshots(
+  snapshots: PriceSnapshot[],
+  granularity: 'day' | 'week' | 'month',
+): PriceSnapshot[] {
+  if (granularity === 'day') return snapshots;
+
+  const keyFn = granularity === 'week' ? weekKey : monthKey;
+  const buckets = new Map<string, PriceSnapshot[]>();
+  for (const s of snapshots) {
+    const key = keyFn(s.snapshotDate);
+    const list = buckets.get(key);
+    if (list) list.push(s);
+    else buckets.set(key, [s]);
+  }
+
+  const result: PriceSnapshot[] = [];
+  for (const [key, list] of Array.from(buckets.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+    const minSale = Math.min(...list.map((s) => s.priceCurrent));
+    const minSnapshot = list.find((s) => s.priceCurrent === minSale)!;
+    result.push({
+      snapshotDate: key,
+      priceCurrent: minSale,
+      priceRegular: median(list.map((s) => s.priceRegular)),
+      historicalLowPrice: minSnapshot.historicalLowPrice,
+      store: minSnapshot.store,
+      discountPercent: minSnapshot.discountPercent,
+    });
+  }
+  return result;
 }
 
 function sinceFor(depth: BackfillDepth): string {
@@ -190,7 +256,8 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
   const [data, setData] = useState<PriceSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedRange, setSelectedRange] = useState<number>(90);
+  // `userSelectedRange === null` means "follow auto-default" (widest range that fits the data).
+  const [userSelectedRange, setUserSelectedRange] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -210,6 +277,46 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
     return () => { cancelled = true; };
   }, [gameId, reloadKey]);
 
+  // Compute auto-default range from data span. The user's explicit pick wins when present.
+  const autoDefaultRange = useMemo(() => {
+    if (data.length < 2) return 90;
+    const span = daysBetween(new Date(data[0].snapshotDate + 'T00:00:00'), new Date());
+    let target = 30;
+    for (const r of RANGES) {
+      if (r.days === Infinity) {
+        if (span > 365 * 5) target = Infinity;
+        continue;
+      }
+      if (r.days <= span) target = r.days;
+    }
+    return target;
+  }, [data]);
+
+  const selectedRange = userSelectedRange ?? autoDefaultRange;
+
+  // Bucket long ranges: weekly for >1y, monthly for >3y. Done unconditionally so
+  // the hook order is stable across loading/empty/data states.
+  const { chartData, granularity, hasData } = useMemo(() => {
+    const now = new Date();
+    const filtered = selectedRange === Infinity
+      ? data
+      : data.filter(d => daysBetween(new Date(d.snapshotDate + 'T00:00:00'), now) <= selectedRange);
+    const raw = filtered.length >= 2 ? filtered : data;
+    if (raw.length < 2) {
+      return { chartData: raw, granularity: 'day' as const, hasData: false };
+    }
+    const span = daysBetween(
+      new Date(raw[0].snapshotDate + 'T00:00:00'),
+      new Date(raw[raw.length - 1].snapshotDate + 'T00:00:00'),
+    );
+    const g: 'day' | 'week' | 'month' = span > 365 * 3 ? 'month' : span > 365 ? 'week' : 'day';
+    return { chartData: bucketSnapshots(raw, g), granularity: g, hasData: true };
+  }, [data, selectedRange]);
+
+  const handleRangeClick = useCallback((days: number) => {
+    setUserSelectedRange(days);
+  }, []);
+
   const handleBackfillComplete = useCallback(() => {
     setReloadKey(k => k + 1);
   }, []);
@@ -217,7 +324,7 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
   if (loading) return <ChartSkeleton />;
   if (error) return <p className="text-sm text-muted-foreground">{error}</p>;
 
-  if (data.length < 2) {
+  if (!hasData && data.length < 2) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-8 text-center text-muted-foreground">
         <TrendingDown className="h-8 w-8 opacity-50" />
@@ -232,12 +339,8 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
     );
   }
 
-  const now = new Date();
-  const filteredData = selectedRange === Infinity
-    ? data
-    : data.filter(d => daysBetween(new Date(d.snapshotDate + 'T00:00:00'), now) <= selectedRange);
-
-  const chartData = filteredData.length >= 2 ? filteredData : data;
+  const tickFormatter =
+    granularity === 'month' ? formatYear : granularity === 'week' ? formatMonthYear : formatDate;
 
   const earliestDate = data[0]?.snapshotDate;
   const earliestLabel = earliestDate
@@ -262,7 +365,7 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
           {RANGES.map(range => (
             <button
               key={range.label}
-              onClick={() => setSelectedRange(range.days)}
+              onClick={() => handleRangeClick(range.days)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                 selectedRange === range.days
                   ? 'bg-primary text-primary-foreground'
@@ -309,9 +412,10 @@ export function PriceHistoryChart({ gameId }: PriceHistoryChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke={BORDER_COLOR} />
             <XAxis
               dataKey="snapshotDate"
-              tickFormatter={formatDate}
+              tickFormatter={tickFormatter}
               tick={{ fill: MUTED_FG, fontSize: 12 }}
               stroke={BORDER_COLOR}
+              minTickGap={32}
             />
             <YAxis
               tickFormatter={v => `$${v}`}

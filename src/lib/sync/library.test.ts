@@ -11,6 +11,9 @@ vi.mock('../db/queries', () => ({
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
+  getExistingGamesByAppIds: vi.fn(),
+  getPreOwnershipState: vi.fn(),
+  cascadePurchaseCleanup: vi.fn(),
 }));
 
 import { syncLibrary } from './library';
@@ -21,6 +24,9 @@ import {
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
+  getExistingGamesByAppIds,
+  getPreOwnershipState,
+  cascadePurchaseCleanup,
 } from '../db/queries';
 
 const mockGetSteamClient = vi.mocked(getSteamClient);
@@ -29,6 +35,9 @@ const mockUpsertUserGame = vi.mocked(upsertUserGame);
 const mockCreateSyncLog = vi.mocked(createSyncLog);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
+const mockGetExisting = vi.mocked(getExistingGamesByAppIds);
+const mockGetPreOwnership = vi.mocked(getPreOwnershipState);
+const mockCascadePurchase = vi.mocked(cascadePurchaseCleanup);
 
 function makeSteamGame(appid: number, name: string, playtime = 0, recentPlaytime?: number, lastPlayed?: number) {
   return {
@@ -47,6 +56,8 @@ describe('syncLibrary', () => {
     mockCreateSyncLog.mockReturnValue(42);
     mockGetFirstUserId.mockReturnValue('user-1');
     mockUpsertGame.mockReturnValue(1);
+    mockGetExisting.mockReturnValue(new Map());
+    mockGetPreOwnership.mockReturnValue([]);
   });
 
   it('syncs all games from Steam into the database', async () => {
@@ -183,6 +194,46 @@ describe('syncLibrary', () => {
 
     await expect(syncLibrary()).rejects.toBe('string error');
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Unknown error');
+  });
+
+  it('cascades alerts + wishlist cleanup when a wishlisted game appears in the library', async () => {
+    const games = [
+      makeSteamGame(440, 'TF2', 100), // newly purchased: was wishlisted, now owned
+      makeSteamGame(570, 'Dota 2', 50), // already owned previously
+    ];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
+    mockGetExisting.mockReturnValue(new Map([
+      [440, { id: 10, title: 'TF2' }],
+      [570, { id: 20, title: 'Dota 2' }],
+    ]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 10, wasOwned: false, wasWishlisted: true },
+      { gameId: 20, wasOwned: true, wasWishlisted: false },
+    ]);
+
+    await syncLibrary();
+
+    expect(mockCascadePurchase).toHaveBeenCalledTimes(1);
+    expect(mockCascadePurchase).toHaveBeenCalledWith([10], 'user-1');
+  });
+
+  it('does not cascade when no wishlist→owned transitions occur', async () => {
+    const games = [makeSteamGame(570, 'Dota 2', 50)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(20);
+    mockGetExisting.mockReturnValue(new Map([[570, { id: 20, title: 'Dota 2' }]]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 20, wasOwned: true, wasWishlisted: false },
+    ]);
+
+    await syncLibrary();
+
+    expect(mockCascadePurchase).not.toHaveBeenCalled();
   });
 
   it('sets playtimeRecentMinutes to 0 when playtime_2weeks is undefined', async () => {

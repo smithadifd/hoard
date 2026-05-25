@@ -154,8 +154,8 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
           alertPayload: payload,
           onSent: () => updateAlertLastNotified(alert.id),
         });
-      } else {
-        // Still-at-ATL — goes to digest
+      } else if (alert.discountPercent > 0) {
+        // Still-at-ATL with a real discount — goes to digest
         pending.push({
           type: 'digest',
           digestGame: {
@@ -169,6 +169,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
           onSent: () => updateAlertLastNotified(alert.id),
         });
       }
+      // else: at "ATL" because regular price never dropped — not a deal, skip silently
     }
 
     // Auto ATL deal alerts
@@ -207,7 +208,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
             alertPayload: payload,
             onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
           });
-        } else {
+        } else if (candidate.discountPercent > 0) {
           pending.push({
             type: 'digest',
             digestGame: {
@@ -221,6 +222,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
             onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
           });
         }
+        // else: at "ATL" because regular price never dropped — not a deal, skip silently
       }
     }
 

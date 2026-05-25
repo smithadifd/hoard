@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Star, Clock, SkipForward, Library, Heart, Ban, AlertTriangle } from 'lucide-react';
+import { GameImage } from './GameImage';
 import { TriageCard } from './TriageCard';
 import { TriageHltbEditor } from './TriageHltbEditor';
 import { Toast } from '@/components/ui/Toast';
@@ -436,15 +436,13 @@ function TriageRow({
       {/* Thumbnail */}
       <Link href={`/games/${game.id}`} className="shrink-0">
         <div className="relative w-[120px] h-[56px] rounded overflow-hidden bg-secondary">
-          {game.headerImageUrl && (
-            <Image
-              src={game.headerImageUrl}
-              alt={game.title}
-              fill
-              className="object-cover"
-              sizes="120px"
-            />
-          )}
+          <GameImage
+            src={game.headerImageUrl}
+            title={game.title}
+            fill
+            className="object-cover"
+            sizes="120px"
+          />
         </div>
       </Link>
 

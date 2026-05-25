@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { DollarSign, Heart, Gamepad2, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingDown, Heart, Gamepad2, ChevronDown, ChevronUp } from 'lucide-react';
+
+type ActivityType = 'wishlisted' | 'played' | 'new_atl';
 
 interface ActivityItem {
-  type: 'price_drop' | 'wishlisted' | 'played';
+  type: ActivityType;
   gameId: number;
   title: string;
   detail: string;
@@ -13,25 +15,28 @@ interface ActivityItem {
 }
 
 interface RecentActivityFeedProps {
-  items: ActivityItem[];
+  played: ActivityItem[];
+  newAtls: ActivityItem[];
   initialCount?: number;
 }
 
+type TabKey = 'played' | 'atls';
+
+const TAB_STORAGE_KEY = 'hoard-activity-tab';
+
 const ICONS = {
-  price_drop: DollarSign,
   wishlisted: Heart,
   played: Gamepad2,
+  new_atl: TrendingDown,
 } as const;
 
 const ICON_COLORS = {
-  price_drop: 'text-teal',
   wishlisted: 'text-pink-400',
   played: 'text-primary',
+  new_atl: 'text-teal',
 } as const;
 
 function formatRelativeDate(dateStr: string): string {
-  // Normalize to UTC date-only to avoid timezone mismatches between
-  // ISO dates ("2026-03-30") and datetimes ("2026-03-30 15:00:00")
   const datePart = dateStr.slice(0, 10);
   const date = new Date(datePart + 'T00:00:00Z');
   const now = new Date();
@@ -46,13 +51,21 @@ function formatRelativeDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-export default function RecentActivityFeed({ items, initialCount = 5 }: RecentActivityFeedProps) {
+function ActivityList({
+  items,
+  initialCount,
+  emptyLabel,
+}: {
+  items: ActivityItem[];
+  initialCount: number;
+  emptyLabel: string;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   if (!items.length) {
     return (
       <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-        No recent activity
+        {emptyLabel}
       </div>
     );
   }
@@ -96,5 +109,65 @@ export default function RecentActivityFeed({ items, initialCount = 5 }: RecentAc
         </button>
       )}
     </div>
+  );
+}
+
+export default function RecentActivityFeed({
+  played,
+  newAtls,
+  initialCount = 5,
+}: RecentActivityFeedProps) {
+  const [tab, setTab] = useState<TabKey>(() => {
+    if (typeof window === 'undefined') return 'played';
+    return (sessionStorage.getItem(TAB_STORAGE_KEY) as TabKey) ?? 'played';
+  });
+
+  const selectTab = (next: TabKey) => {
+    setTab(next);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(TAB_STORAGE_KEY, next);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex gap-1 mb-3 -mt-1">
+        <TabButton active={tab === 'played'} onClick={() => selectTab('played')}>
+          Played
+        </TabButton>
+        <TabButton active={tab === 'atls'} onClick={() => selectTab('atls')}>
+          New ATLs
+        </TabButton>
+      </div>
+
+      {tab === 'played' ? (
+        <ActivityList items={played} initialCount={initialCount} emptyLabel="No recent activity" />
+      ) : (
+        <ActivityList items={newAtls} initialCount={initialCount} emptyLabel="No new all-time lows in the last 14 days" />
+      )}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
+        active
+          ? 'bg-primary/15 text-primary'
+          : 'text-muted-foreground hover:text-foreground hover:bg-surface-high'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
