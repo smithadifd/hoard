@@ -64,16 +64,13 @@ export async function POST(request: Request) {
     }
 
     const now = new Date().toISOString();
-    const headerImage =
-      details.header_image ||
-      `https://cdn.akamai.steamstatic.com/steam/apps/${steamAppId}/header.jpg`;
 
     const result = db
       .insert(games)
       .values({
         steamAppId,
         title: details.name,
-        headerImageUrl: headerImage,
+        headerImageUrl: details.header_image ?? undefined,
         capsuleImageUrl: details.capsule_image ?? undefined,
         description: details.short_description ?? undefined,
         shortDescription: details.short_description ?? undefined,

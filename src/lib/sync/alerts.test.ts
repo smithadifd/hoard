@@ -233,6 +233,33 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(1);
   });
 
+  it('skips still-at-ATL when discount is 0% (regular price never dropped)', async () => {
+    // ITAD reports historical low equal to regular price — game has never been on sale.
+    // Should not appear in the digest; this is not a deal.
+    const alert = makeAlert({
+      currentPrice: 19.99,
+      regularPrice: 19.99,
+      discountPercent: 0,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 19.99,
+      prevHistoricalLowPrice: 19.99,
+      snapshotCount: 10,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(mockUpdateNotified).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(0);
+  });
+
   it('does not fire ATL alert (individual or digest) when snapshotCount < minSnapshots', async () => {
     // Brand-new wishlist add: first snapshot, equals ITAD historical low.
     // Should be fully skipped.

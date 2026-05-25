@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { Star, Clock, ChevronLeft, ChevronRight, Ban, HelpCircle } from 'lucide-react';
+import { GameImage } from './GameImage';
 import { TriageHltbEditor } from './TriageHltbEditor';
 import type { TriageGame } from '@/app/triage/types';
 
@@ -94,17 +94,15 @@ export function TriageCard({
     >
       {/* Header Image */}
       <Link href={`/games/${game.id}`}>
-        <div className="relative aspect-[460/215] w-full bg-secondary">
-          {game.headerImageUrl && (
-            <Image
-              src={game.headerImageUrl}
-              alt={game.title}
-              fill
-              className="object-cover"
-              sizes="100vw"
-              priority
-            />
-          )}
+        <div className="relative aspect-[460/215] w-full bg-secondary overflow-hidden">
+          <GameImage
+            src={game.headerImageUrl}
+            title={game.title}
+            fill
+            className="object-cover"
+            sizes="100vw"
+            priority
+          />
         </div>
       </Link>
 

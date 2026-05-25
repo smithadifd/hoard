@@ -1,10 +1,10 @@
-import Image from 'next/image';
 import Link from 'next/link';
-import { Clock, Star, DollarSign, Sparkles } from 'lucide-react';
+import { Clock, Star, DollarSign, Sparkles, TrendingDown } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
 import { DealIndicator } from '@/components/prices/DealIndicator';
+import { GameImage } from './GameImage';
 
-/** "Hit ATL <relative>" label for the recent-deals card footer. */
+/** Relative-time label for ATL badges. */
 function formatAtlAge(atlHitDate: string): string {
   const hit = new Date(atlHitDate + 'T00:00:00Z').getTime();
   if (Number.isNaN(hit)) return 'recently';
@@ -36,20 +36,14 @@ export function GameCard({ game }: GameCardProps) {
       className="group rounded-xl bg-card overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/30"
     >
       {/* Header Image */}
-      <div className="relative aspect-[460/215] bg-surface-lowest overflow-hidden">
-        {game.headerImageUrl ? (
-          <Image
-            src={game.headerImageUrl}
-            alt={game.title}
-            fill
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            No Image
-          </div>
-        )}
+      <div className="relative aspect-[460/215] bg-surface-lowest overflow-hidden rounded-t-xl">
+        <GameImage
+          src={game.headerImageUrl}
+          title={game.title}
+          fill
+          className="object-cover transition-transform duration-500 group-hover:scale-105 will-change-transform"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+        />
 
         {/* Bottom gradient overlay */}
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
@@ -152,8 +146,21 @@ export function GameCard({ game }: GameCardProps) {
           <div className="text-[10px] text-muted-foreground/60">No price data</div>
         )}
 
-        {/* Recent ATL marker — only present when surfaced via the recent-deals view */}
-        {game.atlHitDate && (
+        {/* Deal-section badge — set by /deals page sections */}
+        {game.dealBadge === 'new-atl' && game.atlHitDate && (
+          <div className="flex items-center gap-1 text-[10px] font-label uppercase tracking-wide text-teal/80">
+            <Sparkles className="h-3 w-3" />
+            New ATL {formatAtlAge(game.atlHitDate)}
+          </div>
+        )}
+        {game.dealBadge === 'below-avg' && game.belowAvgPercent !== undefined && game.belowAvgPercent > 0 && (
+          <div className="flex items-center gap-1 text-[10px] font-label uppercase tracking-wide text-teal/80">
+            <TrendingDown className="h-3 w-3" />
+            {Math.round(game.belowAvgPercent)}% below 90d avg
+          </div>
+        )}
+        {/* Backward-compat for the legacy recent-deals view (no dealBadge set) */}
+        {!game.dealBadge && game.atlHitDate && (
           <div className="flex items-center gap-1 text-[10px] font-label uppercase tracking-wide text-teal/80">
             <Sparkles className="h-3 w-3" />
             Hit ATL {formatAtlAge(game.atlHitDate)}
