@@ -1078,3 +1078,41 @@ describe('additional getEnrichedGames filters', () => {
     expect(titles).not.toContain('Full Price Game');
   });
 });
+
+describe('getEnrichedGames earlyAccess filter', () => {
+  beforeEach(() => {
+    const ea = seedGame(testDb, { steamAppId: 100, title: 'EA Game', isEarlyAccess: true });
+    const released = seedGame(testDb, { steamAppId: 200, title: 'Released Game', isEarlyAccess: false });
+    const unknown = seedGame(testDb, { steamAppId: 300, title: 'Unknown Game' });
+
+    seedUserGame(testDb, ea, { isOwned: true });
+    seedUserGame(testDb, released, { isOwned: true });
+    seedUserGame(testDb, unknown, { isOwned: true });
+  });
+
+  it('earlyAccess=true returns only games with isEarlyAccess=true', () => {
+    const result = getEnrichedGames({ earlyAccess: true }, undefined, undefined, 'default');
+    expect(result.games).toHaveLength(1);
+    expect(result.games[0].title).toBe('EA Game');
+  });
+
+  it('earlyAccess=false returns games with isEarlyAccess=false OR NULL', () => {
+    const result = getEnrichedGames({ earlyAccess: false }, undefined, undefined, 'default');
+    expect(result.games).toHaveLength(2);
+    const titles = result.games.map(g => g.title).sort();
+    expect(titles).toEqual(['Released Game', 'Unknown Game']);
+  });
+
+  it('earlyAccess=undefined returns all games', () => {
+    const result = getEnrichedGames({}, undefined, undefined, 'default');
+    expect(result.games).toHaveLength(3);
+  });
+
+  it('exposes isEarlyAccess on returned rows', () => {
+    const result = getEnrichedGames({}, undefined, undefined, 'default');
+    const byTitle = new Map(result.games.map(g => [g.title, g]));
+    expect(byTitle.get('EA Game')?.isEarlyAccess).toBe(true);
+    expect(byTitle.get('Released Game')?.isEarlyAccess).toBe(false);
+    expect(byTitle.get('Unknown Game')?.isEarlyAccess).toBeUndefined();
+  });
+});

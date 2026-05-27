@@ -91,12 +91,24 @@ export default async function GameDetailPage({
         <div className="lg:col-span-2 space-y-6">
           {/* Title & Meta */}
           <div>
-            <h1 className="text-3xl font-headline font-extrabold tracking-tight">{game.title}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-3xl font-headline font-extrabold tracking-tight">{game.title}</h1>
+              {game.isEarlyAccess && (
+                <span className="px-2 py-0.5 rounded-md text-xs font-label font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-400">
+                  Early Access
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
               {game.developer && <span>{game.developer}</span>}
               {game.developer && game.releaseDate && <span>&middot;</span>}
               {game.releaseDate && <span>{game.releaseDate}</span>}
             </div>
+            {game.isEarlyAccess && game.metadataLastUpdated && (
+              <div className="mt-1 text-xs text-muted-foreground">
+                In Early Access — last refreshed {new Date(game.metadataLastUpdated).toLocaleDateString('en-US', { timeZone: 'UTC' })}
+              </div>
+            )}
           </div>
 
           {/* Quick Stats */}

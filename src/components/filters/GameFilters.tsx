@@ -70,6 +70,7 @@ export function GameFilters({
     filters.minInterest,
     filters.requireCompleteData === false ? true : undefined,
     filters.hideUnreleased === false ? true : undefined,
+    filters.earlyAccess !== undefined ? true : undefined,
   ].filter(Boolean).length;
 
   return (
@@ -272,6 +273,23 @@ export function GameFilters({
             </div>
           )}
 
+          {/* Early Access */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Early Access</label>
+            <select
+              value={filters.earlyAccess === undefined ? '' : filters.earlyAccess ? 'only' : 'exclude'}
+              onChange={(e) => {
+                const val = e.target.value;
+                updateFilter('earlyAccess', val === '' ? undefined : val === 'only');
+              }}
+              className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
+            >
+              <option value="">Any</option>
+              <option value="only">Early Access only</option>
+              <option value="exclude">Exclude Early Access</option>
+            </select>
+          </div>
+
           {/* Genre Multi-Select */}
           {availableGenres && availableGenres.length > 0 && (
             <div className="space-y-1 relative col-span-2" ref={genreRef}>
@@ -371,6 +389,7 @@ export function GameFilters({
                     minInterest: undefined,
                     requireCompleteData: filters.requireCompleteData !== undefined ? true : undefined,
                     hideUnreleased: filters.hideUnreleased !== undefined ? true : undefined,
+                    earlyAccess: undefined,
                     sortBy: 'title',
                     sortOrder: 'asc',
                   });
