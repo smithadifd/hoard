@@ -14,7 +14,7 @@ vi.mock('../discord/client', () => ({
 
 vi.mock('../db/queries', () => ({
   getGamesForReleaseCheck: vi.fn(),
-  markGameAsReleased: vi.fn(),
+  updateReleaseStatus: vi.fn(),
   createSyncLog: vi.fn().mockReturnValue(1),
   completeSyncLog: vi.fn(),
 }));
@@ -22,12 +22,12 @@ vi.mock('../db/queries', () => ({
 import { checkReleaseStatus } from './releases';
 import { getSteamClient } from '../steam/client';
 import { getDiscordClient } from '../discord/client';
-import { getGamesForReleaseCheck, markGameAsReleased, completeSyncLog } from '../db/queries';
+import { getGamesForReleaseCheck, updateReleaseStatus, completeSyncLog } from '../db/queries';
 
 const mockSteam = vi.mocked(getSteamClient)().getAppDetails as ReturnType<typeof vi.fn>;
 const mockDiscord = vi.mocked(getDiscordClient)().sendReleaseNotification as ReturnType<typeof vi.fn>;
 const mockGetGames = vi.mocked(getGamesForReleaseCheck);
-const mockMarkReleased = vi.mocked(markGameAsReleased);
+const mockUpdateRelease = vi.mocked(updateReleaseStatus);
 const mockComplete = vi.mocked(completeSyncLog);
 
 describe('checkReleaseStatus', () => {
@@ -62,23 +62,26 @@ describe('checkReleaseStatus', () => {
 
     const result = await checkReleaseStatus();
 
-    expect(mockMarkReleased).toHaveBeenCalledWith(1);
+    expect(mockUpdateRelease).toHaveBeenCalledWith(1, { isReleased: true, releaseDate: '2026-03-15' });
     expect(mockDiscord).toHaveBeenCalled();
     expect(result.stats.succeeded).toBe(1);
     expect(result.stats.failed).toBe(0);
   });
 
-  it('does not mark game as released when coming_soon is true', async () => {
+  it('refreshes releaseDate string but does not flip isReleased when coming_soon is true', async () => {
+    // Steam tightens release dates as launch approaches — e.g. "later in 2026"
+    // can become "Jul 7, 2026". The release check is the only place existing
+    // unreleased entries get refreshed, so it must update the date string.
     mockGetGames.mockReturnValue([
       { id: 1, steamAppId: 100, title: 'Upcoming Game' },
     ]);
     mockSteam.mockResolvedValue({
-      release_date: { coming_soon: true, date: 'Q2 2026' },
+      release_date: { coming_soon: true, date: 'Jul 7, 2026' },
     });
 
     const result = await checkReleaseStatus();
 
-    expect(mockMarkReleased).not.toHaveBeenCalled();
+    expect(mockUpdateRelease).toHaveBeenCalledWith(1, { isReleased: false, releaseDate: 'Jul 7, 2026' });
     expect(mockDiscord).not.toHaveBeenCalled();
     expect(result.stats.succeeded).toBe(1);
   });
@@ -93,7 +96,7 @@ describe('checkReleaseStatus', () => {
 
     expect(result.stats.failed).toBe(1);
     expect(result.stats.succeeded).toBe(0);
-    expect(mockMarkReleased).not.toHaveBeenCalled();
+    expect(mockUpdateRelease).not.toHaveBeenCalled();
   });
 
   it('reports correct stats with mixed results', async () => {

@@ -411,6 +411,112 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.skipped).toBe(1);
   });
 
+  it('lets a genuine new ATL break through the throttle (Atomfall regression)', async () => {
+    // Repro: digest entry on day N consumed the 24h throttle. On day N+1 a
+    // genuine new ATL landed inside the throttle window and was silenced.
+    // After the fix, isNew ATLs bypass the throttle entirely.
+    const recent = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(); // 12h ago
+    const alert = makeAlert({
+      currentPrice: 21.49,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 21.49,
+      prevHistoricalLowPrice: 22.49, // Real drop = new ATL
+      lastNotifiedAt: recent,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ currentPrice: 21.49 })
+    );
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('throttles still-at-ATL digest entries (no spam every cycle)', async () => {
+    // Digest entries still respect the throttle — without this, the same game
+    // would land in the digest every 12h cron and re-ping the user constantly.
+    const recent = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99,
+      lastNotifiedAt: recent,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.skipped).toBe(1);
+  });
+
+  it('auto-alert: new ATL bypasses throttle, still-at-ATL respects it', async () => {
+    mockGetAutoAlertCandidates.mockReturnValue([
+      {
+        gameId: 100,
+        title: 'Atomfall',
+        headerImageUrl: null,
+        steamAppId: 100,
+        reviewDescription: 'Very Positive',
+        hltbMain: 10,
+        currentPrice: 21.49,
+        regularPrice: 49.99,
+        discountPercent: 57,
+        historicalLowPrice: 21.49,
+        dealScore: 67,
+        store: 'Fanatical',
+        storeUrl: 'https://fanatical.com/atomfall',
+        // Digest from yesterday burned the throttle, but this run is a real new ATL.
+        lastAutoAlertAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+        prevHistoricalLowPrice: 22.49,
+        snapshotCount: 200,
+      },
+      {
+        gameId: 101,
+        title: 'Steady Sale',
+        headerImageUrl: null,
+        steamAppId: 101,
+        reviewDescription: 'Very Positive',
+        hltbMain: 10,
+        currentPrice: 4.99,
+        regularPrice: 9.99,
+        discountPercent: 50,
+        historicalLowPrice: 4.99,
+        dealScore: 80,
+        store: 'Steam',
+        storeUrl: 'https://store.steampowered.com/app/101',
+        lastAutoAlertAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+        prevHistoricalLowPrice: 4.99, // Same as before — still at ATL
+        snapshotCount: 200,
+      },
+    ]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    // Atomfall (new ATL) fires individually; Steady Sale (still ATL) is throttled.
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledTimes(1);
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Atomfall', currentPrice: 21.49 })
+    );
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.skipped).toBe(1);
+  });
+
   it('allows notification when throttle period has expired', async () => {
     const oldNotification = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(); // 48h ago
     const alert = makeAlert({
