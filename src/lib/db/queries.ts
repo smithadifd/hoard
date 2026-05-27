@@ -1295,7 +1295,11 @@ export function getGamesForPriceSync(userId: string): Array<{
     .where(
       and(
         eq(userGames.userId, userId),
-        sql`(${userGames.isWishlisted} = 1 OR ${userGames.isWatchlisted} = 1)`
+        sql`(${userGames.isWishlisted} = 1 OR ${userGames.isWatchlisted} = 1)`,
+        // Skip games we know are unreleased — ITAD reports preorder MSRP / store
+        // sentinels (e.g. $999) for these. Unknown release status (NULL) is kept
+        // so newly-tracked games still get priced until release_check resolves them.
+        sql`(${games.isReleased} IS NULL OR ${games.isReleased} = 1)`
       )
     )
     .all();
@@ -2210,6 +2214,27 @@ export function markGameAsReleased(gameId: number): void {
   const db = getDb();
   db.update(games)
     .set({ isReleased: true, updatedAt: new Date().toISOString() })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+/**
+ * Refresh a game's release status from Steam. Updates the `releaseDate` string
+ * whenever provided (Steam tightens the date as launch approaches — e.g.
+ * "later in 2026" → "Jul 7, 2026") and flips `isReleased` to true on launch.
+ */
+export function updateReleaseStatus(
+  gameId: number,
+  patch: { isReleased: boolean; releaseDate?: string | null },
+): void {
+  const db = getDb();
+  const set: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (patch.isReleased) set.isReleased = true;
+  // Only overwrite with a non-empty string. Guards against a Steam blip returning
+  // `{ coming_soon: true, date: "" }` and wiping a previously-known good date.
+  if (patch.releaseDate) set.releaseDate = patch.releaseDate;
+  db.update(games)
+    .set(set)
     .where(eq(games.id, gameId))
     .run();
 }

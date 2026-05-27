@@ -103,8 +103,29 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     for (const alert of activeAlerts) {
       onProgress?.(pending.length, activeAlerts.length);
 
-      // Throttle: skip if notified within the configured period
-      if (alert.lastNotifiedAt) {
+      // Classify trigger conditions before throttle so we can let a genuine new ATL
+      // break through even if a recent digest or alert consumed the throttle slot.
+      const isFree = alert.currentPrice === 0;
+      const triggeredByThreshold = !!(
+        alert.notifyOnThreshold &&
+        alert.targetPrice !== null &&
+        alert.currentPrice <= alert.targetPrice
+      );
+
+      // Gate ATL trigger: need enough observed history before we can claim ATL.
+      // Threshold and free triggers remain unguarded — those are explicit prices the user set.
+      const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
+      if (atlGated) insufficientHistory++;
+      const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated;
+      const isNew = atlTriggered ? isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) : false;
+
+      const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
+      if (!shouldNotify) continue;
+
+      // Throttle: skip if notified within the configured period.
+      // A genuine new ATL bypasses the throttle — it's fresh news that should
+      // ping immediately even if a still-at-ATL digest recently consumed the slot.
+      if (!isNew && alert.lastNotifiedAt) {
         const lastNotified = new Date(alert.lastNotifiedAt);
         const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
         if (hoursSince < config.alertThrottleHours) {
@@ -113,40 +134,8 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         }
       }
 
-      // Check trigger conditions
-      let shouldNotify = false;
-      let triggeredByThreshold = false;
-
-      // Always notify for free games (100% discount)
-      if (alert.currentPrice === 0) {
-        shouldNotify = true;
-      }
-
-      if (alert.notifyOnThreshold && alert.targetPrice !== null) {
-        if (alert.currentPrice <= alert.targetPrice) {
-          shouldNotify = true;
-          triggeredByThreshold = true;
-        }
-      }
-
-      // Gate ATL trigger: need enough observed history before we can claim ATL.
-      // Threshold and free triggers above remain unguarded — those are explicit prices the user set.
-      const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
-      if (atlGated) insufficientHistory++;
-
-      if (alert.notifyOnAllTimeLow && alert.isHistoricalLow && !atlGated) {
-        shouldNotify = true;
-      }
-
-      if (!shouldNotify) continue;
-
       const payload = buildAlertPayload(alert);
       const storeUrl = payload.storeUrl;
-
-      // Classify: individual vs digest
-      const isFree = alert.currentPrice === 0;
-      const atlTriggered = alert.notifyOnAllTimeLow && alert.isHistoricalLow;
-      const isNew = atlTriggered ? isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) : false;
 
       if (isFree || triggeredByThreshold || isNew) {
         pending.push({
@@ -187,7 +176,13 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
           continue;
         }
 
-        if (candidate.lastAutoAlertAt) {
+        const isFree = candidate.currentPrice === 0;
+        const isNew = isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice);
+
+        // Throttle: skip if recently notified. A genuine new ATL bypasses — a
+        // "still at ATL" digest entry on day N must not silence a genuine new ATL
+        // on day N+1 that lands inside the throttle window.
+        if (!isNew && candidate.lastAutoAlertAt) {
           const lastNotified = new Date(candidate.lastAutoAlertAt);
           const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
           if (hoursSince < config.alertThrottleHours) {
@@ -198,9 +193,6 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
 
         const payload = buildAlertPayload(candidate, candidate.dealScore);
         const storeUrl = payload.storeUrl;
-
-        const isFree = candidate.currentPrice === 0;
-        const isNew = isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice);
 
         if (isFree || isNew) {
           pending.push({

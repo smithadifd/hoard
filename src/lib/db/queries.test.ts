@@ -54,6 +54,7 @@ import {
   getFirstUserId,
   getUnreleasedCount,
   markGameAsReleased,
+  updateReleaseStatus,
 } from './queries';
 
 beforeEach(() => {
@@ -727,6 +728,28 @@ describe('sync-related queries', () => {
       expect(titles).toContain('Wishlisted Only');
       expect(titles).not.toContain('Neither');
     });
+
+    it('excludes unreleased games but keeps released and unknown-status games', () => {
+      // ITAD reports preorder placeholders ($999) for unreleased games. We skip
+      // them at the source. Games with NULL release status are still synced —
+      // newly-tracked games may not have status until the release_check runs.
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Released' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Unreleased' });
+      const g3 = seedGame(testDb, { steamAppId: 300, title: 'Unknown' });
+
+      upsertGameFromSteam({ steamAppId: 100, title: 'Released', isReleased: true });
+      upsertGameFromSteam({ steamAppId: 200, title: 'Unreleased', isReleased: false });
+      // g3 keeps isReleased = null (unknown)
+
+      seedUserGame(testDb, g1, { isWishlisted: true });
+      seedUserGame(testDb, g2, { isWishlisted: true });
+      seedUserGame(testDb, g3, { isWishlisted: true });
+
+      const titles = getGamesForPriceSync('default').map(g => g.title);
+      expect(titles).toContain('Released');
+      expect(titles).toContain('Unknown');
+      expect(titles).not.toContain('Unreleased');
+    });
   });
 
   describe('getRecentSyncStats', () => {
@@ -813,6 +836,60 @@ describe('release queries', () => {
 
       const after = getEnrichedGameById(gameId, 'default');
       expect(after?.isReleased).toBe(true);
+    });
+  });
+
+  describe('updateReleaseStatus', () => {
+    it('refreshes releaseDate string for an unreleased game', () => {
+      // Repro of the Moonlight Peaks case: Steam tightened the date from
+      // "later in 2026" to a concrete day, but the existing release check
+      // never wrote the new string back.
+      const gameId = seedGame(testDb, { steamAppId: 100, title: 'Moonlight Peaks' });
+      upsertGameFromSteam({ steamAppId: 100, title: 'Moonlight Peaks', releaseDate: 'later in 2026', isReleased: false });
+      seedUserGame(testDb, gameId, { isWishlisted: true });
+
+      updateReleaseStatus(gameId, { isReleased: false, releaseDate: 'Jul 7, 2026' });
+
+      const after = getEnrichedGameById(gameId, 'default');
+      expect(after?.releaseDate).toBe('Jul 7, 2026');
+      expect(after?.isReleased).toBeFalsy();
+    });
+
+    it('flips isReleased to true and updates the date on launch', () => {
+      const gameId = seedGame(testDb, { steamAppId: 100, title: 'Launching Game' });
+      upsertGameFromSteam({ steamAppId: 100, title: 'Launching Game', releaseDate: 'Coming Soon', isReleased: false });
+      seedUserGame(testDb, gameId, { isWishlisted: true });
+
+      updateReleaseStatus(gameId, { isReleased: true, releaseDate: 'Mar 15, 2026' });
+
+      const after = getEnrichedGameById(gameId, 'default');
+      expect(after?.isReleased).toBe(true);
+      expect(after?.releaseDate).toBe('Mar 15, 2026');
+    });
+
+    it('never flips isReleased back to false', () => {
+      // Guard: we only ever transition to released — never un-release a game.
+      const gameId = seedGame(testDb, { steamAppId: 100, title: 'Released Game' });
+      upsertGameFromSteam({ steamAppId: 100, title: 'Released Game', isReleased: true });
+      seedUserGame(testDb, gameId, { isWishlisted: true });
+
+      updateReleaseStatus(gameId, { isReleased: false, releaseDate: 'Jul 7, 2026' });
+
+      const after = getEnrichedGameById(gameId, 'default');
+      expect(after?.isReleased).toBe(true);
+    });
+
+    it('does not overwrite a known release date with an empty string', () => {
+      // Guard against Steam blips returning { coming_soon: true, date: "" } —
+      // the previously-known good string must survive.
+      const gameId = seedGame(testDb, { steamAppId: 100, title: 'Moonlight Peaks' });
+      upsertGameFromSteam({ steamAppId: 100, title: 'Moonlight Peaks', releaseDate: 'Jul 7, 2026', isReleased: false });
+      seedUserGame(testDb, gameId, { isWishlisted: true });
+
+      updateReleaseStatus(gameId, { isReleased: false, releaseDate: '' });
+
+      const after = getEnrichedGameById(gameId, 'default');
+      expect(after?.releaseDate).toBe('Jul 7, 2026');
     });
   });
 });
