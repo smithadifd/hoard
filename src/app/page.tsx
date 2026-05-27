@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents } from '@/lib/db/queries';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents, getUserGameCount } from '@/lib/db/queries';
 import type { ActivityEvent } from '@/lib/db/queries';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
+import { getOnboardingState, updateOnboardingState } from '@/lib/onboarding/state';
 import GenreChart from '@/components/dashboard/GenreChart';
 import DealScoreChart from '@/components/dashboard/DealScoreChart';
 import RecentActivityFeed from '@/components/dashboard/RecentActivityFeed';
@@ -14,6 +15,28 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect('/login');
+
+  // First-run users land here from /setup but haven't walked the wizard yet —
+  // send them to /onboarding. Existing users who upgraded into this version
+  // have no onboarding_state row but already have data, so we backfill the
+  // completion timestamp once and skip the redirect.
+  let wizardCompletedAt: string | null = null;
+  try {
+    const state = getOnboardingState(session.user.id);
+    if (state.wizardCompletedAt) {
+      wizardCompletedAt = state.wizardCompletedAt;
+    } else if (getUserGameCount(session.user.id) > 0) {
+      const stamped = updateOnboardingState(session.user.id, {
+        wizardCompletedAt: new Date().toISOString(),
+      });
+      wizardCompletedAt = stamped.wizardCompletedAt;
+    }
+  } catch {
+    // DB not ready yet on first boot; render the welcome card below.
+  }
+  if (wizardCompletedAt === null) {
+    redirect('/onboarding');
+  }
   let stats = { libraryCount: 0, wishlistCount: 0, watchlistCount: 0, totalPlaytimeHours: 0 };
   let dealsActive = 0;
   let backlogStats = { unplayedCount: 0, totalOwned: 0 };
