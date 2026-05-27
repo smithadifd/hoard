@@ -218,3 +218,23 @@ export const verification = sqliteTable('verification', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
 });
+
+// ===========================================
+// Notifications - In-app notification center
+// ===========================================
+export const notifications = sqliteTable('notifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull(),
+  // 'drain-complete' | 'drain-paused' | 'sync-failure' | 'triage-nudge' | 'milestone'
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+  link: text('link'),
+  metadata: text('metadata'), // JSON blob
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  readAt: integer('read_at', { mode: 'timestamp_ms' }),
+  dismissedAt: integer('dismissed_at', { mode: 'timestamp_ms' }),
+}, (t) => ({
+  userUnreadIdx: index('notif_user_unread_idx').on(t.userId, t.readAt),
+  userCreatedIdx: index('notif_user_created_idx').on(t.userId, t.createdAt),
+}));

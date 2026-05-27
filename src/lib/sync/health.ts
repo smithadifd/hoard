@@ -6,8 +6,9 @@
  */
 
 import type { SyncStats } from './types';
-import { getRecentSyncStats, getSyncLogsSince } from '../db/queries';
+import { getRecentSyncStats, getSyncLogsSince, getFirstUserId } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
+import { createNotification } from '../notifications/create';
 
 export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
   hltb: 0.20,                        // Normally 60-80% match rate
@@ -59,6 +60,20 @@ export async function evaluateSyncHealth(source: string, stats: SyncStats): Prom
       ...(recentSummary ? [{ name: 'Recent Runs', value: recentSummary, inline: false }] : []),
     ],
   });
+
+  // In-app mirror of the same alert, scoped to the primary user. Hoard is
+  // single-user in practice; revisit once we ship real multi-tenant accounts.
+  try {
+    const userId = getFirstUserId();
+    createNotification(userId, 'sync-failure', {
+      title: `${source} sync below threshold`,
+      body: `${stats.succeeded}/${stats.attempted} succeeded (${Math.round(rate * 100)}%, threshold ${Math.round(threshold * 100)}%).`,
+      link: '/settings/system',
+      metadata: { source, rate, attempted: stats.attempted, failed: stats.failed },
+    });
+  } catch {
+    // Nobody to notify yet (pre-setup) — Discord alert above is enough.
+  }
 }
 
 /**
