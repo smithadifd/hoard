@@ -64,6 +64,19 @@ export async function register() {
       console.log(`[SnapshotPrune] Deleted ${deleted} old snapshots`);
     }));
 
+    // Daily at 4:30am, ten min after backup so we don't pile two writers up.
+    registerTask('notification-prune', '30 4 * * *', skipWhileDraining('notification-prune', async () => {
+      const { pruneNotifications } = await import('@/lib/notifications/queries');
+      try {
+        const deleted = pruneNotifications();
+        if (deleted > 0) {
+          console.log(`[NotificationPrune] Deleted ${deleted} expired notifications`);
+        }
+      } catch (err) {
+        console.error('[NotificationPrune] Failed:', err);
+      }
+    }));
+
     registerTask('health-summary', '0 9 * * 1', skipWhileDraining('health-summary', async () => {
       const { sendWeeklyHealthSummary } = await import('@/lib/sync/health');
       try {

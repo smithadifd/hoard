@@ -29,6 +29,7 @@ import { refreshMetadata } from './metadata';
 import { syncHltb } from './hltb';
 import { syncReviews } from './reviews';
 import { updateOnboardingState, getOnboardingState } from '@/lib/onboarding/state';
+import { createNotification } from '@/lib/notifications/create';
 import type {
   DrainMode,
   DrainProgress,
@@ -57,6 +58,13 @@ const STAGES_BY_MODE: Record<DrainMode, DrainStage[]> = {
   full: ['price-history', 'metadata', 'hltb', 'reviews'],
   lite: ['price-history', 'metadata'],
   'cron-only': [],
+};
+
+const STAGE_LABELS: Record<DrainStage, string> = {
+  'price-history': 'Price history',
+  metadata: 'Metadata',
+  hltb: 'HowLongToBeat',
+  reviews: 'Reviews',
 };
 
 // Module-level state. The orchestrator is single-instance — Hoard runs as one
@@ -330,7 +338,13 @@ async function runDrain(
           drainPauseReason: 'rate-limit',
           drainPausedUntil: pausedUntil,
         });
-        // TODO(Phase 2): createNotification(userId, 'drain-paused', { stage, pausedUntil })
+        createNotification(userId, 'drain-paused', {
+          title: 'Enrichment paused — rate limited',
+          body: `${STAGE_LABELS[stage]} hit an upstream rate limit. Cron will resume the queue on the next scheduled run.`,
+          link: '/onboarding',
+          metadata: { stage, pausedUntil },
+        });
+        // TODO(Phase 3): fire Discord milestone for drain-paused
         console.warn(`[Drain] Stage ${stage} rate-limited — paused until ${pausedUntil}`);
         return;
       }
@@ -342,7 +356,12 @@ async function runDrain(
       drainPauseReason: null,
       drainPausedUntil: null,
     });
-    // TODO(Phase 2): createNotification(userId, 'drain-complete')
+    createNotification(userId, 'drain-complete', {
+      title: 'Initial enrichment finished',
+      body: `Your library has prices, metadata${mode === 'full' ? ', play-time estimates, and reviews' : ''} ready to use.`,
+      link: '/',
+      metadata: { mode },
+    });
     // TODO(Phase 3): fire Discord milestone for drain-complete
     console.log(`[Drain] All stages complete for ${userId}`);
   } finally {
