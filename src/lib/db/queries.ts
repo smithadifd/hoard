@@ -1157,6 +1157,70 @@ export function getDashboardStats(userId: string): {
   };
 }
 
+/**
+ * Count of games the user has any relationship with (owned, wishlisted, or
+ * watchlisted). Used by the onboarding checklist + drain orchestrator to
+ * pick the "Full" mode estimate.
+ */
+export function getUserGameCount(userId: string): number {
+  const db = getDb();
+  const row = db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGames)
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        or(
+          eq(userGames.isOwned, true),
+          and(eq(userGames.isWishlisted, true), sql`${userGames.wishlistRemovedAt} IS NULL`),
+          eq(userGames.isWatchlisted, true),
+        ),
+      ),
+    )
+    .get();
+  return row?.count ?? 0;
+}
+
+/**
+ * Number of games the user has explicitly rated (interestRatedAt is set).
+ * `personal_interest` defaults to 3 for every row, so the rated-vs-untriaged
+ * split has to lean on the rated-at timestamp.
+ */
+export function getRatedGameCount(userId: string): number {
+  const db = getDb();
+  const row = db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGames)
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        sql`${userGames.interestRatedAt} IS NOT NULL`,
+      ),
+    )
+    .get();
+  return row?.count ?? 0;
+}
+
+/**
+ * Owned games the user hasn't explicitly rated yet. Drives the triage nudge
+ * (Phase 3) and the "triage your library" checklist item.
+ */
+export function getUntriagedGameCount(userId: string): number {
+  const db = getDb();
+  const row = db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGames)
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        sql`${userGames.interestRatedAt} IS NULL`,
+      ),
+    )
+    .get();
+  return row?.count ?? 0;
+}
+
 // ============================================
 // Sync Log
 // ============================================

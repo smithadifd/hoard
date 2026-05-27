@@ -6,7 +6,7 @@ import { Header } from './Header';
 import { StaleDataBanner } from './StaleDataBanner';
 import { UpdatePrompt } from './UpdatePrompt';
 
-const AUTH_PATHS = ['/login', '/setup'];
+const AUTH_PATHS = ['/login', '/setup', '/onboarding'];
 
 interface LayoutShellProps {
   children: React.ReactNode;
