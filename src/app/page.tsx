@@ -5,10 +5,14 @@ import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, g
 import type { ActivityEvent } from '@/lib/db/queries';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
-import { getOnboardingState, updateOnboardingState } from '@/lib/onboarding/state';
+import { getOnboardingState, updateOnboardingState, computeChecklist } from '@/lib/onboarding/state';
+import { getDrainProgressForUser } from '@/lib/sync/drain';
 import GenreChart from '@/components/dashboard/GenreChart';
 import DealScoreChart from '@/components/dashboard/DealScoreChart';
 import RecentActivityFeed from '@/components/dashboard/RecentActivityFeed';
+import { OnboardingChecklist } from '@/components/dashboard/OnboardingChecklist';
+import { DrainStatusCard } from '@/components/dashboard/DrainStatusCard';
+import type { ChecklistResult, DrainProgress } from '@/lib/onboarding/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +51,8 @@ export default async function DashboardPage() {
   let dealScoreData: Array<{ bucket: string; count: number }> = [];
   let recentActivity: ActivityEvent[] = [];
   let recentAtls: ActivityEvent[] = [];
+  let checklist: ChecklistResult | null = null;
+  let drainProgress: DrainProgress | null = null;
 
   try {
     stats = getDashboardStats(session.user.id);
@@ -57,6 +63,8 @@ export default async function DashboardPage() {
     dealScoreData = getDealScoreDistribution(session.user.id);
     recentActivity = getRecentActivity(session.user.id);
     recentAtls = getRecentAtlEvents(session.user.id);
+    checklist = computeChecklist(session.user.id);
+    drainProgress = getDrainProgressForUser(session.user.id);
 
     // Get upcoming releases for the dashboard card
     const unreleasedGames = getUnreleasedWishlistGames(session.user.id);
@@ -100,6 +108,10 @@ export default async function DashboardPage() {
           Your game collection at a glance
         </p>
       </div>
+
+      {/* Onboarding nudges — render only if relevant */}
+      {drainProgress?.running && <DrainStatusCard initial={drainProgress} />}
+      {checklist && <OnboardingChecklist initial={checklist} />}
 
       {/* Compact Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

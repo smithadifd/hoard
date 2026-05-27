@@ -2,6 +2,7 @@
 
 import { TrendingDown } from 'lucide-react';
 import { UserMenu } from './UserMenu';
+import { NotificationBell } from './NotificationBell';
 import { SearchTrigger } from '@/components/search/SearchTrigger';
 
 interface HeaderProps {
@@ -22,9 +23,10 @@ export function Header({ userName, userEmail }: HeaderProps) {
         {/* Spacer on desktop (sidebar visible) */}
         <div className="hidden lg:block" />
 
-        {/* Search + User menu */}
+        {/* Search + Notifications + User menu */}
         <div className="flex items-center gap-1">
           <SearchTrigger />
+          <NotificationBell />
           <UserMenu userName={userName} userEmail={userEmail} />
         </div>
       </div>

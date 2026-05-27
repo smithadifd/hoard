@@ -184,6 +184,21 @@ const SCHEMA_SQL = `
     created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
     updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
   );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    link TEXT,
+    metadata TEXT,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER,
+    dismissed_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS notif_user_unread_idx ON notifications (user_id, read_at);
+  CREATE INDEX IF NOT EXISTS notif_user_created_idx ON notifications (user_id, created_at);
 `;
 
 export type TestDb = ReturnType<typeof drizzle>;
@@ -321,6 +336,32 @@ export function seedSetting(db: TestDb, key: string, value: string): void {
     .values({ key, value })
     .onConflictDoUpdate({ target: schema.settings.key, set: { value } })
     .run();
+}
+
+/**
+ * Seed a notification row. Returns the notification ID.
+ */
+export function seedNotification(
+  db: TestDb,
+  userId: string,
+  overrides: Partial<typeof schema.notifications.$inferInsert> = {}
+): number {
+  const result = db
+    .insert(schema.notifications)
+    .values({
+      userId,
+      type: overrides.type ?? 'drain-complete',
+      title: overrides.title ?? 'Test notification',
+      body: overrides.body ?? null,
+      link: overrides.link ?? null,
+      metadata: overrides.metadata ?? null,
+      createdAt: overrides.createdAt ?? new Date(),
+      readAt: overrides.readAt ?? null,
+      dismissedAt: overrides.dismissedAt ?? null,
+    })
+    .returning({ id: schema.notifications.id })
+    .get();
+  return result.id;
 }
 
 /**
