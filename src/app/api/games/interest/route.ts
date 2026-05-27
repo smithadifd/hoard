@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
-import { updateUserGame } from '@/lib/db/queries';
+import { updateUserGame, getRatedGameCount } from '@/lib/db/queries';
 import { interestSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
+import { milestones } from '@/lib/onboarding/milestones';
 
 /**
  * POST /api/games/interest
@@ -29,6 +30,18 @@ export async function POST(request: NextRequest) {
 
     if (!updated) {
       return apiNotFound('Game');
+    }
+
+    // Onboarding milestone — idempotent inside `fireMilestone`. Wrapped so
+    // a broken milestone path never fails the user's rating update.
+    try {
+      const ratedCount = getRatedGameCount(userId);
+      if (ratedCount >= 10) {
+        // Fire-and-forget: don't make the user wait on a Discord embed.
+        void milestones.firstTenRated(userId, ratedCount);
+      }
+    } catch (err) {
+      console.warn('[interest] milestone hook failed:', err);
     }
 
     return apiSuccess({ gameId, interest });

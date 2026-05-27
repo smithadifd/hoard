@@ -9,6 +9,7 @@ const tabs = [
   { href: '/settings/alerts', label: 'Alerts' },
   { href: '/settings/system', label: 'System' },
   { href: '/settings/backups', label: 'Backups' },
+  { href: '/settings/onboarding', label: 'Onboarding' },
 ];
 
 export function SettingsNav() {

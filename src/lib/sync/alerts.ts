@@ -12,6 +12,7 @@
 
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
+import { milestones } from '../onboarding/milestones';
 import {
   getActivePriceAlerts,
   updateAlertLastNotified,
@@ -220,6 +221,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
 
     // Send individual alerts
     let notifiedCount = 0;
+    let firstDealFiredThisRun = false;
     const individualAlerts = pending.filter((p) => p.type === 'individual');
     const digestAlerts = pending.filter((p) => p.type === 'digest');
 
@@ -228,6 +230,11 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       if (sent) {
         item.onSent();
         notifiedCount++;
+        if (!firstDealFiredThisRun) {
+          firstDealFiredThisRun = true;
+          // Idempotent across runs via the milestones ledger.
+          void milestones.firstDeal(effectiveUserId, item.alertPayload!.title);
+        }
         console.log(`[AlertCheck] Notified: ${item.alertPayload!.title} at $${item.alertPayload!.currentPrice.toFixed(2)}`);
       }
     }

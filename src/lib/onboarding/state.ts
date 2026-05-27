@@ -6,12 +6,19 @@
  * from the state + DB counts.
  */
 
-import { getSetting, setSetting, getUserGameCount, getRatedGameCount } from '@/lib/db/queries';
+import {
+  getSetting,
+  setSetting,
+  getUserGameCount,
+  getRatedGameCount,
+  getUntriagedGameCount,
+} from '@/lib/db/queries';
 import type {
   ChecklistItem,
   ChecklistResult,
   OnboardingState,
   OnboardingStatePatch,
+  TriageNudgeStatus,
 } from './types';
 
 export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
@@ -28,6 +35,15 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
 
 /** Threshold the checklist uses to consider the library "triaged enough". */
 export const TRIAGE_DONE_THRESHOLD = 10;
+
+/** Min untriaged owned games before the nudge card appears. */
+export const TRIAGE_NUDGE_UNTRIAGED_THRESHOLD = 20;
+
+/** A user who has rated this many games doesn't need a nudge anymore. */
+export const TRIAGE_NUDGE_RATED_CEILING = 10;
+
+/** How long the nudge stays hidden after the user dismisses it. */
+export const TRIAGE_NUDGE_DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function settingsKey(userId: string): string {
   return `onboarding_state:${userId}`;
@@ -144,4 +160,35 @@ export function computeChecklist(userId: string): ChecklistResult {
     allDone,
     dismissed: state.checklistDismissed,
   };
+}
+
+/**
+ * Decide whether the dashboard's triage nudge card should render. Returns the
+ * counts that drove the decision so the card can use them in its copy.
+ *
+ * Visible only when: untriagedCount is meaningful (>= UNTRIAGED_THRESHOLD),
+ * the user hasn't already rated past the rated-ceiling, and the user hasn't
+ * dismissed the card within the last DISMISS_TTL.
+ */
+export function computeTriageNudge(userId: string): TriageNudgeStatus {
+  const untriagedCount = getUntriagedGameCount(userId);
+  const ratedCount = getRatedGameCount(userId);
+
+  if (untriagedCount < TRIAGE_NUDGE_UNTRIAGED_THRESHOLD) {
+    return { shouldShow: false, untriagedCount, ratedCount };
+  }
+  if (ratedCount >= TRIAGE_NUDGE_RATED_CEILING) {
+    return { shouldShow: false, untriagedCount, ratedCount };
+  }
+
+  const state = getOnboardingState(userId);
+  if (state.triagePromptDismissedAt) {
+    const dismissedAtMs = Date.parse(state.triagePromptDismissedAt);
+    // Date.parse returns NaN for unparseable strings — fall through and show.
+    if (Number.isFinite(dismissedAtMs) && Date.now() - dismissedAtMs < TRIAGE_NUDGE_DISMISS_TTL_MS) {
+      return { shouldShow: false, untriagedCount, ratedCount };
+    }
+  }
+
+  return { shouldShow: true, untriagedCount, ratedCount };
 }

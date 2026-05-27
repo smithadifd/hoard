@@ -9,16 +9,16 @@ Clone the repo, fill in a handful of environment variables, run one command, and
 
 You need:
 
-- **Docker** with Docker Compose (v2 plugin: `docker compose`; or Compose v1 CLI: `docker-compose` — both work)
-- **A Steam Web API key** — generate one at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)
-- **Your Steam64 ID** — look it up at [steamid.io](https://steamid.io) if you don't know it
-- **A public Steam profile** — Hoard reads your library and wishlist via the Steam Web API, which requires your profile and game details visibility to be set to Public. If they're private, the sync will return empty results or an error.
-- **Port 3001 free** on the host (the production Compose file binds `3001:3000`)
+- **Docker** with Docker Compose — either the v2 plugin (`docker compose`) or the v1 CLI (`docker-compose`); commands below use the v1 syntax, but both work.
+- **A Steam Web API key** — generate one at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). You'll paste this into the onboarding wizard on first launch.
+- **Your Steam64 ID** — look it up at [steamid.io](https://steamid.io) if you don't know it.
+- **A public Steam profile** — Hoard reads your library and wishlist via the Steam Web API, which requires your profile and game details visibility to be set to Public. The wizard validates this in step 2 before letting you advance.
+- **Port 3001 free** on the host (the production Compose file binds `3001:3000`).
 
 Optional but worth having:
 
-- **An IsThereAnyDeal API key** — register at [isthereanydeal.com/dev/app](https://isthereanydeal.com/dev/app/). Without this, price history and deal tracking are unavailable.
-- **A Discord webhook URL** — for price alert and watchlist notifications. Create one under Server Settings → Integrations → Webhooks. A second webhook (`DISCORD_OPS_WEBHOOK_URL`) can receive operational alerts (sync failures, health summaries) separately from deal alerts; if omitted it falls back to the main webhook.
+- **An IsThereAnyDeal API key** — register at [isthereanydeal.com/dev/app](https://isthereanydeal.com/dev/app/). Without this, price history and deal tracking are unavailable and the wizard hides the "Full" drain mode.
+- **A Discord webhook URL** — for price alerts and onboarding milestone embeds. Create one under Server Settings → Integrations → Webhooks. A second webhook (`DISCORD_OPS_WEBHOOK_URL`) can receive operational alerts (sync failures, health summaries) separately from deal alerts; if omitted it falls back to the main webhook.
 
 ## Quick start
 
@@ -56,24 +56,23 @@ Optional but worth having:
 
 4. **Build and start the container.**
 
-   Production:
-
    ```bash
    docker-compose -f docker-compose.prod.yml --env-file .env.production up -d
    ```
 
-   On older Synology NAS or systems with Compose v1:
+   If `docker compose` (v2 plugin) isn't on the PATH — common on older Synology DSM — make sure the v1 CLI is reachable, e.g. `export PATH=/usr/local/bin:/usr/syno/bin:$PATH`. The image is built locally on first run; expect a few minutes.
 
-   ```bash
-   export PATH=/usr/local/bin:/usr/syno/bin:$PATH
-   docker-compose -f docker-compose.prod.yml --env-file .env.production up -d
-   ```
+5. **Walk the onboarding wizard.** Open `http://your-host:3001` in a browser. On first run Hoard redirects you through `/setup` (to create your admin credentials) and then to `/onboarding` — a seven-step wizard that:
 
-   The image is built locally during this step. First build takes a few minutes.
+   1. Sets expectations for how long the next ~15–60 minutes will look.
+   2. Validates your Steam API key with a live `GetOwnedGames` call before letting you continue.
+   3. Collects optional integrations (ITAD, Discord webhooks).
+   4. Runs the initial Steam library + wishlist sync.
+   5. Lets you pick a drain mode (see below).
+   6. Streams drain progress with a "you can close this tab — we'll Discord you when it's done" callout.
+   7. Lands you on the dashboard with onboarding bookkeeping stamped.
 
-5. **Create your admin account.** Open `http://your-host:3001` in a browser. On first run, with no users in the database yet, Hoard redirects to `/setup` where you create the admin credentials. Once the account exists, any further visit to `/setup` redirects to `/login` instead.
-
-6. **Trigger the initial Steam sync.** Go to Settings → Sync and kick off the library sync and wishlist sync manually. The cron schedules handle subsequent runs automatically.
+   You can re-enter the wizard later from **Settings → Onboarding** if you swap API keys or just want to re-run the drain.
 
 ## Dev vs prod compose files
 
@@ -101,17 +100,21 @@ If your reverse proxy is on a separate host, update `APP_URL` (and rebuild the i
 TRUSTED_ORIGINS=https://hoard.yourdomain.com
 ```
 
-## First sync
+## Drain modes
 
-After account setup, run these from Settings → Sync in order:
+Step 5 of the wizard asks you to pick a drain mode. The drain orchestrator runs the enrichment pipeline up front so the dashboard has charts and scores within minutes, instead of waiting nights for cron to catch up. Pick based on how much patience you have on first launch:
 
-1. **Steam library sync** — imports owned games with playtime data
-2. **Steam wishlist sync** — imports wishlisted games
-3. **ITAD price sync** — fetches current prices and historical lows across stores (requires `ITAD_API_KEY`)
+| Mode | Stages | Library size estimate | When to pick it |
+|---|---|---|---|
+| **Full** | Price history → metadata → HLTB (capped at 300 games) → reviews | ~45 min for 500 games | You want the dashboard fully populated tonight. |
+| **Lite** | Price history → metadata | ~12 min for 500 games | You want price charts now and are happy to wait for HLTB and reviews to fill in over the week. |
+| **Cron-only** | _(no drain)_ | Instant | You'll let the scheduled cron tasks chew through the queue on their own. |
 
-HLTB (game duration data) and review enrichment run on their own cron schedules — HLTB runs twice a week, reviews twice a week. Both can be triggered manually from Settings if you want data immediately. Price history backfill runs nightly and fills in historical prices for every wishlisted/owned game one at a time, so deal charts populate without manual intervention. See [Architecture](/architecture/) for the full schedule table.
+If the drain hits an upstream rate-limit it pauses for 24 hours and surfaces a banner; cron picks up the queue on its next firing. You can resume manually from **Settings → Onboarding → Run drain again**.
 
-Cron defaults if you don't override them:
+## What runs on cron after onboarding
+
+The wizard's drain is a one-time accelerator. From then on, cron keeps everything fresh:
 
 | Task | Default schedule |
 |---|---|
@@ -122,18 +125,17 @@ Cron defaults if you don't override them:
 | Review enrichment | 4 am Tuesday and Friday |
 | Price history backfill | 5 am daily |
 | Database backup | 4 am daily |
+| Notification prune | 4:30 am daily |
+
+See [Architecture](/architecture/) for the full schedule table and per-task budgets.
 
 ## Data persistence
 
 The database is a single SQLite file at `./data/hoard.db` inside the container (set by `DATABASE_URL`, default `./data/hoard.db`). The production Compose file mounts this to a named Docker volume (`hoard_data`). Do not skip the volume or bind mount — if you run the container without one, the database lives inside the container layer and will be lost on rebuild.
 
-On a NAS or any system where you don't have passwordless sudo, the data directory needs to be world-writable:
+Make sure the data directory is writable by the UID the container runs as. On systems where you can't easily match UIDs (e.g. Synology DSM without passwordless sudo), the simplest fix is `chmod 777 ./data` so any container user can write to it.
 
-```bash
-chmod 777 ./data
-```
-
-Backups write to `./backups` on the host by default (configurable via `BACKUP_PATH`). The same `chmod 777` applies if the container user can't write there. See [Backups](/self-hosting/backups/) for backup and restore instructions.
+Backups write to `./backups` on the host by default (configurable via `BACKUP_PATH`). The same permission rule applies — if the container user can't write there, the nightly backup task will log a failure. See [Backups](/self-hosting/backups/) for backup and restore instructions.
 
 ## Common first-run issues
 

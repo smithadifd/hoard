@@ -1,7 +1,8 @@
-import { getEnrichedGameById, updateUserGame, updateManualHltbData, setHltbExcluded } from '@/lib/db/queries';
+import { getEnrichedGameById, updateUserGame, updateManualHltbData, setHltbExcluded, getRatedGameCount } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
+import { milestones } from '@/lib/onboarding/milestones';
 
 /**
  * GET /api/games/:id
@@ -87,6 +88,20 @@ export async function PATCH(
       const updated = updateUserGame(idResult.data.id, userFields, userId);
       if (!updated) {
         return apiNotFound('Game');
+      }
+    }
+
+    // Onboarding milestone fires when the user crosses 10 rated games — only
+    // relevant if this patch actually set personalInterest. Wrapped so a
+    // broken milestone path never fails the user's update.
+    if (userFields.personalInterest !== undefined) {
+      try {
+        const ratedCount = getRatedGameCount(userId);
+        if (ratedCount >= 10) {
+          void milestones.firstTenRated(userId, ratedCount);
+        }
+      } catch (err) {
+        console.warn('[game PATCH] milestone hook failed:', err);
       }
     }
 

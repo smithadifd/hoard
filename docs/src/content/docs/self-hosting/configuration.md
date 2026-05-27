@@ -5,7 +5,7 @@ description: Environment variables reference for Hoard — required, recommended
 
 Environment variables are loaded from `.env.local` in development or `.env.production` in production. Copy `.env.example` to get started — never commit either file to git. A few variables (anything prefixed `NEXT_PUBLIC_`) are inlined at Docker build time by Next.js, not at container startup, so they must be present during the build step.
 
-API keys for Steam and ITAD can also be set through the Settings page in the UI; those database values take priority over environment variables at runtime.
+API keys for Steam and ITAD can also be set through the onboarding wizard at `/onboarding` or, later, through the Settings page; those database values take priority over environment variables at runtime. New self-hosters should rely on the wizard for first-time setup — the env-file flow below is intended for restoring an existing deployment or scripted bootstraps.
 
 ## Required variables
 
