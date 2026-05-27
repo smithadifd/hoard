@@ -1178,6 +1178,7 @@ export function completeSyncLog(
   errorMessage?: string,
   itemsAttempted?: number,
   itemsFailed?: number,
+  apiCalls?: number,
 ): void {
   const db = getDb();
   const now = new Date().toISOString();
@@ -1187,6 +1188,7 @@ export function completeSyncLog(
       itemsProcessed,
       ...(itemsAttempted !== undefined && { itemsAttempted }),
       ...(itemsFailed !== undefined && { itemsFailed }),
+      ...(apiCalls !== undefined && { apiCalls }),
       errorMessage,
       completedAt: now,
     })

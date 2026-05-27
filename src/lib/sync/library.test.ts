@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock external dependencies before importing the module under test
 vi.mock('../steam/client', () => ({
   getSteamClient: vi.fn(),
+  getAndResetSteamApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../db/queries', () => ({
@@ -84,7 +85,7 @@ describe('syncLibrary', () => {
       expect.objectContaining({ isOwned: true, playtimeMinutes: 1000 }),
       'user-1'
     );
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 2, undefined, 2, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 2, undefined, 2, 0, 0);
     expect(result.stats).toEqual({ attempted: 2, succeeded: 2, failed: 0, skipped: 0 });
     expect(result.syncLogId).toBe(42);
   });
@@ -143,7 +144,7 @@ describe('syncLibrary', () => {
 
     // Should only process the first game (abort checked at top of loop iteration 2)
     expect(result.stats.succeeded).toBe(1);
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 3, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 3, 0, 0);
   });
 
   it('records lastPlayed when rtime_last_played > 0', async () => {
@@ -184,7 +185,7 @@ describe('syncLibrary', () => {
     } as ReturnType<typeof getSteamClient>);
 
     await expect(syncLibrary()).rejects.toThrow('API key is invalid');
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'API key is invalid');
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'API key is invalid', undefined, undefined, 0);
   });
 
   it('handles non-Error exceptions in catch block', async () => {
@@ -193,7 +194,7 @@ describe('syncLibrary', () => {
     } as ReturnType<typeof getSteamClient>);
 
     await expect(syncLibrary()).rejects.toBe('string error');
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Unknown error');
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Unknown error', undefined, undefined, 0);
   });
 
   it('cascades alerts + wishlist cleanup when a wishlisted game appears in the library', async () => {

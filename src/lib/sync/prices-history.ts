@@ -10,7 +10,7 @@
  */
 
 import { getEffectiveConfig } from '../config';
-import { getITADClient } from '../itad/client';
+import { getITADClient, getAndResetItadApiCalls } from '../itad/client';
 import {
   bulkInsertPriceSnapshots,
   createSyncLog,
@@ -58,12 +58,12 @@ export async function backfillPriceHistory(
     const rows = mapHistoryToSnapshots(gameId, events);
     const { inserted, skipped } = bulkInsertPriceSnapshots(rows);
 
-    completeSyncLog(syncLogId, 'success', inserted, undefined, events.length, 0);
+    completeSyncLog(syncLogId, 'success', inserted, undefined, events.length, 0, getAndResetItadApiCalls());
 
     return { gameId, events: events.length, inserted, skipped, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetItadApiCalls());
     throw error;
   }
 }

@@ -4,6 +4,7 @@ vi.mock('../steam/client', () => ({
   getSteamClient: vi.fn().mockReturnValue({
     getAppDetails: vi.fn(),
   }),
+  getAndResetSteamApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../discord/client', () => ({
@@ -48,7 +49,7 @@ describe('checkReleaseStatus', () => {
 
     expect(result.stats.attempted).toBe(0);
     expect(result.stats.succeeded).toBe(0);
-    expect(mockComplete).toHaveBeenCalledWith(1, 'success', 0, undefined, 0, 0);
+    expect(mockComplete).toHaveBeenCalledWith(1, 'success', 0, undefined, 0, 0, 0);
   });
 
   it('marks game as released when coming_soon is false', async () => {
@@ -113,7 +114,7 @@ describe('checkReleaseStatus', () => {
     expect(result.stats.attempted).toBe(2);
     expect(result.stats.succeeded).toBe(1);
     expect(result.stats.failed).toBe(1);
-    expect(mockComplete).toHaveBeenCalledWith(1, 'partial', 1, undefined, 2, 1);
+    expect(mockComplete).toHaveBeenCalledWith(1, 'partial', 1, undefined, 2, 1, 0);
   });
 
   it('uses error status when all games fail', async () => {
@@ -124,6 +125,6 @@ describe('checkReleaseStatus', () => {
 
     await checkReleaseStatus();
 
-    expect(mockComplete).toHaveBeenCalledWith(1, 'error', 0, undefined, 1, 1);
+    expect(mockComplete).toHaveBeenCalledWith(1, 'error', 0, undefined, 1, 1, 0);
   });
 });

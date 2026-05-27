@@ -6,7 +6,7 @@
  * for large libraries. Only stores what getOwnedGames() returns.
  */
 
-import { getSteamClient } from '../steam/client';
+import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
 import {
   upsertGameFromSteam,
   upsertUserGame,
@@ -85,11 +85,11 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
       );
     }
 
-    completeSyncLog(syncLogId, 'success', processed, undefined, total, 0);
+    completeSyncLog(syncLogId, 'success', processed, undefined, total, 0, getAndResetSteamApiCalls());
     return { stats: { attempted: total, succeeded: processed, failed: 0, skipped: 0 }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetSteamApiCalls());
     throw error;
   }
 }

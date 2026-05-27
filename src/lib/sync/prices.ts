@@ -7,7 +7,7 @@
  */
 
 import { getEffectiveConfig } from '../config';
-import { getITADClient } from '../itad/client';
+import { getITADClient, getAndResetItadApiCalls } from '../itad/client';
 import { calculateDealScore } from '../scoring/engine';
 import {
   getGamesForPriceSync,
@@ -38,7 +38,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     console.log(`[PriceSync] ${gamesToSync.length} games for price sync`);
 
     if (gamesToSync.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetItadApiCalls());
       return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
@@ -77,7 +77,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     console.log(`[PriceSync] Fetching prices for ${itadToGame.size} games`);
 
     if (itadToGame.size === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetItadApiCalls());
       return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
@@ -152,7 +152,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     const successRate = attempted > 0 ? succeeded / attempted : 1;
     const threshold = SUCCESS_RATE_THRESHOLDS['itad_prices'] ?? 0.5;
     const logStatus = successRate < threshold ? 'partial' : 'success';
-    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, 0);
+    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, 0, getAndResetItadApiCalls());
 
     // Chain alert checking after successful price sync
     try {
@@ -173,7 +173,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     return { stats: { attempted, succeeded, failed: 0, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetItadApiCalls());
     throw error;
   }
 }

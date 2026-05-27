@@ -5,6 +5,7 @@ vi.mock('../steam/client', () => ({
     getAppDetails: vi.fn(),
     getReviewSummary: vi.fn(),
   }),
+  getAndResetSteamApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../discord/client', () => ({
@@ -79,7 +80,7 @@ describe('refreshMetadata', () => {
     const result = await refreshMetadata();
 
     expect(result.stats.attempted).toBe(0);
-    expect(mockComplete).toHaveBeenCalledWith(1, 'success', 0, undefined, 0, 0);
+    expect(mockComplete).toHaveBeenCalledWith(1, 'success', 0, undefined, 0, 0, 0);
   });
 
   it('writes a fresh batch of metadata for each game', async () => {
@@ -244,6 +245,6 @@ describe('refreshMetadata', () => {
 
     await refreshMetadata();
 
-    expect(mockComplete).toHaveBeenCalledWith(1, 'partial', 1, undefined, 2, 1);
+    expect(mockComplete).toHaveBeenCalledWith(1, 'partial', 1, undefined, 2, 1, 0);
   });
 });

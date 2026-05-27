@@ -193,7 +193,20 @@ function buildSearchPayload(gameName: string, hpKey?: string | null, hpVal?: str
   return JSON.stringify(payload);
 }
 
+// Process-wide counter of external HLTB calls. Each search issues 2-3 fetches
+// (auth init + search, plus an occasional script fetch when re-discovering the
+// search path). Sync runs read & reset this at completion. See steam/client.ts
+// for the shared-counter limitations that apply equally here.
+let apiCallCount = 0;
+
+export function getAndResetHltbApiCalls(): number {
+  const c = apiCallCount;
+  apiCallCount = 0;
+  return c;
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+  apiCallCount++;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {

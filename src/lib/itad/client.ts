@@ -22,8 +22,20 @@ import type {
 const ITAD_API_BASE = 'https://api.isthereanydeal.com';
 const BATCH_SIZE = 200;
 
+// Process-wide counter of external ITAD API calls. Sync runs read & reset
+// this at completion to stamp `sync_log.api_calls`. See steam/client.ts for
+// the shared-counter limitations that apply equally here.
+let apiCallCount = 0;
+
+export function getAndResetItadApiCalls(): number {
+  const c = apiCallCount;
+  apiCallCount = 0;
+  return c;
+}
+
 export class ITADClient {
   private async fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 30_000): Promise<Response> {
+    apiCallCount++;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

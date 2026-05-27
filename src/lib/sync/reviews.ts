@@ -6,7 +6,7 @@
  * missing review data (or with stale data older than 30 days).
  */
 
-import { getSteamClient } from '../steam/client';
+import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
 import {
   getGamesForReviewSync,
   updateGameReviewData,
@@ -30,7 +30,7 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
     console.log(`[ReviewSync] ${allGames.length} games need review data, processing batch of ${gamesToSync.length}`);
 
     if (gamesToSync.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetSteamApiCalls());
       return {
         stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 },
         syncLogId,
@@ -138,11 +138,11 @@ export async function syncReviews(onProgress?: ProgressCallback, signal?: AbortS
     const successRate = attempted > 0 ? succeeded / attempted : 1;
     const threshold = SUCCESS_RATE_THRESHOLDS['reviews'] ?? 0.5;
     const logStatus = successRate < threshold ? 'partial' : 'success';
-    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, failed);
+    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, failed, getAndResetSteamApiCalls());
     return { stats: { attempted, succeeded, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetSteamApiCalls());
     throw error;
   }
 }
