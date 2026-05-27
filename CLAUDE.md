@@ -193,90 +193,18 @@ npm run lint
 
 ---
 
-## Phased Roadmap
+## Roadmap
 
-### Phase 1: Foundation + Steam Integration ← COMPLETE
-- [x] Project scaffolding, Docker, database schema
-- [x] Steam API authentication (API key based)
-- [x] Import library with playtime
-- [x] Import wishlist
-- [x] Basic game list/grid view with search and sort
-- [x] Game detail page with Steam data + reviews
-- [x] Settings page for API key configuration
+All 6 phases, all polish plans, and all UI overhaul / feature plans are shipped. Per-phase narrative lives in [`docs/src/content/docs/changelog.md`](docs/src/content/docs/changelog.md); per-plan specs (gitignored) live in `plans/`.
 
-### Phase 2: Price Intelligence ← COMPLETE
-- [x] ITAD integration for current prices across stores
-- [x] Historical low data from ITAD
-- [x] Deal quality indicator (current vs. ATL)
-- [x] loaded.com/Eneba link-out per game
-- [x] Start snapshotting prices on schedule
-- [x] Price comparison on game detail page
+### Open work
 
-### Phase 3: Duration & Value Scoring ← COMPLETE
-- [x] HowLongToBeat integration with caching
-- [x] HLTB backfill for existing library
-- [x] $/hour calculations
-- [x] Configurable value scoring engine
-- [x] Deal score display on game cards and detail page
+- **Onboarding Overhaul Phase 3** — triage nudge, Discord milestones, docs audit + rewrite, `/settings/onboarding` re-entry hub. Phase 1 (wizard + drain orchestrator) and Phase 2 (in-app notifications + checklist + drain banner) shipped 2026-05-27 in PRs #170 and #171.
+- **Post-purchase enjoyment rating** — two-field model (interest + enjoyment), expected-value metrics.
 
-### Phase 4: Backlog Recommender ← COMPLETE
-- [x] Filter by duration, genre, tags, co-op
-- [x] "Pick for me" random selection with active filters
-- [x] "Date night" preset (co-op + short duration)
-- [x] Unplayed/underplayed game highlighting
+### Future ideas (not committed)
 
-### Phase 5: Alerts & Discord ← COMPLETE
-- [x] Watchlist management (flag games, set thresholds)
-- [x] Scheduled price checking via cron (chained after price sync)
-- [x] Discord webhook notifications
-- [x] Alert history and management
-- [x] Dedicated /watchlist page with table view
-- [x] Settings: alert throttle config + test webhook button
-
-### Phase 6: PWA & Mobile-Responsive ← COMPLETE
-- [x] PWA via @serwist/turbopack with service worker
-- [x] Mobile-responsive layout (bottom tab bar, card layouts)
-- [x] Touch-friendly controls (44px targets, stacked inputs)
-
-### Polish Plans (all complete)
-- [x] Plan 1: Automated Backups (SQLite .backup, retention, cron)
-- [x] Plan 2: Security Hardening (Zod validation, rate limiting, security headers)
-- [x] Plan 3: Testing Infrastructure (11 files, 208+ tests, Vitest)
-- [x] Plan 4: Authentication (Better Auth, credentials-based, setup/login)
-- [x] Plan 5: DRY & Consistency (SSE utility, useApiMutation, API helpers)
-- [x] Plan 6: Observability & Monitoring (health endpoint, Discord ops alerts, sync history, stale data banner)
-
-### UI Overhaul Plans (all complete)
-- [x] Plan 7: Wishlist Revamp (deal score recompute, data completeness filter, isReleased, DataStatus, store links)
-- [x] Plan 8: Price Visualization (Recharts AreaChart, best-price-per-day aggregation, time range selector)
-- [x] Plan 9: Backlog Overhaul (strict filters, smart threshold, mood picker, slot machine animation)
-- [x] Plan 11: User Menu & Settings Split (header user menu, mobile sign-out, settings sub-pages)
-- [x] Plan 12: Enrichment Observability (shared SyncStats types, per-game try-catch, success rate alerts, weekly health summary)
-
-### Feature Plans
-- [x] Plan 15: Wishlist Game Removal (local removal, sync guard, Steam source-of-truth auto-removal, cascade deactivation)
-- [x] Plan 16: Separate Releases from Wishlist (/releases page, nav overhaul, release date parsing, release status sync, Discord notifications)
-- [x] Filters & Quick Wins: Price/free filter, interest filter, backlog fixes, default wishlist sort, auto alerts button, dynamic version (v1.0.0)
-- [x] Plan 25: Infinite Scroll (IntersectionObserver, skeleton loading, scroll restoration, PickForMe fetch-on-click)
-- [x] Manual ITAD price history backfill (per-game button on detail page, depth selector, dedup via unique index)
-- [x] Automatic ITAD price history enrichment (nightly cron, 100 games/run, per-user scoping, miss-count backoff, drain mode for future onboarding prime, wired into Discord health alerts and weekly summary)
-
-### Planned Features
-- [x] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
-- [x] Smart Discord notifications (new ATL individual alerts, still-at-ATL digest, reduced noise)
-- [ ] Post-purchase enjoyment rating (two-field model: interest + enjoyment, expected value metrics)
-- [x] Onboarding Overhaul Phase 1 — wizard at `/onboarding` (7 steps), drain orchestrator (`src/lib/sync/drain.ts`) with full/lite/cron-only modes, settings-table JSON state machine, dev-only `scripts/reset-onboarding.mjs` (PR #170, 2026-05-27)
-- [x] Onboarding Overhaul Phase 2 — `notifications` table + migration 0009, in-app notification bell + panel, `OnboardingChecklist` + `DrainStatusCard` dashboard widgets, `DrainPausedBanner` global banner, `notification-prune` cron (PR #171, 2026-05-27)
-- [ ] Onboarding Overhaul Phase 3 — triage nudge, Discord milestones, docs audit + rewrite, `/settings/onboarding` re-entry hub
-- [x] Dashboard overhaul (genre bar chart, deal score histogram, activity feed via Recharts)
-- [x] Plan 26: Metadata refresh + early access tracking — Phase 1 (schema), Phase 2 (nightly drain at 6am UTC, EA-graduation Discord), Phase 3 (EA badge on GameCard + detail page, freshness row, 3-state EA filter chip, weekly reviews.ts cadence) all shipped.
-
-### Future Ideas
-- Price trend visualization (from accumulated snapshots)
-- AI-powered game recommendations
-- Multi-user support
-- SteamDB link integration
-- Game comparison tool
+Price trend visualization, AI recommendations, multi-user support, SteamDB integration, game comparison tool.
 
 ---
 
@@ -304,34 +232,9 @@ See `.env.example` for the full list. Key variables:
 
 ## Demo Mode
 
-For public demo deployment at `https://hoard.smithadifd.com`. Controlled by `DEMO_MODE=true` env var.
+Public demo runs at `https://hoard.smithadifd.com`, gated by `DEMO_MODE=true` (server) and `NEXT_PUBLIC_DEMO_MODE=true` (client UI). The proxy at [`src/proxy.ts`](src/proxy.ts) returns 403 for any mutation endpoint matching `DEMO_BLOCKED`, the scheduler in [`src/lib/scheduler/index.ts`](src/lib/scheduler/index.ts) skips task registration, and sessions in [`src/lib/auth.ts`](src/lib/auth.ts) drop to 24h.
 
-### What it does
-- **DemoBanner**: Amber bar at top of every page ("Demo Mode — data resets weekly. View source on GitHub")
-- **Demo credentials**: Shown on login page (`demo@example.com` / `demo1234!`)
-- **Mutation blocking**: Proxy returns 403 for sync, steam, prices, backup, settings, setup, alert test endpoints
-- **Scheduler disabled**: All cron tasks skip registration in demo mode
-- **Settings hidden**: API key fields and sync buttons replaced with "disabled in demo mode" messages
-- **Session expiry**: 24h instead of 30 days
-
-### Demo data
-- `scripts/export-demo-db.mjs <source-db>` — sanitizes a prod DB copy (strips notes, interest, thresholds, API keys, auth data)
-- `data/demo/demo-seed.db` — pre-sanitized SQLite shipped in Docker image (~2.8MB, 538 games, 15k price snapshots)
-- `scripts/seed-demo.mjs` — creates demo user account on startup, links exported user_games
-
-### Demo deployment
-- `docker-compose.demo.yml` — port 3011, 300MB memory limit
-- `scripts/deploy-demo.sh` — manual SSH to EC2 `demo` host, pull, build, restart
-- `.env.demo` on EC2 contains only `BETTER_AUTH_SECRET`
-- **Auto-deploy**: EC2 cron polls for new commits on main every 5 minutes, builds and deploys automatically (see `demo-infra/scripts/auto-deploy.sh`)
-- **Weekly reset**: EC2 cron deletes data volume + restarts container Sunday 4am UTC (see `demo-infra/scripts/reset-demos.sh`)
-- **Deploy log**: `/var/log/demo-deploy.log` on EC2
-
-### Guidelines
-- Existing Synology production workflow is completely untouched
-- Demo data refreshed by re-running `export-demo-db.mjs` against prod
-- New mutation endpoints must check demo mode in `proxy.ts` and block if true
-- `NEXT_PUBLIC_DEMO_MODE` controls client-side demo UI (login page credentials, settings disabled)
+**When adding a mutation endpoint, also add it to `DEMO_BLOCKED` in `src/proxy.ts`** — otherwise it leaks into the demo. Full sanitization flow, deployment, and weekly-reset details: [`docs/src/content/docs/demo.md`](docs/src/content/docs/demo.md).
 
 ---
 
@@ -368,28 +271,7 @@ For public demo deployment at `https://hoard.smithadifd.com`. Controlled by `DEM
 
 ## Backup & Restore
 
-SQLite is a single file, making backups straightforward. Scripts are in `scripts/`.
-
-```bash
-# Backup (uses SQLite .backup command for safe, atomic copies)
-./scripts/backup.sh                         # Default: ./data/backups/
-./scripts/backup.sh /volume1/backups/hoard  # Custom path (e.g., Synology share)
-
-# List available backups
-./scripts/restore.sh
-
-# Restore from backup (creates safety backup of current DB first)
-./scripts/restore.sh data/backups/hoard_20260206_040000.db
-```
-
-Backups include integrity verification and automatic cleanup of old files (default: 30 days retention). For production, add a cron entry:
-
-```bash
-# Daily backup at 4am (add to NAS cron or Docker entrypoint)
-0 4 * * * cd /path/to/hoard && ./scripts/backup.sh /volume1/backups/hoard
-```
-
-**Always backup before destructive schema changes or major upgrades.**
+`scripts/backup.sh` and `scripts/restore.sh` wrap SQLite's `.backup` API (WAL-safe, atomic). An in-app scheduler also runs nightly at 4am via the `CRON_BACKUP` task. **Always take a manual backup before destructive schema changes or major upgrades** — `./scripts/backup.sh`. Full runbook (retention, paths, cron, restore + restart sequence): [`docs/src/content/docs/self-hosting/backups.md`](docs/src/content/docs/self-hosting/backups.md).
 
 ---
 
