@@ -162,6 +162,7 @@ export const syncLog = sqliteTable('sync_log', {
   itemsProcessed: integer('items_processed').default(0),
   itemsAttempted: integer('items_attempted').default(0),
   itemsFailed: integer('items_failed').default(0),
+  apiCalls: integer('api_calls'), // External API calls made during this run; NULL for syncs that don't track or don't hit external APIs
   errorMessage: text('error_message'),
   startedAt: text('started_at').notNull().default(sql`(datetime('now'))`),
   completedAt: text('completed_at'),

@@ -8,7 +8,7 @@
  * notification when a game graduates from Early Access.
  */
 
-import { getSteamClient } from '../steam/client';
+import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
 import { isEarlyAccessFromCategories } from '../steam/utils';
 import {
   getGamesForMetadataRefresh,
@@ -40,7 +40,7 @@ export async function refreshMetadata(
     const gamesToRefresh = getGamesForMetadataRefresh(effectiveUserId, BATCH_SIZE);
 
     if (gamesToRefresh.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetSteamApiCalls());
       return {
         stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 },
         syncLogId,
@@ -139,7 +139,7 @@ export async function refreshMetadata(
     );
 
     const status = failed > 0 && succeeded === 0 ? 'error' : failed > 0 ? 'partial' : 'success';
-    completeSyncLog(syncLogId, status, succeeded, undefined, attempted, failed);
+    completeSyncLog(syncLogId, status, succeeded, undefined, attempted, failed, getAndResetSteamApiCalls());
 
     return {
       stats: { attempted, succeeded, failed, skipped: 0 },
@@ -148,7 +148,7 @@ export async function refreshMetadata(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetSteamApiCalls());
     throw err;
   }
 }

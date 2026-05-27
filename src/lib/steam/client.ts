@@ -23,8 +23,28 @@ const STEAM_API_BASE = 'https://api.steampowered.com';
 const STEAM_STORE_API = 'https://store.steampowered.com/api';
 const STEAM_STORE_BASE = 'https://store.steampowered.com';
 
+// Process-wide counter of external Steam API calls. Sync runs read & reset
+// this at completion to stamp `sync_log.api_calls`.
+//
+// Known limitations (acceptable for run-level monitoring; revisit if
+// per-endpoint accuracy is ever needed):
+//   - Shared across concurrent syncs: if a manual /api/sync POST overlaps the
+//     cron job for the same source, whichever finishes first drains the counter
+//     and the other logs ~0. Aggregate across rows stays correct.
+//   - Pre-try-block throws (e.g. createSyncLog DB error) bypass the reset.
+//     Residue only persists if multiple consecutive syncs throw before
+//     entering their try block — vanishingly rare in practice.
+let apiCallCount = 0;
+
+export function getAndResetSteamApiCalls(): number {
+  const c = apiCallCount;
+  apiCallCount = 0;
+  return c;
+}
+
 export class SteamClient {
   private async fetchWithTimeout(url: string, timeoutMs = 30_000): Promise<Response> {
+    apiCallCount++;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

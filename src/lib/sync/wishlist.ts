@@ -7,7 +7,7 @@
  */
 
 import { eq, and, sql } from 'drizzle-orm';
-import { getSteamClient } from '../steam/client';
+import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
 import {
   upsertGameFromSteam,
   upsertUserGame,
@@ -30,7 +30,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
     const wishlistEntries = await client.getWishlist();
 
     if (wishlistEntries.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetSteamApiCalls());
       return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
     }
 
@@ -162,11 +162,11 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
       }
     }
 
-    completeSyncLog(syncLogId, 'success', processed, undefined, total, skipped);
+    completeSyncLog(syncLogId, 'success', processed, undefined, total, skipped, getAndResetSteamApiCalls());
     return { stats: { attempted: total, succeeded: processed, failed: 0, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetSteamApiCalls());
     throw error;
   }
 }

@@ -6,6 +6,7 @@ vi.mock('../config', () => ({
 
 vi.mock('../itad/client', () => ({
   getITADClient: vi.fn(),
+  getAndResetItadApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../db/queries', () => ({
@@ -137,7 +138,7 @@ describe('backfillPriceHistory', () => {
     expect(mockBulkInsert).toHaveBeenCalledWith([
       expect.objectContaining({ gameId: 5, store: 'Steam', snapshotDate: '2023-04-15' }),
     ]);
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(99, 'success', 1, undefined, 1, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(99, 'success', 1, undefined, 1, 0, 0);
     expect(result).toEqual({
       gameId: 5,
       events: 1,
@@ -179,6 +180,6 @@ describe('backfillPriceHistory', () => {
     } as unknown as ReturnType<typeof getITADClient>);
 
     await expect(backfillPriceHistory(5)).rejects.toThrow(/rate limited/);
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(99, 'error', 0, 'rate limited');
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(99, 'error', 0, 'rate limited', undefined, undefined, 0);
   });
 });

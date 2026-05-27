@@ -6,7 +6,7 @@
  * for newly released games. Designed to run after the price sync.
  */
 
-import { getSteamClient } from '../steam/client';
+import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
 import { getGamesForReleaseCheck, updateReleaseStatus, createSyncLog, completeSyncLog } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
 import type { SyncResult } from './types';
@@ -22,7 +22,7 @@ export async function checkReleaseStatus(): Promise<SyncResult> {
   const unreleasedGames = getGamesForReleaseCheck();
 
   if (unreleasedGames.length === 0) {
-    completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+    completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetSteamApiCalls());
     return { stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 }, syncLogId };
   }
 
@@ -90,7 +90,7 @@ export async function checkReleaseStatus(): Promise<SyncResult> {
   }
 
   const status = failed > 0 && checked === 0 ? 'error' : failed > 0 ? 'partial' : 'success';
-  completeSyncLog(syncLogId, status, checked, undefined, unreleasedGames.length, failed);
+  completeSyncLog(syncLogId, status, checked, undefined, unreleasedGames.length, failed, getAndResetSteamApiCalls());
 
   if (released > 0) {
     console.log(`[ReleaseCheck] ${released} game(s) newly released`);

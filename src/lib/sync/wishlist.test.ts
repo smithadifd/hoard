@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../steam/client', () => ({
   getSteamClient: vi.fn(),
+  getAndResetSteamApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../db/queries', () => ({
@@ -96,7 +97,7 @@ describe('syncWishlist', () => {
     const result = await syncWishlist();
 
     expect(result.stats).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 0 });
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0, 0);
   });
 
   it('uses fast path for games already in the database', async () => {
@@ -298,6 +299,6 @@ describe('syncWishlist', () => {
     }));
 
     await expect(syncWishlist()).rejects.toThrow('Steam API down');
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Steam API down');
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Steam API down', undefined, undefined, 0);
   });
 });

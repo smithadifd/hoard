@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../hltb/client', () => ({
   getHLTBClient: vi.fn(),
+  getAndResetHltbApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../db/queries', () => ({
@@ -67,7 +68,7 @@ describe('syncHltb', () => {
 
     expect(result.stats).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 0 });
     expect(result.message).toContain('All games already have HLTB data');
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0, 0);
   });
 
   it('updates game data when HLTB match has high similarity', async () => {
@@ -146,7 +147,7 @@ describe('syncHltb', () => {
     expect(result.stats.failed).toBe(1);
     expect(result.stats.succeeded).toBe(1);
     expect(result.stats.attempted).toBe(2);
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 2, 1);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 2, 1, 0);
   });
 
   it('limits batch to 100 games', async () => {
@@ -231,6 +232,6 @@ describe('syncHltb', () => {
     mockGetGames.mockImplementation(() => { throw new Error('DB connection failed'); });
 
     await expect(syncHltb()).rejects.toThrow('DB connection failed');
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'DB connection failed');
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'DB connection failed', undefined, undefined, 0);
   });
 });
