@@ -267,6 +267,7 @@ npm run lint
 - [ ] Post-purchase enjoyment rating (two-field model: interest + enjoyment, expected value metrics)
 - [ ] Onboarding wizard (multi-step setup with background sync)
 - [x] Dashboard overhaul (genre bar chart, deal score histogram, activity feed via Recharts)
+- [ ] Plan 26: Metadata refresh + early access tracking (daily 100-game drain refreshing release/EA/review fields, EA filter + badge, EA-graduation Discord notification)
 
 ### Future Ideas
 - Price trend visualization (from accumulated snapshots)
