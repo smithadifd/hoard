@@ -5,14 +5,15 @@ import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, g
 import type { ActivityEvent } from '@/lib/db/queries';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
-import { getOnboardingState, updateOnboardingState, computeChecklist } from '@/lib/onboarding/state';
+import { getOnboardingState, updateOnboardingState, computeChecklist, computeTriageNudge } from '@/lib/onboarding/state';
 import { getDrainProgressForUser } from '@/lib/sync/drain';
 import GenreChart from '@/components/dashboard/GenreChart';
 import DealScoreChart from '@/components/dashboard/DealScoreChart';
 import RecentActivityFeed from '@/components/dashboard/RecentActivityFeed';
 import { OnboardingChecklist } from '@/components/dashboard/OnboardingChecklist';
 import { DrainStatusCard } from '@/components/dashboard/DrainStatusCard';
-import type { ChecklistResult, DrainProgress } from '@/lib/onboarding/types';
+import { TriageNudgeCard } from '@/components/dashboard/TriageNudgeCard';
+import type { ChecklistResult, DrainProgress, TriageNudgeStatus } from '@/lib/onboarding/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,7 @@ export default async function DashboardPage() {
   let recentAtls: ActivityEvent[] = [];
   let checklist: ChecklistResult | null = null;
   let drainProgress: DrainProgress | null = null;
+  let triageNudge: TriageNudgeStatus | null = null;
 
   try {
     stats = getDashboardStats(session.user.id);
@@ -65,6 +67,7 @@ export default async function DashboardPage() {
     recentAtls = getRecentAtlEvents(session.user.id);
     checklist = computeChecklist(session.user.id);
     drainProgress = getDrainProgressForUser(session.user.id);
+    triageNudge = computeTriageNudge(session.user.id);
 
     // Get upcoming releases for the dashboard card
     const unreleasedGames = getUnreleasedWishlistGames(session.user.id);
@@ -112,6 +115,7 @@ export default async function DashboardPage() {
       {/* Onboarding nudges — render only if relevant */}
       {drainProgress?.running && <DrainStatusCard initial={drainProgress} />}
       {checklist && <OnboardingChecklist initial={checklist} />}
+      {triageNudge?.shouldShow && <TriageNudgeCard initial={triageNudge} />}
 
       {/* Compact Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

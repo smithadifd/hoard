@@ -22,6 +22,8 @@ The problem it solves: games go on sale constantly across 30+ stores, review qua
 - Sends Discord notifications when watched games hit price thresholds; distinguishes new all-time lows from still-at-ATL digests to reduce noise
 - Installable as a PWA with a responsive mobile layout
 
+After `docker compose up`, Hoard walks you through a seven-step onboarding wizard — Steam validation, optional integrations, initial library sync, and a tunable drain that populates prices, metadata, HowLongToBeat, and reviews up front. No manual sync buttons; you can re-run any step later from **Settings → Onboarding**.
+
 <!-- Dashboard screenshot placeholder. Capture from the running app and commit to docs/src/assets/dashboard.png, then restore an image reference here. -->
 
 ## Tech stack
