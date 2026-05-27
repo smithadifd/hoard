@@ -29,6 +29,7 @@ import { refreshMetadata } from './metadata';
 import { syncHltb } from './hltb';
 import { syncReviews } from './reviews';
 import { updateOnboardingState, getOnboardingState } from '@/lib/onboarding/state';
+import { milestones } from '@/lib/onboarding/milestones';
 import { createNotification } from '@/lib/notifications/create';
 import type {
   DrainMode,
@@ -312,8 +313,16 @@ async function runDrain(
   const stages = STAGES_BY_MODE[mode];
   console.log(`[Drain] Starting ${mode} drain for ${userId} — ${stages.length} stages`);
 
+  // Track which progress milestones we've crossed this run. Lets us fire
+  // each one exactly on the stage that crosses it, instead of triggering
+  // fireMilestone (and two settings round-trips) for every subsequent stage
+  // in the same band.
+  let crossed25 = false;
+  let crossed50 = false;
+
   try {
-    for (const stage of stages) {
+    for (let i = 0; i < stages.length; i++) {
+      const stage = stages[i];
       currentStage = stage;
       console.log(`[Drain] Stage: ${stage}`);
       const result = await runStage(stage, userId, signal);
@@ -344,9 +353,26 @@ async function runDrain(
           link: '/onboarding',
           metadata: { stage, pausedUntil },
         });
-        // TODO(Phase 3): fire Discord milestone for drain-paused
         console.warn(`[Drain] Stage ${stage} rate-limited — paused until ${pausedUntil}`);
         return;
+      }
+
+      // Stage finished cleanly — fire 25%/50% milestone the first time this
+      // run crosses each threshold. Subsequent stages that land in the same
+      // band must not re-enter fireMilestone (idempotent at the settings
+      // layer, but the cross-stage check avoids two needless DB reads).
+      const percentDone = ((i + 1) / stages.length) * 100;
+      if (!crossed25 && percentDone >= 25) {
+        crossed25 = true;
+        // Skip the 25% embed entirely when the next stage will already
+        // cross 50%, so a 2-stage lite mode doesn't spam two embeds in a row.
+        if (percentDone < 50) {
+          await milestones.drainProgress(userId, mode, 25);
+        }
+      }
+      if (!crossed50 && percentDone >= 50 && percentDone < 100) {
+        crossed50 = true;
+        await milestones.drainProgress(userId, mode, 50);
       }
     }
 
@@ -362,7 +388,7 @@ async function runDrain(
       link: '/',
       metadata: { mode },
     });
-    // TODO(Phase 3): fire Discord milestone for drain-complete
+    await milestones.drainComplete(userId, mode);
     console.log(`[Drain] All stages complete for ${userId}`);
   } finally {
     isRunning = false;

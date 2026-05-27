@@ -91,3 +91,12 @@ export interface ChecklistResult {
   /** True when the user has dismissed the checklist persistently. */
   dismissed: boolean;
 }
+
+export interface TriageNudgeStatus {
+  /** True when the dashboard should render the triage nudge card. */
+  shouldShow: boolean;
+  /** Owned games that haven't been explicitly rated yet. */
+  untriagedCount: number;
+  /** Games the user has explicitly rated. */
+  ratedCount: number;
+}

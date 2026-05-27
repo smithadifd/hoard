@@ -199,7 +199,7 @@ All 6 phases, all polish plans, and all UI overhaul / feature plans are shipped.
 
 ### Open work
 
-- **Onboarding Overhaul Phase 3** — triage nudge, Discord milestones, docs audit + rewrite, `/settings/onboarding` re-entry hub. Phase 1 (wizard + drain orchestrator) and Phase 2 (in-app notifications + checklist + drain banner) shipped 2026-05-27 in PRs #170 and #171.
+- **Onboarding Overhaul** — Phase 1 (wizard + drain orchestrator), Phase 2 (in-app notifications + checklist + drain banner), and Phase 3 (triage nudge, Discord milestones, docs rewrite, `/settings/onboarding` re-entry hub) all shipped 2026-05-27 in PRs #170, #171, and the current Phase 3 branch.
 - **Post-purchase enjoyment rating** — two-field model (interest + enjoyment), expected-value metrics.
 
 ### Future ideas (not committed)
