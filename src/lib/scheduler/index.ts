@@ -149,13 +149,24 @@ export function getTaskStatus(): Array<{
   schedule: string;
   isRunning: boolean;
   lastRun?: Date;
+  nextRun?: Date;
 }> {
-  return Array.from(tasks.values()).map(({ name, schedule, isRunning, lastRun }) => ({
-    name,
-    schedule,
-    isRunning,
-    lastRun,
-  }));
+  return Array.from(tasks.values()).map(({ name, schedule, isRunning, lastRun, task }) => {
+    let nextRun: Date | undefined;
+    try {
+      const n = task.getNextRun();
+      if (n) nextRun = n;
+    } catch {
+      // Older node-cron versions or destroyed tasks may not have a next run
+    }
+    return {
+      name,
+      schedule,
+      isRunning,
+      lastRun,
+      nextRun,
+    };
+  });
 }
 
 /**
