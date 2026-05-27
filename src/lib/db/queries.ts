@@ -1237,6 +1237,7 @@ export function getRecentSyncStats(source: string, limit: number = 5) {
       itemsProcessed: syncLog.itemsProcessed,
       itemsAttempted: syncLog.itemsAttempted,
       itemsFailed: syncLog.itemsFailed,
+      apiCalls: syncLog.apiCalls,
       startedAt: syncLog.startedAt,
       completedAt: syncLog.completedAt,
     })
@@ -1257,12 +1258,81 @@ export function getSyncLogsSince(source: string, sinceDate: string) {
       itemsProcessed: syncLog.itemsProcessed,
       itemsAttempted: syncLog.itemsAttempted,
       itemsFailed: syncLog.itemsFailed,
+      apiCalls: syncLog.apiCalls,
       startedAt: syncLog.startedAt,
       completedAt: syncLog.completedAt,
     })
     .from(syncLog)
     .where(and(eq(syncLog.source, source), sql`${syncLog.startedAt} >= ${sinceDate}`))
     .orderBy(desc(syncLog.startedAt))
+    .all();
+}
+
+/**
+ * Full sync_log rows (including errorMessage) for one source, most recent first.
+ * Used by the System Settings drill-down endpoint.
+ */
+export function getSyncLogsForSource(source: string, limit: number = 50) {
+  const db = getDb();
+  return db
+    .select()
+    .from(syncLog)
+    .where(eq(syncLog.source, source))
+    .orderBy(desc(syncLog.startedAt))
+    .limit(limit)
+    .all();
+}
+
+/**
+ * Sum of `api_calls` across all sync_log rows for a set of sources since `sinceDate`.
+ * NULL `api_calls` values count as zero (older rows, untracked sync types).
+ */
+export function sumApiCallsBySourcesSince(sources: string[], sinceDate: string): number {
+  if (sources.length === 0) return 0;
+  const db = getDb();
+  const row = db
+    .select({ total: sql<number>`COALESCE(SUM(${syncLog.apiCalls}), 0)` })
+    .from(syncLog)
+    .where(and(inArray(syncLog.source, sources), sql`${syncLog.startedAt} >= ${sinceDate}`))
+    .get();
+  return row?.total ?? 0;
+}
+
+/**
+ * Per-day rollup of sync results for one source.
+ * Returns one row per UTC day in the window, sorted ascending.
+ */
+export function getDailySyncRollup(
+  source: string,
+  sinceDate: string,
+): Array<{
+  day: string;
+  total: number;
+  succeeded: number;
+  partial: number;
+  errored: number;
+  itemsProcessed: number;
+  itemsAttempted: number;
+  itemsFailed: number;
+  apiCalls: number;
+}> {
+  const db = getDb();
+  return db
+    .select({
+      day: sql<string>`substr(${syncLog.startedAt}, 1, 10)`,
+      total: sql<number>`COUNT(*)`,
+      succeeded: sql<number>`SUM(CASE WHEN ${syncLog.status} = 'success' THEN 1 ELSE 0 END)`,
+      partial: sql<number>`SUM(CASE WHEN ${syncLog.status} = 'partial' THEN 1 ELSE 0 END)`,
+      errored: sql<number>`SUM(CASE WHEN ${syncLog.status} = 'error' THEN 1 ELSE 0 END)`,
+      itemsProcessed: sql<number>`COALESCE(SUM(${syncLog.itemsProcessed}), 0)`,
+      itemsAttempted: sql<number>`COALESCE(SUM(${syncLog.itemsAttempted}), 0)`,
+      itemsFailed: sql<number>`COALESCE(SUM(${syncLog.itemsFailed}), 0)`,
+      apiCalls: sql<number>`COALESCE(SUM(${syncLog.apiCalls}), 0)`,
+    })
+    .from(syncLog)
+    .where(and(eq(syncLog.source, source), sql`${syncLog.startedAt} >= ${sinceDate}`))
+    .groupBy(sql`substr(${syncLog.startedAt}, 1, 10)`)
+    .orderBy(sql`substr(${syncLog.startedAt}, 1, 10) ASC`)
     .all();
 }
 
