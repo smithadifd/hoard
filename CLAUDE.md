@@ -265,7 +265,9 @@ npm run lint
 - [x] Collapsible sidebar (icon-only with tooltips, localStorage persistence)
 - [x] Smart Discord notifications (new ATL individual alerts, still-at-ATL digest, reduced noise)
 - [ ] Post-purchase enjoyment rating (two-field model: interest + enjoyment, expected value metrics)
-- [ ] Onboarding wizard (multi-step setup with background sync)
+- [x] Onboarding Overhaul Phase 1 — wizard at `/onboarding` (7 steps), drain orchestrator (`src/lib/sync/drain.ts`) with full/lite/cron-only modes, settings-table JSON state machine, dev-only `scripts/reset-onboarding.mjs` (PR #170, 2026-05-27)
+- [x] Onboarding Overhaul Phase 2 — `notifications` table + migration 0009, in-app notification bell + panel, `OnboardingChecklist` + `DrainStatusCard` dashboard widgets, `DrainPausedBanner` global banner, `notification-prune` cron (PR #171, 2026-05-27)
+- [ ] Onboarding Overhaul Phase 3 — triage nudge, Discord milestones, docs audit + rewrite, `/settings/onboarding` re-entry hub
 - [x] Dashboard overhaul (genre bar chart, deal score histogram, activity feed via Recharts)
 - [x] Plan 26: Metadata refresh + early access tracking — Phase 1 (schema), Phase 2 (nightly drain at 6am UTC, EA-graduation Discord), Phase 3 (EA badge on GameCard + detail page, freshness row, 3-state EA filter chip, weekly reviews.ts cadence) all shipped.
 
