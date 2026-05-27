@@ -30,6 +30,7 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
       if (newFilters.minInterest !== undefined) params.set('minInterest', String(newFilters.minInterest));
       if (newFilters.requireCompleteData === false) params.set('showAll', 'true');
       if (newFilters.hideUnreleased === false) params.set('showUnreleased', 'true');
+      if (newFilters.earlyAccess !== undefined) params.set('earlyAccess', String(newFilters.earlyAccess));
 
       const qs = params.toString();
       router.push(`${pathname}${qs ? '?' + qs : ''}`);

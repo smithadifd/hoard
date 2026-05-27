@@ -18,6 +18,7 @@ export function parseGameFiltersFromParams(
   if (typeof params.minHours === 'string') filters.minHours = Number(params.minHours);
   if (typeof params.coop === 'string') filters.coop = params.coop === 'true';
   if (typeof params.onSale === 'string') filters.onSale = params.onSale === 'true';
+  if (typeof params.earlyAccess === 'string') filters.earlyAccess = params.earlyAccess === 'true';
 
   if (typeof params.maxPrice === 'string' && !isNaN(Number(params.maxPrice)) && Number(params.maxPrice) >= 0) {
     filters.maxPrice = Number(params.maxPrice);
