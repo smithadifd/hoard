@@ -30,6 +30,7 @@ const TASK_TO_SOURCE: Record<string, string> = {
   'hltb-sync':                'hltb',
   'review-enrichment':        'reviews',
   'price-history-backfill':   'price-history-backfill',
+  'metadata-refresh':         'metadata_refresh',
   'database-backup':          'backup',
   'health-summary':           'health_summary',
 };
