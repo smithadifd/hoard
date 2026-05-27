@@ -5,7 +5,7 @@
 const EARLY_ACCESS_CATEGORY_ID = 70;
 
 export function isEarlyAccessFromCategories(
-  cats: Array<{ id: number; description: string }> | undefined,
+  cats: Array<{ id: number }> | undefined,
 ): boolean {
   return !!cats?.some((c) => c.id === EARLY_ACCESS_CATEGORY_ID);
 }

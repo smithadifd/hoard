@@ -2240,6 +2240,102 @@ export function updateReleaseStatus(
 }
 
 // ============================================
+// Metadata Refresh
+// ============================================
+
+/**
+ * Read just the current Early Access flag for a game. Returns the raw value
+ * (true/false/null) so callers can distinguish "was EA → now released" from
+ * "was unknown" before deciding whether to fire a graduation notification.
+ */
+export function getEarlyAccessSnapshot(gameId: number): boolean | null {
+  const db = getDb();
+  const row = db
+    .select({ isEarlyAccess: games.isEarlyAccess })
+    .from(games)
+    .where(eq(games.id, gameId))
+    .get();
+  return row?.isEarlyAccess ?? null;
+}
+
+/**
+ * Get games due for a Steam metadata refresh. Drains in LRU order so the
+ * least-recently-checked games are picked up first; NULL `metadataLastUpdated`
+ * (never refreshed) sorts before any timestamped row.
+ *
+ * Scope: wishlisted or owned by the given user only. Watchlist-only and
+ * lookup-mode (search) games are intentionally excluded.
+ */
+export function getGamesForMetadataRefresh(
+  userId: string,
+  batchSize: number,
+): Array<{ id: number; steamAppId: number; title: string; metadataLastUpdated: string | null }> {
+  const db = getDb();
+  return db
+    .selectDistinct({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+      metadataLastUpdated: games.metadataLastUpdated,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        or(eq(userGames.isWishlisted, true), eq(userGames.isOwned, true)),
+      ),
+    )
+    // NULLS FIRST is the SQLite default for ASC. Be explicit anyway so a future
+    // engine swap (or someone reading this query) sees the intent immediately.
+    .orderBy(sql`${games.metadataLastUpdated} IS NULL DESC`, asc(games.metadataLastUpdated))
+    .limit(batchSize)
+    .all();
+}
+
+/**
+ * Write a fresh batch of Steam metadata to a game and stamp `metadataLastUpdated`.
+ *
+ * Always advances the timestamp so the LRU drain rotates even when Steam returns
+ * `null` for the row (delisted, rate-limited). `releaseDate` only overwrites
+ * with a truthy string (same guard as `updateReleaseStatus` — a Steam blip
+ * returning `""` must not wipe a known good date). `isReleased` never flips
+ * back to false: once released, always released.
+ */
+export function updateGameMetadata(
+  gameId: number,
+  patch: {
+    releaseDate?: string | null;
+    isReleased?: boolean | null;
+    isEarlyAccess?: boolean | null;
+    reviewScore?: number | null;
+    reviewCount?: number | null;
+    reviewDescription?: string | null;
+  },
+): void {
+  const db = getDb();
+  const set: Record<string, unknown> = {
+    metadataLastUpdated: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  if (patch.releaseDate) set.releaseDate = patch.releaseDate;
+  if (patch.isReleased === true) set.isReleased = true;
+  if (patch.isEarlyAccess !== undefined && patch.isEarlyAccess !== null) {
+    set.isEarlyAccess = patch.isEarlyAccess;
+  }
+  if (patch.reviewScore !== undefined && patch.reviewScore !== null) {
+    set.reviewScore = patch.reviewScore;
+  }
+  if (patch.reviewCount !== undefined && patch.reviewCount !== null) {
+    set.reviewCount = patch.reviewCount;
+  }
+  if (patch.reviewDescription !== undefined && patch.reviewDescription !== null) {
+    set.reviewDescription = patch.reviewDescription;
+  }
+  db.update(games).set(set).where(eq(games.id, gameId)).run();
+}
+
+// ============================================
 // Triage (Interest Rating)
 // ============================================
 
