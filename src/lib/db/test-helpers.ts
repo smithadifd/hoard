@@ -133,6 +133,7 @@ const SCHEMA_SQL = `
     items_processed INTEGER DEFAULT 0,
     items_attempted INTEGER DEFAULT 0,
     items_failed INTEGER DEFAULT 0,
+    api_calls INTEGER,
     error_message TEXT,
     started_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT

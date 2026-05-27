@@ -6,7 +6,7 @@
  * Persists results to the games table for use in value scoring.
  */
 
-import { getHLTBClient } from '../hltb/client';
+import { getHLTBClient, getAndResetHltbApiCalls } from '../hltb/client';
 import {
   getGamesForHltbSync,
   updateGameHltbData,
@@ -29,7 +29,7 @@ export async function syncHltb(onProgress?: ProgressCallback, signal?: AbortSign
     console.log(`[HLTBSync] ${allGames.length} games need HLTB data, processing batch of ${gamesToSync.length}`);
 
     if (gamesToSync.length === 0) {
-      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0);
+      completeSyncLog(syncLogId, 'success', 0, undefined, 0, 0, getAndResetHltbApiCalls());
       return {
         stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 },
         syncLogId,
@@ -86,11 +86,11 @@ export async function syncHltb(onProgress?: ProgressCallback, signal?: AbortSign
     const successRate = attempted > 0 ? succeeded / attempted : 1;
     const threshold = SUCCESS_RATE_THRESHOLDS['hltb'] ?? 0.2;
     const logStatus = successRate < threshold ? 'partial' : 'success';
-    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, failed);
+    completeSyncLog(syncLogId, logStatus, succeeded, undefined, attempted, failed, getAndResetHltbApiCalls());
     return { stats: { attempted, succeeded, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    completeSyncLog(syncLogId, 'error', 0, message);
+    completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetHltbApiCalls());
     throw error;
   }
 }

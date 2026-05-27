@@ -6,6 +6,7 @@ vi.mock('../config', () => ({
 
 vi.mock('../itad/client', () => ({
   getITADClient: vi.fn(),
+  getAndResetItadApiCalls: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock('../scoring/engine', () => ({
@@ -135,7 +136,7 @@ describe('syncPrices', () => {
     const result = await syncPrices();
 
     expect(result.stats).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 0 });
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0, 0);
   });
 
   it('resolves missing ITAD IDs before fetching prices', async () => {
@@ -357,7 +358,7 @@ describe('syncPrices', () => {
 
     // Alert check is dynamically imported — verify it doesn't throw
     // (the mock above makes checkPriceAlerts a no-op)
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 1, 0);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 1, 0, 0);
   });
 
   it('propagates ITAD API errors and logs sync failure', async () => {
@@ -369,7 +370,7 @@ describe('syncPrices', () => {
     }));
 
     await expect(syncPrices()).rejects.toThrow('ITAD rate limited');
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'ITAD rate limited');
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'ITAD rate limited', undefined, undefined, 0);
   });
 
   it('uses "Best Price" as default store when shop name is missing', async () => {
