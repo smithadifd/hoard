@@ -1,16 +1,12 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth-helpers';
-import { SystemDashboard } from '@/components/settings/SystemDashboard';
+import { BackupConfig } from '@/components/settings/BackupConfig';
 
 export const dynamic = 'force-dynamic';
 
-export default async function SystemPage() {
+export default async function BackupsPage() {
   const session = await getSession();
   if (!session) redirect('/login');
 
-  return (
-    <div className="space-y-8">
-      <SystemDashboard />
-    </div>
-  );
+  return <BackupConfig />;
 }
