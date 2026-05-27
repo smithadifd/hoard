@@ -8,6 +8,7 @@ const tabs = [
   { href: '/settings/scoring', label: 'Scoring' },
   { href: '/settings/alerts', label: 'Alerts' },
   { href: '/settings/system', label: 'System' },
+  { href: '/settings/backups', label: 'Backups' },
 ];
 
 export function SettingsNav() {
