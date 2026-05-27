@@ -7,7 +7,7 @@
  */
 
 import { getSteamClient } from '../steam/client';
-import { getGamesForReleaseCheck, markGameAsReleased, createSyncLog, completeSyncLog } from '../db/queries';
+import { getGamesForReleaseCheck, updateReleaseStatus, createSyncLog, completeSyncLog } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
 import type { SyncResult } from './types';
 
@@ -45,10 +45,20 @@ export async function checkReleaseStatus(): Promise<SyncResult> {
       }
 
       const comingSoon = details.release_date?.coming_soon;
-      if (comingSoon === false) {
-        // Game has been released!
+      const dateString = details.release_date?.date;
+      const isNowReleased = comingSoon === false;
+
+      // Refresh the release date string on every check — Steam tightens these as
+      // launch approaches (e.g. "later in 2026" → "Jul 7, 2026"), and the
+      // wishlist sync only fetches appdetails for new games, so this is the only
+      // place existing unreleased entries get refreshed.
+      updateReleaseStatus(game.id, {
+        isReleased: isNowReleased,
+        releaseDate: dateString,
+      });
+
+      if (isNowReleased) {
         console.log(`[ReleaseCheck] ${game.title} is now released`);
-        markGameAsReleased(game.id);
         released++;
 
         // Send Discord notification
@@ -57,7 +67,7 @@ export async function checkReleaseStatus(): Promise<SyncResult> {
             title: game.title,
             steamAppId: game.steamAppId,
             headerImageUrl: details.header_image,
-            releaseDate: details.release_date?.date,
+            releaseDate: dateString,
             reviewDescription: details.metacritic?.score
               ? `Metacritic: ${details.metacritic.score}`
               : undefined,

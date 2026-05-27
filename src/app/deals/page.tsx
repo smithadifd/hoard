@@ -30,9 +30,14 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
   const params = await searchParams;
   const daysBack = parseDays(params.days);
 
+  // Unreleased games surface noisy preorder/sentinel prices from ITAD (e.g. $999
+  // placeholders). Exclude them from every section — the deal data isn't actionable
+  // until the game releases. `hideUnreleased` keeps games where is_released IS NULL
+  // (status unknown), so newly-tracked games still appear.
+
   // Section 1: New ATLs in window — first-ever hit at this price
   const newAtls = getEnrichedGames(
-    { view: 'new-atls', daysBack, sortBy: 'atlHitDate', sortOrder: 'desc' } as GameFilters,
+    { view: 'new-atls', daysBack, sortBy: 'atlHitDate', sortOrder: 'desc', hideUnreleased: true } as GameFilters,
     1,
     SECTION_SIZE,
     session.user.id,
@@ -47,6 +52,7 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
       sortBy: 'discount',
       sortOrder: 'desc',
       excludeGameIds: newAtlIds,
+      hideUnreleased: true,
     } as GameFilters,
     1,
     SECTION_SIZE,
@@ -62,6 +68,7 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
       sortBy: 'belowAvgPercent',
       sortOrder: 'desc',
       excludeGameIds: heatingExclude,
+      hideUnreleased: true,
     } as GameFilters,
     1,
     SECTION_SIZE,
