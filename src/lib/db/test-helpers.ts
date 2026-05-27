@@ -224,6 +224,9 @@ export function seedGame(
       developer: overrides.developer,
       publisher: overrides.publisher,
       releaseDate: overrides.releaseDate,
+      isReleased: overrides.isReleased,
+      isEarlyAccess: overrides.isEarlyAccess,
+      metadataLastUpdated: overrides.metadataLastUpdated,
     })
     .returning({ id: schema.games.id })
     .get();

@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterAll } from 'vitest';
+import { eq } from 'drizzle-orm';
+import * as schema from './schema';
 import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
 import type { TestDb } from './test-helpers';
 
@@ -55,6 +57,9 @@ import {
   getUnreleasedCount,
   markGameAsReleased,
   updateReleaseStatus,
+  getGamesForMetadataRefresh,
+  updateGameMetadata,
+  getEarlyAccessSnapshot,
 } from './queries';
 
 beforeEach(() => {
@@ -891,6 +896,139 @@ describe('release queries', () => {
       const after = getEnrichedGameById(gameId, 'default');
       expect(after?.releaseDate).toBe('Jul 7, 2026');
     });
+  });
+});
+
+// ============================================
+// Metadata Refresh
+// ============================================
+
+describe('getGamesForMetadataRefresh', () => {
+  it('orders NULL metadataLastUpdated first, then oldest-first', () => {
+    const fresh = seedGame(testDb, { steamAppId: 1, title: 'Fresh', metadataLastUpdated: '2026-05-25T00:00:00.000Z' });
+    const old = seedGame(testDb, { steamAppId: 2, title: 'Old', metadataLastUpdated: '2026-01-01T00:00:00.000Z' });
+    const never = seedGame(testDb, { steamAppId: 3, title: 'Never' });
+    seedUserGame(testDb, fresh, { isWishlisted: true });
+    seedUserGame(testDb, old, { isWishlisted: true });
+    seedUserGame(testDb, never, { isWishlisted: true });
+
+    const result = getGamesForMetadataRefresh('default', 10);
+
+    expect(result.map((g) => g.title)).toEqual(['Never', 'Old', 'Fresh']);
+  });
+
+  it('only returns wishlisted or owned games (not watchlist-only)', () => {
+    const wishlisted = seedGame(testDb, { steamAppId: 1, title: 'Wishlisted' });
+    const owned = seedGame(testDb, { steamAppId: 2, title: 'Owned' });
+    const watchlistOnly = seedGame(testDb, { steamAppId: 3, title: 'Watchlist-only' });
+    seedUserGame(testDb, wishlisted, { isWishlisted: true });
+    seedUserGame(testDb, owned, { isOwned: true });
+    seedUserGame(testDb, watchlistOnly, { isWatchlisted: true });
+
+    const result = getGamesForMetadataRefresh('default', 10);
+
+    expect(result.map((g) => g.title).sort()).toEqual(['Owned', 'Wishlisted']);
+  });
+
+  it('respects the batch size', () => {
+    for (let i = 1; i <= 5; i++) {
+      const id = seedGame(testDb, { steamAppId: i, title: `G${i}` });
+      seedUserGame(testDb, id, { isWishlisted: true });
+    }
+
+    expect(getGamesForMetadataRefresh('default', 3)).toHaveLength(3);
+  });
+
+  it('scopes results to the requested user', () => {
+    seedUser(testDb, { id: 'alice', email: 'a@example.com' });
+    seedUser(testDb, { id: 'bob', email: 'b@example.com' });
+    const aliceGame = seedGame(testDb, { steamAppId: 1, title: 'Alice Game' });
+    const bobGame = seedGame(testDb, { steamAppId: 2, title: 'Bob Game' });
+    seedUserGame(testDb, aliceGame, { userId: 'alice', isWishlisted: true });
+    seedUserGame(testDb, bobGame, { userId: 'bob', isWishlisted: true });
+
+    const result = getGamesForMetadataRefresh('alice', 10);
+
+    expect(result.map((g) => g.title)).toEqual(['Alice Game']);
+  });
+});
+
+describe('updateGameMetadata', () => {
+  function readGame(gameId: number) {
+    return testDb.select().from(schema.games).where(eq(schema.games.id, gameId)).get();
+  }
+
+  it('always stamps metadataLastUpdated', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Stamped' });
+
+    updateGameMetadata(gameId, {});
+
+    const after = readGame(gameId);
+    expect(after?.metadataLastUpdated).toBeTruthy();
+    expect(() => new Date(after!.metadataLastUpdated!).toISOString()).not.toThrow();
+  });
+
+  it('writes review fields and isEarlyAccess', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Early Access Game' });
+
+    updateGameMetadata(gameId, {
+      isEarlyAccess: true,
+      reviewScore: 85,
+      reviewCount: 1234,
+      reviewDescription: 'Very Positive',
+    });
+
+    const after = readGame(gameId);
+    expect(after?.isEarlyAccess).toBe(true);
+    expect(after?.reviewScore).toBe(85);
+    expect(after?.reviewCount).toBe(1234);
+    expect(after?.reviewDescription).toBe('Very Positive');
+  });
+
+  it('flips isEarlyAccess from true to false (EA graduation path)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Graduating', isEarlyAccess: true });
+
+    updateGameMetadata(gameId, { isEarlyAccess: false });
+
+    expect(getEarlyAccessSnapshot(gameId)).toBe(false);
+  });
+
+  it('does not overwrite a known release date with an empty string', () => {
+    // Same guard as updateReleaseStatus — a Steam blip returning "" must not
+    // wipe a previously-known good date.
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Moonlight Peaks' });
+    upsertGameFromSteam({ steamAppId: 1, title: 'Moonlight Peaks', releaseDate: 'Jul 7, 2026', isReleased: false });
+
+    updateGameMetadata(gameId, { releaseDate: '' });
+
+    const after = getEnrichedGameById(gameId, 'default');
+    expect(after?.releaseDate).toBe('Jul 7, 2026');
+  });
+
+  it('never flips isReleased back to false', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Released' });
+    upsertGameFromSteam({ steamAppId: 1, title: 'Released', isReleased: true });
+
+    updateGameMetadata(gameId, { isReleased: false });
+
+    const after = getEnrichedGameById(gameId, 'default');
+    expect(after?.isReleased).toBe(true);
+  });
+});
+
+describe('getEarlyAccessSnapshot', () => {
+  it('returns the current isEarlyAccess value', () => {
+    const ea = seedGame(testDb, { steamAppId: 1, title: 'EA', isEarlyAccess: true });
+    const released = seedGame(testDb, { steamAppId: 2, title: 'Released', isEarlyAccess: false });
+    const unknown = seedGame(testDb, { steamAppId: 3, title: 'Unknown' });
+
+    expect(getEarlyAccessSnapshot(ea)).toBe(true);
+    expect(getEarlyAccessSnapshot(released)).toBe(false);
+    expect(getEarlyAccessSnapshot(unknown)).toBeNull();
+  });
+
+  it('returns null for a missing game', () => {
+    expect(getEarlyAccessSnapshot(99999)).toBeNull();
   });
 });
 

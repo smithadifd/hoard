@@ -305,6 +305,47 @@ export class DiscordClient {
   }
 
   /**
+   * Send a notification when a game leaves Early Access (1.0 launch).
+   * Same shape as sendReleaseNotification but distinct title + color so the
+   * two events are easy to tell apart in Discord.
+   */
+  async sendEarlyAccessGraduation(game: {
+    title: string;
+    steamAppId: number;
+    headerImageUrl?: string;
+    reviewDescription?: string;
+  }): Promise<boolean> {
+    const storeUrl = `https://store.steampowered.com/app/${game.steamAppId}`;
+
+    const embed: DiscordEmbed = {
+      title: `🎉 Out of Early Access: ${game.title}`,
+      description: `**${game.title}** has graduated from Early Access.`,
+      url: storeUrl,
+      color: 0x10b981, // Emerald — distinct from blue release and green ATL
+      fields: [
+        {
+          name: 'Store Page',
+          value: `[Steam](${storeUrl})`,
+          inline: true,
+        },
+      ],
+      thumbnail: game.headerImageUrl ? { url: game.headerImageUrl } : undefined,
+      footer: { text: 'Hoard - Game Deal Tracker' },
+      timestamp: new Date().toISOString(),
+    };
+
+    if (game.reviewDescription) {
+      embed.fields!.push({
+        name: 'Reviews',
+        value: game.reviewDescription,
+        inline: true,
+      });
+    }
+
+    return this.send('', [embed]);
+  }
+
+  /**
    * Send a backup status notification.
    * Only sends on failure by default to avoid notification fatigue.
    */

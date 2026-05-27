@@ -14,6 +14,7 @@ export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
   reviews: 0.50,                     // Two API calls/game, some rate-limiting normal
   itad_prices: 0.50,                 // Batch API, partial failures rare
   'price-history-backfill': 0.50,    // Most failures = transient ITAD blips; <50% means systemic
+  metadata_refresh: 0.50,            // Two Steam calls/game; same regime as reviews
 };
 
 // HLTB's queue is a retry-backoff stream. When it drains to just the hard-to-match
@@ -68,7 +69,7 @@ export async function sendWeeklyHealthSummary(): Promise<void> {
   weekAgo.setDate(weekAgo.getDate() - 7);
   const sinceDate = weekAgo.toISOString();
 
-  const sources = ['steam_library', 'steam_wishlist', 'hltb', 'reviews', 'itad_prices', 'price-history-backfill', 'alert_check', 'release_check', 'backup'];
+  const sources = ['steam_library', 'steam_wishlist', 'hltb', 'reviews', 'itad_prices', 'price-history-backfill', 'metadata_refresh', 'alert_check', 'release_check', 'backup'];
   // Sources that must run at least once per week — "No runs" is unhealthy
   const requiredSources = new Set(['steam_library', 'steam_wishlist', 'itad_prices', 'price-history-backfill', 'backup']);
   const fields: Array<{ name: string; value: string; inline: boolean }> = [];
