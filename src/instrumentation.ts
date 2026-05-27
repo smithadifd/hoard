@@ -19,18 +19,30 @@ export async function register() {
     const { refreshMetadata } = await import('@/lib/sync/metadata');
     const { runDatabaseBackup } = await import('@/lib/sync/backup');
     const { getDiscordClient } = await import('@/lib/discord/client');
+    const { isDraining } = await import('@/lib/sync/drain');
+
+    // Wraps a cron callback so it short-circuits while the onboarding drain
+    // is running — keeps the drain from racing with scheduled enrichment
+    // for the same upstream APIs.
+    const skipWhileDraining = (name: string, task: () => Promise<unknown>) => async () => {
+      if (isDraining()) {
+        console.log(`[Scheduler] ${name} skipped — onboarding drain in progress`);
+        return;
+      }
+      await task();
+    };
 
     const config = getEffectiveConfig();
 
-    registerTask('price-check', config.cronPriceCheck, async () => syncPrices());
-    registerTask('library-sync', config.cronLibrarySync, async () => syncLibrary());
-    registerTask('wishlist-sync', config.cronWishlistSync, async () => syncWishlist());
-    registerTask('hltb-sync', config.cronHltbSync, async () => syncHltb());
-    registerTask('review-enrichment', config.cronReviewSync, async () => syncReviews());
-    registerTask('price-history-backfill', config.cronPriceHistoryBackfill, async () => syncPriceHistoryBackfill());
-    registerTask('metadata-refresh', config.cronMetadataRefresh, async () => refreshMetadata());
+    registerTask('price-check', config.cronPriceCheck, skipWhileDraining('price-check', () => syncPrices()));
+    registerTask('library-sync', config.cronLibrarySync, skipWhileDraining('library-sync', () => syncLibrary()));
+    registerTask('wishlist-sync', config.cronWishlistSync, skipWhileDraining('wishlist-sync', () => syncWishlist()));
+    registerTask('hltb-sync', config.cronHltbSync, skipWhileDraining('hltb-sync', () => syncHltb()));
+    registerTask('review-enrichment', config.cronReviewSync, skipWhileDraining('review-enrichment', () => syncReviews()));
+    registerTask('price-history-backfill', config.cronPriceHistoryBackfill, skipWhileDraining('price-history-backfill', () => syncPriceHistoryBackfill()));
+    registerTask('metadata-refresh', config.cronMetadataRefresh, skipWhileDraining('metadata-refresh', () => refreshMetadata()));
 
-    registerTask('database-backup', config.cronBackup, async () => {
+    registerTask('database-backup', config.cronBackup, skipWhileDraining('database-backup', async () => {
       try {
         const result = await runDatabaseBackup();
         if (!result.success) {
@@ -44,22 +56,22 @@ export async function register() {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-    });
+    }));
 
-    registerTask('snapshot-prune', '0 3 1 * *', async () => {
+    registerTask('snapshot-prune', '0 3 1 * *', skipWhileDraining('snapshot-prune', async () => {
       const { pruneOldPriceSnapshots } = await import('@/lib/db/queries');
       const deleted = pruneOldPriceSnapshots(180);
       console.log(`[SnapshotPrune] Deleted ${deleted} old snapshots`);
-    });
+    }));
 
-    registerTask('health-summary', '0 9 * * 1', async () => {
+    registerTask('health-summary', '0 9 * * 1', skipWhileDraining('health-summary', async () => {
       const { sendWeeklyHealthSummary } = await import('@/lib/sync/health');
       try {
         await sendWeeklyHealthSummary();
       } catch (err) {
         console.error('[Scheduler] Weekly health summary failed:', err);
       }
-    });
+    }));
 
     startScheduler();
 

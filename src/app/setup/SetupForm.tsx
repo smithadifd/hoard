@@ -54,7 +54,7 @@ export function SetupForm() {
         return;
       }
 
-      router.push('/');
+      router.push('/onboarding');
     } catch {
       setError('An unexpected error occurred');
       setLoading(false);
