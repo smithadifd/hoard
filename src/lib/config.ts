@@ -56,7 +56,10 @@ export function getConfig(): AppConfig {
       cronLibrarySync: process.env.CRON_LIBRARY_SYNC || '0 3 * * *',
       cronWishlistSync: process.env.CRON_WISHLIST_SYNC || '0 1 * * *',
       cronHltbSync: process.env.CRON_HLTB_SYNC || '0 2 * * 0,3',
-      cronReviewSync: process.env.CRON_REVIEW_SYNC || '0 4 * * 2,5',
+      // Weekly — metadata_refresh now handles wishlisted/owned daily; reviews.ts
+      // retains unique coverage for lookup-sourced rows (Global Search) and
+      // watchlist-only games that the metadata drain never visits.
+      cronReviewSync: process.env.CRON_REVIEW_SYNC || '0 4 * * 0',
       cronPriceHistoryBackfill: process.env.CRON_PRICE_HISTORY_BACKFILL || '0 5 * * *',
       cronMetadataRefresh: process.env.CRON_METADATA_REFRESH || '0 6 * * *',
       alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),

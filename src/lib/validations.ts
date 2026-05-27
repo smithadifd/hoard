@@ -56,6 +56,7 @@ export const gameFiltersSchema = z.object({
   strictFilters: booleanString.optional(),
   requireCompleteData: booleanString.optional(),
   hideUnreleased: booleanString.optional(),
+  earlyAccess: booleanString.optional(),
   minInterest: z.coerce.number().int().min(1).max(5).optional(),
   genres: z
     .string()
