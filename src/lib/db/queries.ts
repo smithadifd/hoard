@@ -683,6 +683,12 @@ export function getEnrichedGames(
     conditions.push(sql`(${games.isReleased} IS NULL OR ${games.isReleased} = 1)`);
   }
 
+  if (filters.earlyAccess === true) {
+    conditions.push(sql`${games.isEarlyAccess} = 1`);
+  } else if (filters.earlyAccess === false) {
+    conditions.push(sql`(${games.isEarlyAccess} IS NULL OR ${games.isEarlyAccess} = 0)`);
+  }
+
   const where = and(...conditions);
 
   // Sort mapping — includes subqueries for price/dealScore from latest snapshots.
@@ -753,9 +759,11 @@ export function getEnrichedGames(
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
+      isEarlyAccess: games.isEarlyAccess,
       source: games.source,
       reviewLastUpdated: games.reviewLastUpdated,
       hltbLastUpdated: games.hltbLastUpdated,
+      metadataLastUpdated: games.metadataLastUpdated,
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
@@ -892,9 +900,11 @@ export function getEnrichedGames(
       isCoop: r.isCoop ?? false,
       isMultiplayer: r.isMultiplayer ?? false,
       isReleased: r.isReleased ?? undefined,
+      isEarlyAccess: r.isEarlyAccess ?? undefined,
       dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
       reviewLastUpdated: r.reviewLastUpdated ?? undefined,
       hltbLastUpdated: r.hltbLastUpdated ?? undefined,
+      metadataLastUpdated: r.metadataLastUpdated ?? undefined,
       atlHitDate: r.atlHitDate ?? undefined,
       belowAvgPercent: r.belowAvgPercent ?? undefined,
       dealBadge:
@@ -985,8 +995,10 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
+      isEarlyAccess: games.isEarlyAccess,
       reviewLastUpdated: games.reviewLastUpdated,
       hltbLastUpdated: games.hltbLastUpdated,
+      metadataLastUpdated: games.metadataLastUpdated,
       source: games.source,
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
@@ -1058,9 +1070,11 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     isCoop: row.isCoop ?? false,
     isMultiplayer: row.isMultiplayer ?? false,
     isReleased: row.isReleased ?? undefined,
+    isEarlyAccess: row.isEarlyAccess ?? undefined,
     dataCompleteness: computeDataCompleteness(row.reviewScore, row.hltbMain),
     reviewLastUpdated: row.reviewLastUpdated ?? undefined,
     hltbLastUpdated: row.hltbLastUpdated ?? undefined,
+    metadataLastUpdated: row.metadataLastUpdated ?? undefined,
   };
 
   if (snapshot) {
@@ -2084,9 +2098,11 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
+      isEarlyAccess: games.isEarlyAccess,
       source: games.source,
       reviewLastUpdated: games.reviewLastUpdated,
       hltbLastUpdated: games.hltbLastUpdated,
+      metadataLastUpdated: games.metadataLastUpdated,
       isOwned: userGames.isOwned,
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
@@ -2158,9 +2174,11 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
     isCoop: r.isCoop ?? false,
     isMultiplayer: r.isMultiplayer ?? false,
     isReleased: r.isReleased ?? undefined,
+    isEarlyAccess: r.isEarlyAccess ?? undefined,
     dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
     reviewLastUpdated: r.reviewLastUpdated ?? undefined,
     hltbLastUpdated: r.hltbLastUpdated ?? undefined,
+    metadataLastUpdated: r.metadataLastUpdated ?? undefined,
   }));
 }
 

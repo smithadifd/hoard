@@ -63,6 +63,7 @@ export interface EnrichedGame {
 
   // Release status
   isReleased?: boolean;
+  isEarlyAccess?: boolean;
 
   // Data completeness
   dataCompleteness: 'full' | 'partial' | 'minimal';
@@ -71,6 +72,7 @@ export interface EnrichedGame {
   reviewLastUpdated?: string;
   hltbLastUpdated?: string;
   priceLastUpdated?: string;
+  metadataLastUpdated?: string;
 
   // Date a new ATL was hit (populated for view='new-atls'/'recent-deals')
   atlHitDate?: string;
@@ -112,6 +114,7 @@ export interface GameFilters {
   excludeTags?: string[]; // Exclude games with these tags
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
+  earlyAccess?: boolean;
   sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent';
   sortOrder?: 'asc' | 'desc';
 }

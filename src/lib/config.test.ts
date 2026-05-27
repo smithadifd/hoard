@@ -62,7 +62,7 @@ describe('getConfig', () => {
     expect(config.cronPriceCheck).toBe('0 */12 * * *');
     expect(config.cronLibrarySync).toBe('0 3 * * *');
     expect(config.cronHltbSync).toBe('0 2 * * 0,3');
-    expect(config.cronReviewSync).toBe('0 4 * * 2,5');
+    expect(config.cronReviewSync).toBe('0 4 * * 0');
     expect(config.cronBackup).toBe('0 4 * * *');
   });
 

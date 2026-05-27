@@ -77,9 +77,16 @@ export function GameCard({ game }: GameCardProps) {
 
       {/* Info */}
       <div className="p-3 space-y-2">
-        <h3 className="font-headline font-semibold text-sm truncate group-hover:text-primary transition-colors">
-          {game.title}
-        </h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="font-headline font-semibold text-sm truncate group-hover:text-primary transition-colors min-w-0">
+            {game.title}
+          </h3>
+          {game.isEarlyAccess && (
+            <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-400">
+              EA
+            </span>
+          )}
+        </div>
 
         {/* Meta Row */}
         <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
