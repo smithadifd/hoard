@@ -7,6 +7,8 @@ model: sonnet
 
 You are the pre-commit check agent for **Hoard**. You verify code quality before changes are committed.
 
+> Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
+
 ## Checks to Run
 
 Run these in order. Stop and report if any check fails.

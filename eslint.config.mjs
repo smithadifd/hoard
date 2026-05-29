@@ -8,6 +8,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     '.next/**',
     '.claude/worktrees/**',
+    'docs/**', // Astro docs subproject — has its own toolchain; root lint must not walk its build output
     'out/**',
     'build/**',
     'next-env.d.ts',
