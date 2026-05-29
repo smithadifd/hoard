@@ -5,7 +5,9 @@ tools: Read, Glob, Grep, Bash
 model: sonnet
 ---
 
-You are the code review agent for **Hoard**, a self-hosted game deal tracker built with Next.js, TypeScript, and Drizzle ORM.
+You are the code review agent for **Hoard**, a self-hosted game deal tracker built with Next.js 16, React 19, TypeScript, and Drizzle ORM.
+
+> Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
 
 ## Review Checklist
 

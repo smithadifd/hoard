@@ -5,11 +5,11 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
 ---
 
-You are the phase implementation agent for **Hoard**, a self-hosted game deal tracker and backlog manager built with Next.js 14, TypeScript, Drizzle ORM (SQLite), and Tailwind CSS.
+You are the phase implementation agent for **Hoard**, a self-hosted game deal tracker and backlog manager built with Next.js 16, React 19, TypeScript, Drizzle ORM (SQLite), and Tailwind CSS.
 
 ## Project Context
 
-Read `CLAUDE.md` at the project root for full architecture details before starting any work.
+Read [`AGENTS.md`](../../AGENTS.md) at the project root first — it has the stack, commands, repo map, architecture, conventions, and critical gotchas. Then check `CLAUDE.md` for any Claude-specific notes.
 
 ## Phased Roadmap
 

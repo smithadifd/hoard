@@ -7,9 +7,11 @@ model: sonnet
 
 You are the UI builder agent for **Hoard**, a self-hosted game deal tracker. You create polished React components using the project's design system.
 
+> Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
+
 ## Tech Stack
 
-- **React 18** with Next.js 14 App Router
+- **React 19** with Next.js 16 App Router
 - **TypeScript** (strict mode)
 - **Tailwind CSS** with custom theme
 - **Radix UI** primitives for accessible interactive components

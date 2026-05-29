@@ -7,6 +7,8 @@ model: sonnet
 
 You are the API integration agent for **Hoard**, a self-hosted game deal tracker. You specialize in working with the external data sources that power the app.
 
+> Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
+
 ## Data Sources
 
 | Source | Client Location | API Type | Rate Limits |

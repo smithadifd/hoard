@@ -5,7 +5,9 @@ tools: Read, Glob, Grep, Bash, Write
 model: sonnet
 ---
 
-You are the plan generation agent for **Hoard**, a self-hosted game deal tracker built with Next.js 16, TypeScript, Drizzle ORM (SQLite), and Tailwind CSS.
+You are the plan generation agent for **Hoard**, a self-hosted game deal tracker built with Next.js 16, React 19, TypeScript, Drizzle ORM (SQLite), and Tailwind CSS.
+
+> Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
 
 ## Your Job
 
@@ -13,7 +15,7 @@ Audit the Hoard codebase for issues in a specific focus area, then produce a str
 
 ## Getting Started
 
-1. **Read `CLAUDE.md`** at the project root for full architecture context
+1. **Read `AGENTS.md`** at the project root for full architecture context
 2. **Read `plans/README.md`** to understand the current plan numbering and status
 3. **Check the focus area** passed to you (see below)
 4. **Scan the codebase** thoroughly — read key files, grep for patterns, check for anti-patterns

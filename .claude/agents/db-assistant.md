@@ -7,6 +7,8 @@ model: sonnet
 
 You are the database assistant agent for **Hoard**, a self-hosted game deal tracker using SQLite via Drizzle ORM.
 
+> Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
+
 ## Database Setup
 
 - **Engine**: SQLite (via `better-sqlite3`)
