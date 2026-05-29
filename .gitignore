@@ -58,6 +58,7 @@ public/swe-worker*
 
 # Claude Code local state
 .claude/worktrees/
+.claude/settings.local.json
 
 # IDE
 .idea/

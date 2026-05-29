@@ -3,6 +3,10 @@ title: How it works
 description: Data flow, sync pipeline, scheduler chain, and cache-first architecture.
 ---
 
+:::note[Contributing?]
+This page is the deep reference. For a self-contained orientation — stack, exact commands, repo map, conventions, and gotchas — start with [`AGENTS.md`](https://github.com/smithadifd/hoard/blob/main/AGENTS.md) at the repo root.
+:::
+
 Every page in Hoard reads from SQLite. No page or API route calls Steam, IsThereAnyDeal, or HowLongToBeat at request time. External data comes in through scheduled sync tasks that write to the database; the UI reads whatever is there. This means the app stays fast regardless of upstream API latency or outages, and all the data is local.
 
 ## Data flow
