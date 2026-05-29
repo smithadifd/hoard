@@ -9,6 +9,7 @@
 import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
 import { getGamesForReleaseCheck, updateReleaseStatus, createSyncLog, completeSyncLog } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
+import { emitNotification } from '../notifications/dispatch';
 import type { SyncResult } from './types';
 
 const DELAY_BETWEEN_CHECKS_MS = 3000;
@@ -61,20 +62,26 @@ export async function checkReleaseStatus(): Promise<SyncResult> {
         console.log(`[ReleaseCheck] ${game.title} is now released`);
         released++;
 
-        // Send Discord notification
-        try {
-          await discord.sendReleaseNotification({
-            title: game.title,
-            steamAppId: game.steamAppId,
-            headerImageUrl: details.header_image,
-            releaseDate: dateString,
-            reviewDescription: details.metacritic?.score
-              ? `Metacritic: ${details.metacritic.score}`
-              : undefined,
-          });
-        } catch (notifyError) {
-          console.error(`[ReleaseCheck] Discord notification failed for ${game.title}:`, notifyError);
-        }
+        // Fan out to in-app + Discord per the user's `release` routing.
+        await emitNotification({
+          category: 'release',
+          inApp: {
+            title: `${game.title} is out now`,
+            body: dateString ? `Released ${dateString}` : 'Now available on Steam',
+            link: `/games/${game.id}`,
+            metadata: { steamAppId: game.steamAppId, releaseDate: dateString ?? null },
+          },
+          discord: () =>
+            discord.sendReleaseNotification({
+              title: game.title,
+              steamAppId: game.steamAppId,
+              headerImageUrl: details.header_image,
+              releaseDate: dateString,
+              reviewDescription: details.metacritic?.score
+                ? `Metacritic: ${details.metacritic.score}`
+                : undefined,
+            }),
+        });
       }
 
       checked++;

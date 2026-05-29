@@ -28,6 +28,9 @@ services:
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - BETTER_AUTH_URL=${APP_URL:-https://hoard.home}
+      # Server timezone — quiet hours (Settings → Notifications) and cron schedules
+      # are evaluated in this zone. Defaults to UTC; set e.g. America/New_York.
+      - TZ=${TZ:-UTC}
     volumes:
       - hoard_data:/app/data
       - ${BACKUP_PATH:-./backups}:/app/data/backups

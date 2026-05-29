@@ -225,7 +225,7 @@ export const verification = sqliteTable('verification', {
 export const notifications = sqliteTable('notifications', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: text('user_id').notNull(),
-  // 'drain-complete' | 'drain-paused' | 'sync-failure' | 'triage-nudge' | 'milestone'
+  // 'drain-complete' | 'drain-paused' | 'sync-failure' | 'triage-nudge' | 'milestone' | 'deal-alert' | 'release' | 'system'
   type: text('type').notNull(),
   title: text('title').notNull(),
   body: text('body'),

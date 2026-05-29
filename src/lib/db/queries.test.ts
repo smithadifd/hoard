@@ -21,6 +21,7 @@ import {
   setSetting,
   getAllSettings,
   getScoringConfig,
+  getNotificationPreferences,
   upsertGameFromSteam,
   getExistingGamesByAppIds,
   upsertUserGame,
@@ -139,6 +140,69 @@ describe('getScoringConfig', () => {
     const config = getScoringConfig();
     expect(config.thresholds.maxDollarsPerHour.overwhelminglyPositive).toBe(6.0);
     expect(config.thresholds.maxDollarsPerHour.veryPositive).toBe(3.00); // default
+  });
+});
+
+describe('getNotificationPreferences', () => {
+  // 60s in-memory cache keyed on Date.now() — advance past TTL between tests.
+  let timeOffset = 0;
+  const realDateNow = Date.now;
+
+  beforeEach(() => {
+    timeOffset += 61_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => realDateNow() + timeOffset);
+    // The throttle seed falls back to this env var — pin it empty for determinism.
+    vi.stubEnv('ALERT_THROTTLE_HOURS', '');
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns defaults when no settings exist', () => {
+    const prefs = getNotificationPreferences();
+    expect(prefs.frequency.throttleHours).toBe(24);
+    expect(prefs.categories['deal-individual']).toEqual({ inApp: true, discord: true });
+    expect(prefs.quietHours.enabled).toBe(false);
+  });
+
+  it('seeds throttle from the legacy alert_throttle_hours setting', () => {
+    seedSetting(testDb, 'alert_throttle_hours', '48');
+    expect(getNotificationPreferences().frequency.throttleHours).toBe(48);
+  });
+
+  it('prefers the new blob throttle over the legacy setting', () => {
+    seedSetting(testDb, 'alert_throttle_hours', '48');
+    seedSetting(testDb, 'notification_preferences', JSON.stringify({ frequency: { throttleHours: 6 } }));
+    expect(getNotificationPreferences().frequency.throttleHours).toBe(6);
+  });
+
+  it('merges partial category routing over defaults', () => {
+    seedSetting(
+      testDb,
+      'notification_preferences',
+      JSON.stringify({ categories: { 'deal-individual': { inApp: false, discord: true } } }),
+    );
+    const prefs = getNotificationPreferences();
+    expect(prefs.categories['deal-individual']).toEqual({ inApp: false, discord: true });
+    expect(prefs.categories['milestone']).toEqual({ inApp: true, discord: true }); // untouched → default
+  });
+
+  it('reads custom quiet hours', () => {
+    seedSetting(
+      testDb,
+      'notification_preferences',
+      JSON.stringify({ quietHours: { enabled: true, start: 23, end: 7 } }),
+    );
+    expect(getNotificationPreferences().quietHours).toEqual({ enabled: true, start: 23, end: 7 });
+  });
+
+  it('falls back to defaults on malformed JSON', () => {
+    seedSetting(testDb, 'notification_preferences', '{not valid json');
+    const prefs = getNotificationPreferences();
+    expect(prefs.frequency.throttleHours).toBe(24);
+    expect(prefs.categories['deal-individual']).toEqual({ inApp: true, discord: true });
   });
 });
 
