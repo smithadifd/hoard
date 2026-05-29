@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, PauseCircle, Sparkles, Trash2, Inbox, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, PauseCircle, Sparkles, Trash2, Inbox, X, Tag, Rocket } from 'lucide-react';
 import type { NotificationRow, NotificationType } from '@/lib/notifications/types';
 
 interface NotificationPanelProps {
@@ -18,6 +18,9 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
   'sync-failure': AlertTriangle,
   'triage-nudge': Sparkles,
   milestone: Sparkles,
+  'deal-alert': Tag,
+  release: Rocket,
+  system: AlertTriangle,
 };
 
 const TYPE_COLORS: Record<NotificationType, string> = {
@@ -26,6 +29,9 @@ const TYPE_COLORS: Record<NotificationType, string> = {
   'sync-failure': 'text-destructive',
   'triage-nudge': 'text-primary',
   milestone: 'text-primary',
+  'deal-alert': 'text-deal-great',
+  release: 'text-blue-500',
+  system: 'text-amber-500',
 };
 
 function formatRelative(epochMs: number): string {

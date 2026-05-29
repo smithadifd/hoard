@@ -224,7 +224,8 @@ See `.env.example` for the full list. Key variables:
 | `CRON_PRICE_CHECK` | No | Price check schedule (default: every 12h) |
 | `CRON_LIBRARY_SYNC` | No | Library sync schedule (default: daily 3am) |
 | `TRUSTED_ORIGINS` | No | Comma-separated additional trusted origins for auth |
-| `ALERT_THROTTLE_HOURS` | No | Min hours between alerts per game (default: 24) |
+| `ALERT_THROTTLE_HOURS` | No | Fallback min hours between alerts per game (default: 24). Overridden by Settings → Notifications once saved |
+| `TZ` | No | Server timezone — Notification quiet hours and cron schedules are evaluated in this zone (default: UTC) |
 | `DEMO_MODE` | No | Set `true` to enable demo mode (blocks mutations, disables cron) |
 | `NEXT_PUBLIC_DEMO_MODE` | No | Set `true` for client-side demo UI (credentials on login, settings disabled) |
 

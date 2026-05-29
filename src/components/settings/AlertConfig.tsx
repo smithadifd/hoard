@@ -1,32 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Bell, Send, Loader2, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
 import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface AlertConfigProps {
-  initialThrottleHours: number;
   activeAlertCount: number;
   initialAutoAtlDealAlerts: boolean;
   initialMinSnapshots: number;
 }
 
 export function AlertConfig({
-  initialThrottleHours,
   activeAlertCount,
   initialAutoAtlDealAlerts,
   initialMinSnapshots,
 }: AlertConfigProps) {
-  const [throttleHours, setThrottleHours] = useState(initialThrottleHours.toString());
   const [autoAtlDealAlerts, setAutoAtlDealAlerts] = useState(initialAutoAtlDealAlerts);
   const [minSnapshots, setMinSnapshots] = useState(initialMinSnapshots.toString());
-
-  const {
-    mutate: saveThrottle,
-    isPending: saving,
-    status: saveStatus,
-    reset: resetSaveStatus,
-  } = useApiMutation('/api/settings', { method: 'PUT' });
 
   const {
     mutate: saveAutoAtl,
@@ -54,10 +45,6 @@ export function AlertConfig({
     ? 'Test notification sent!'
     : testError || '';
 
-  const handleSaveThrottle = () => {
-    saveThrottle({ settings: { alert_throttle_hours: throttleHours } });
-  };
-
   const handleSaveMinSnapshots = () => {
     saveMinSnapshots({ settings: { min_snapshots_for_atl_alert: minSnapshots } });
   };
@@ -80,45 +67,14 @@ export function AlertConfig({
         Alerts are checked automatically after each price sync.
       </p>
 
-      {/* Notification Throttle */}
-      <div className="space-y-1">
-        <label className="text-sm font-medium">
-          Minimum hours between notifications (per game)
-        </label>
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            min="1"
-            max="168"
-            value={throttleHours}
-            onChange={(e) => {
-              setThrottleHours(e.target.value);
-              resetSaveStatus();
-            }}
-            className="w-24 px-3 py-2 rounded-md bg-background border border-input text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <span className="text-sm text-muted-foreground">hours</span>
-          <button
-            onClick={handleSaveThrottle}
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
-            {saving && <Loader2 className="h-3 w-3 animate-spin" />}
-            Save
-          </button>
-          {saveStatus === 'success' && (
-            <span className="flex items-center gap-1 text-xs text-deal-great">
-              <CheckCircle className="h-3 w-3" /> Saved
-            </span>
-          )}
-          {saveStatus === 'error' && (
-            <span className="flex items-center gap-1 text-xs text-destructive">
-              <AlertCircle className="h-3 w-3" /> Failed
-            </span>
-          )}
-        </div>
+      {/* Delivery frequency, channel routing, and quiet hours now live in Notifications */}
+      <div className="rounded-md border border-white/[0.06] bg-background/40 px-3 py-2.5">
         <p className="text-xs text-muted-foreground">
-          Prevents repeated notifications for the same game. Default: 24 hours.
+          Notification frequency (throttle), channel routing, and quiet hours are configured in{' '}
+          <Link href="/settings/notifications" className="text-primary hover:underline">
+            Notification settings
+          </Link>
+          .
         </p>
       </div>
 
@@ -198,7 +154,7 @@ export function AlertConfig({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Automatically notify via Discord when any wishlisted game hits a new all-time low
+          Automatically notify you when any wishlisted game hits a new all-time low
           with a &quot;Good&quot; deal score or better (55+). Only released games are included.
           You can opt out individual games from their detail page.
         </p>

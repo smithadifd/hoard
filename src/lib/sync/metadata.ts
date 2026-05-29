@@ -19,6 +19,7 @@ import {
   completeSyncLog,
 } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
+import { emitNotification } from '../notifications/dispatch';
 import type { SyncResult, ProgressCallback } from './types';
 
 const BATCH_SIZE = 100;
@@ -52,7 +53,7 @@ export async function refreshMetadata(
 
     const steam = getSteamClient();
     const discord = getDiscordClient();
-    const graduations: Array<{ title: string; steamAppId: number; headerImageUrl?: string; reviewDescription?: string }> = [];
+    const graduations: Array<{ gameId: number; title: string; steamAppId: number; headerImageUrl?: string; reviewDescription?: string }> = [];
 
     let attempted = 0;
     let succeeded = 0;
@@ -108,6 +109,7 @@ export async function refreshMetadata(
         // EA graduation: was in EA, now isn't.
         if (priorIsEarlyAccess === true && newIsEarlyAccess === false) {
           graduations.push({
+            gameId: game.id,
             title: game.title,
             steamAppId: game.steamAppId,
             headerImageUrl: details.header_image,
@@ -127,11 +129,27 @@ export async function refreshMetadata(
     }
 
     for (const graduation of graduations) {
-      try {
-        await discord.sendEarlyAccessGraduation(graduation);
-      } catch (err) {
-        console.error(`[MetadataRefresh] EA-graduation notification failed for ${graduation.title}:`, err);
-      }
+      // Fan out to in-app + Discord per the user's `release` routing. (Releases
+      // and EA graduations share the `release` category.)
+      await emitNotification({
+        category: 'release',
+        userId: effectiveUserId,
+        inApp: {
+          title: `${graduation.title} left Early Access`,
+          body: graduation.reviewDescription
+            ? `Now in full release · ${graduation.reviewDescription}`
+            : 'Now in full release',
+          link: `/games/${graduation.gameId}`,
+          metadata: { steamAppId: graduation.steamAppId },
+        },
+        discord: () =>
+          discord.sendEarlyAccessGraduation({
+            title: graduation.title,
+            steamAppId: graduation.steamAppId,
+            headerImageUrl: graduation.headerImageUrl,
+            reviewDescription: graduation.reviewDescription,
+          }),
+      });
     }
 
     console.log(

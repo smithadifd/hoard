@@ -3,7 +3,7 @@
  * Provides type-safe access to all config values.
  */
 
-import { getAllSettings } from './db/queries';
+import { getAllSettings, getNotificationPreferences } from './db/queries';
 
 export interface AppConfig {
   // Database
@@ -105,8 +105,10 @@ export function getEffectiveConfig(): AppConfig {
     itadApiKey: dbSettings['itad_api_key'] || envConfig.itadApiKey,
     discordWebhookUrl: dbSettings['discord_webhook_url'] || envConfig.discordWebhookUrl,
     discordOpsWebhookUrl: dbSettings['discord_ops_webhook_url'] || envConfig.discordOpsWebhookUrl,
-    alertThrottleHours: dbSettings['alert_throttle_hours']
-      ? parseInt(dbSettings['alert_throttle_hours'], 10)
-      : envConfig.alertThrottleHours,
+    // Throttle now lives in notification_preferences. getNotificationPreferences()
+    // owns the full precedence (new blob → legacy alert_throttle_hours setting →
+    // ALERT_THROTTLE_HOURS env → 24), so this is the single source of truth shared
+    // with the settings UI.
+    alertThrottleHours: getNotificationPreferences().frequency.throttleHours,
   };
 }

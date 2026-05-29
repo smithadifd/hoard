@@ -7,6 +7,7 @@ const tabs = [
   { href: '/settings', label: 'General', exact: true },
   { href: '/settings/scoring', label: 'Scoring' },
   { href: '/settings/alerts', label: 'Alerts' },
+  { href: '/settings/notifications', label: 'Notifications' },
   { href: '/settings/system', label: 'System' },
   { href: '/settings/backups', label: 'Backups' },
   { href: '/settings/onboarding', label: 'Onboarding' },
