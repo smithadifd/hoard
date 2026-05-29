@@ -1,16 +1,20 @@
 /**
- * Onboarding milestones — celebratory Discord embeds fired once per user
+ * Onboarding milestones — celebratory notifications fired once per user
  * lifecycle event. Each milestone fires at most once; the fired set is
  * persisted in `settings` at key `onboarding_milestones:${userId}` so a
- * restart doesn't replay the embeds.
+ * restart doesn't replay them.
  *
- * Milestones are intentionally lower-stakes than ops alerts and route to the
- * ops webhook (which falls back to the deals webhook when ops isn't set), so
- * a user with a single Discord webhook still sees them.
+ * Milestones route through the unified dispatcher under the `milestone`
+ * category. The Discord embed uses the ops webhook (which falls back to the
+ * deals webhook). Some milestones also surface in the in-app bell (those that
+ * pass an `inApp` payload); others stay Discord-only because their in-app row
+ * is owned elsewhere (drain-complete) or covered by the drain banner (25/50%).
  */
 
 import { getSetting, setSetting } from '@/lib/db/queries';
 import { getDiscordClient } from '@/lib/discord/client';
+import { emitNotification } from '@/lib/notifications/dispatch';
+import type { NotificationPayload } from '@/lib/notifications/types';
 import type { DrainMode } from './types';
 
 export type MilestoneKey =
@@ -60,19 +64,22 @@ interface MilestoneEmbed {
   fields?: Array<{ name: string; value: string; inline?: boolean }>;
 }
 
-async function dispatch(embed: MilestoneEmbed): Promise<void> {
-  try {
-    const discord = getDiscordClient();
-    await discord.sendOperationalAlert({
-      title: embed.title,
-      description: embed.description,
-      color: MILESTONE_COLOR,
-      fields: embed.fields,
-    });
-  } catch (err) {
-    // Discord misconfiguration must never break the surrounding work.
-    console.warn('[Milestone] Discord embed failed:', err);
-  }
+async function dispatch(userId: string, embed: MilestoneEmbed, inApp?: NotificationPayload): Promise<void> {
+  // emitNotification never throws and isolates per-channel failures, so a
+  // broken webhook can't break the surrounding work. Quiet hours never gates
+  // the `milestone` category, so a fired-once milestone is never lost.
+  await emitNotification({
+    category: 'milestone',
+    userId,
+    inApp,
+    discord: () =>
+      getDiscordClient().sendOperationalAlert({
+        title: embed.title,
+        description: embed.description,
+        color: MILESTONE_COLOR,
+        fields: embed.fields,
+      }),
+  });
 }
 
 /**
@@ -86,6 +93,7 @@ export async function fireMilestone(
   userId: string,
   key: MilestoneKey,
   embed: MilestoneEmbed,
+  inApp?: NotificationPayload,
 ): Promise<boolean> {
   try {
     const fired = readFired(userId);
@@ -96,7 +104,7 @@ export async function fireMilestone(
     // window for duplicate fires. We log the failure but accept it as final.
     writeFired(userId, fired);
 
-    await dispatch(embed);
+    await dispatch(userId, embed, inApp);
     return true;
   } catch (err) {
     console.warn('[Milestone] fireMilestone failed:', err);
@@ -125,17 +133,35 @@ export const milestones = {
   },
 
   async firstTenRated(userId: string, ratedCount: number): Promise<void> {
-    await fireMilestone(userId, 'first-10-rated', {
-      title: 'First 10 games rated',
-      description: 'Backlog scoring is now meaningful — open the backlog to see your top picks.',
-      fields: [{ name: 'Rated so far', value: String(ratedCount), inline: true }],
-    });
+    await fireMilestone(
+      userId,
+      'first-10-rated',
+      {
+        title: 'First 10 games rated',
+        description: 'Backlog scoring is now meaningful — open the backlog to see your top picks.',
+        fields: [{ name: 'Rated so far', value: String(ratedCount), inline: true }],
+      },
+      {
+        title: 'First 10 games rated',
+        body: 'Backlog scoring is now meaningful — open the backlog to see your top picks.',
+        link: '/backlog',
+      },
+    );
   },
 
   async firstDeal(userId: string, gameTitle: string): Promise<void> {
-    await fireMilestone(userId, 'first-deal', {
-      title: 'First deal alert fired',
-      description: `Hoard just sent its first deal alert for **${gameTitle}** — the wishlist + watchlist pipeline is live.`,
-    });
+    await fireMilestone(
+      userId,
+      'first-deal',
+      {
+        title: 'First deal alert fired',
+        description: `Hoard just sent its first deal alert for **${gameTitle}** — the wishlist + watchlist pipeline is live.`,
+      },
+      {
+        title: 'First deal alert fired',
+        body: `Hoard sent its first deal alert for ${gameTitle}.`,
+        link: '/wishlist',
+      },
+    );
   },
 };

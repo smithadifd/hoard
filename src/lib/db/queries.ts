@@ -23,6 +23,8 @@ import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore } from '@/lib/scoring/engine';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
+import type { NotificationPreferences, ChannelRouting, NotificationCategory } from '@/lib/notifications/preferences';
+import { DEFAULT_PREFERENCES, NOTIFICATION_CATEGORIES } from '@/lib/notifications/preferences';
 
 // ============================================
 // Auth Helpers
@@ -110,6 +112,92 @@ export function getScoringConfig(): { weights: ScoringWeights; thresholds: Scori
 
   scoringConfigCache = { weights, thresholds, loadedAt: now };
   return { weights, thresholds };
+}
+
+// ============================================
+// Notification Preferences (cached)
+// ============================================
+
+let notificationPrefsCache: { prefs: NotificationPreferences; loadedAt: number } | null = null;
+const NOTIFICATION_PREFS_CACHE_TTL_MS = 60_000; // 1 minute
+
+/**
+ * Load notification delivery preferences, deep-merged over DEFAULT_PREFERENCES
+ * so a partial stored blob never drops newly-added fields. Cached for 60s,
+ * mirroring getScoringConfig.
+ *
+ * Back-compat: when the stored blob doesn't carry a per-game throttle, the
+ * legacy `alert_throttle_hours` setting seeds it (then the built-in default).
+ */
+export function getNotificationPreferences(): NotificationPreferences {
+  const now = Date.now();
+  if (notificationPrefsCache && now - notificationPrefsCache.loadedAt < NOTIFICATION_PREFS_CACHE_TTL_MS) {
+    return notificationPrefsCache.prefs;
+  }
+
+  // Build fresh from defaults (deep-cloned) so we never mutate the shared const.
+  const prefs: NotificationPreferences = {
+    categories: {} as Record<NotificationCategory, ChannelRouting>,
+    frequency: { ...DEFAULT_PREFERENCES.frequency },
+    quietHours: { ...DEFAULT_PREFERENCES.quietHours },
+  };
+  for (const cat of NOTIFICATION_CATEGORIES) {
+    prefs.categories[cat] = { ...DEFAULT_PREFERENCES.categories[cat] };
+  }
+
+  let blobHadThrottle = false;
+  try {
+    const json = getSetting('notification_preferences');
+    if (json) {
+      const parsed = JSON.parse(json) as Partial<NotificationPreferences>;
+      if (parsed.categories) {
+        for (const cat of NOTIFICATION_CATEGORIES) {
+          const stored = parsed.categories[cat];
+          if (stored) {
+            prefs.categories[cat] = {
+              inApp: typeof stored.inApp === 'boolean' ? stored.inApp : prefs.categories[cat].inApp,
+              discord: typeof stored.discord === 'boolean' ? stored.discord : prefs.categories[cat].discord,
+            };
+          }
+        }
+      }
+      if (parsed.frequency && typeof parsed.frequency.throttleHours === 'number') {
+        prefs.frequency.throttleHours = parsed.frequency.throttleHours;
+        blobHadThrottle = true;
+      }
+      if (parsed.quietHours) {
+        const q = parsed.quietHours;
+        prefs.quietHours = {
+          enabled: typeof q.enabled === 'boolean' ? q.enabled : prefs.quietHours.enabled,
+          start: typeof q.start === 'number' ? q.start : prefs.quietHours.start,
+          end: typeof q.end === 'number' ? q.end : prefs.quietHours.end,
+        };
+      }
+    }
+  } catch {
+    // Malformed JSON — fall back to defaults
+  }
+
+  // Back-compat: when the blob omits a throttle, seed from the legacy
+  // `alert_throttle_hours` setting, then the ALERT_THROTTLE_HOURS env var, then
+  // the built-in default. This keeps the getter the single source of throttle
+  // truth so both the settings UI and getEffectiveConfig() agree.
+  if (!blobHadThrottle) {
+    let seed: string | null | undefined;
+    try {
+      seed = getSetting('alert_throttle_hours');
+    } catch {
+      seed = null;
+    }
+    if (!seed) seed = process.env.ALERT_THROTTLE_HOURS;
+    if (seed) {
+      const parsed = parseInt(seed, 10);
+      if (Number.isFinite(parsed) && parsed >= 1) prefs.frequency.throttleHours = parsed;
+    }
+  }
+
+  notificationPrefsCache = { prefs, loadedAt: now };
+  return prefs;
 }
 
 // Default: games with < 10% of HLTB completed count as "barely played"

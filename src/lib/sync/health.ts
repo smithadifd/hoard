@@ -6,9 +6,9 @@
  */
 
 import type { SyncStats } from './types';
-import { getRecentSyncStats, getSyncLogsSince, getFirstUserId } from '../db/queries';
+import { getRecentSyncStats, getSyncLogsSince } from '../db/queries';
 import { getDiscordClient } from '../discord/client';
-import { createNotification } from '../notifications/create';
+import { emitNotification } from '../notifications/dispatch';
 
 export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
   hltb: 0.20,                        // Normally 60-80% match rate
@@ -50,30 +50,29 @@ export async function evaluateSyncHealth(source: string, stats: SyncStats): Prom
     .join(', ');
 
   const discord = getDiscordClient();
-  await discord.sendOperationalAlert({
-    title: `Low Success Rate: ${source}`,
-    description: `${stats.succeeded}/${stats.attempted} succeeded (${Math.round(rate * 100)}%) — threshold is ${Math.round(threshold * 100)}%`,
-    color: 0xf59e0b, // Amber
-    fields: [
-      { name: 'Failed', value: String(stats.failed), inline: true },
-      { name: 'Skipped', value: String(stats.skipped), inline: true },
-      ...(recentSummary ? [{ name: 'Recent Runs', value: recentSummary, inline: false }] : []),
-    ],
-  });
-
-  // In-app mirror of the same alert, scoped to the primary user. Hoard is
-  // single-user in practice; revisit once we ship real multi-tenant accounts.
-  try {
-    const userId = getFirstUserId();
-    createNotification(userId, 'sync-failure', {
+  // Unified dispatch: Discord ops embed + in-app mirror, gated by the user's
+  // `system` category routing. The recipient resolves to the primary user
+  // inside the dispatcher (Hoard is single-user in practice).
+  await emitNotification({
+    category: 'system',
+    inApp: {
       title: `${source} sync below threshold`,
       body: `${stats.succeeded}/${stats.attempted} succeeded (${Math.round(rate * 100)}%, threshold ${Math.round(threshold * 100)}%).`,
       link: '/settings/system',
       metadata: { source, rate, attempted: stats.attempted, failed: stats.failed },
-    });
-  } catch {
-    // Nobody to notify yet (pre-setup) — Discord alert above is enough.
-  }
+    },
+    discord: () =>
+      discord.sendOperationalAlert({
+        title: `Low Success Rate: ${source}`,
+        description: `${stats.succeeded}/${stats.attempted} succeeded (${Math.round(rate * 100)}%) — threshold is ${Math.round(threshold * 100)}%`,
+        color: 0xf59e0b, // Amber
+        fields: [
+          { name: 'Failed', value: String(stats.failed), inline: true },
+          { name: 'Skipped', value: String(stats.skipped), inline: true },
+          ...(recentSummary ? [{ name: 'Recent Runs', value: recentSummary, inline: false }] : []),
+        ],
+      }),
+  });
 }
 
 /**

@@ -19,6 +19,7 @@ export async function register() {
     const { refreshMetadata } = await import('@/lib/sync/metadata');
     const { runDatabaseBackup } = await import('@/lib/sync/backup');
     const { getDiscordClient } = await import('@/lib/discord/client');
+    const { emitNotification } = await import('@/lib/notifications/dispatch');
     const { isDraining } = await import('@/lib/sync/drain');
 
     // Wraps a cron callback so it short-circuits while the onboarding drain
@@ -47,13 +48,29 @@ export async function register() {
         const result = await runDatabaseBackup();
         if (!result.success) {
           console.error('[Scheduler] Backup failed:', result.error);
-          await getDiscordClient().sendBackupNotification(result);
+          await emitNotification({
+            category: 'system',
+            inApp: {
+              title: 'Database backup failed',
+              body: result.error ?? 'Unknown error',
+              link: '/settings/backups',
+              metadata: { error: result.error ?? null },
+            },
+            discord: () => getDiscordClient().sendBackupNotification(result),
+          });
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         console.error('[Scheduler] Backup failed:', error);
-        await getDiscordClient().sendBackupNotification({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
+        await emitNotification({
+          category: 'system',
+          inApp: {
+            title: 'Database backup failed',
+            body: message,
+            link: '/settings/backups',
+            metadata: { error: message },
+          },
+          discord: () => getDiscordClient().sendBackupNotification({ success: false, error: message }),
         });
       }
     }));

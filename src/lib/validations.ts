@@ -137,7 +137,24 @@ const settingsKeyEnum = z.enum([
   'play_again_dormant_months',
   'auto_atl_deal_alerts',
   'min_snapshots_for_atl_alert',
+  'notification_preferences',
 ]);
+
+// Shape of the notification_preferences JSON blob. Sections are optional (the
+// getter deep-merges over defaults), but any present value is range-checked.
+const notificationPreferencesSchema = z.object({
+  categories: z
+    .record(z.string(), z.object({ inApp: z.boolean(), discord: z.boolean() }))
+    .optional(),
+  frequency: z.object({ throttleHours: z.number().int().min(1).max(168) }).optional(),
+  quietHours: z
+    .object({
+      enabled: z.boolean(),
+      start: z.number().int().min(0).max(23),
+      end: z.number().int().min(0).max(23),
+    })
+    .optional(),
+});
 
 export const settingsUpdateSchema = z.object({
   settings: z.record(settingsKeyEnum, z.string().max(5000).optional()),
@@ -154,6 +171,24 @@ export const settingsUpdateSchema = z.object({
       } catch {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', key], message: 'Invalid URL' });
       }
+    }
+  }
+
+  const prefsRaw = data.settings['notification_preferences'];
+  if (prefsRaw) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(prefsRaw);
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'notification_preferences'], message: 'Invalid JSON' });
+      return;
+    }
+    if (!notificationPreferencesSchema.safeParse(parsed).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['settings', 'notification_preferences'],
+        message: 'Invalid notification preferences',
+      });
     }
   }
 });

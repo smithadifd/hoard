@@ -13,6 +13,8 @@
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
 import { milestones } from '../onboarding/milestones';
+import { emitNotification } from '../notifications/dispatch';
+import type { NotificationPayload } from '../notifications/types';
 import {
   getActivePriceAlerts,
   updateAlertLastNotified,
@@ -74,6 +76,50 @@ function buildAlertPayload(alert: ActiveAlertRow | AutoAlertCandidate, dealScore
     dollarsPerHour,
     reviewDescription: alert.reviewDescription ?? undefined,
     dealScore,
+  };
+}
+
+type DealPayload = NonNullable<PendingNotification['alertPayload']>;
+
+/** Map a Discord deal payload to an in-app notification (one row per deal). */
+function mapDealToInApp(payload: DealPayload): NotificationPayload {
+  const isFree = payload.currentPrice === 0;
+  const priceStr = `$${payload.currentPrice.toFixed(2)}`;
+  const discountStr = payload.discountPercent > 0 ? ` (-${payload.discountPercent}%)` : '';
+  return {
+    title: isFree ? `${payload.title} is now free` : `${payload.title} — ${priceStr}`,
+    body: isFree ? `Free on ${payload.store}` : `${priceStr} on ${payload.store}${discountStr}`,
+    link: payload.storeUrl,
+    metadata: {
+      store: payload.store,
+      currentPrice: payload.currentPrice,
+      regularPrice: payload.regularPrice,
+      discountPercent: payload.discountPercent,
+      dealScore: payload.dealScore ?? null,
+    },
+  };
+}
+
+/** Collapse a still-at-ATL digest into a single summary notification (not one per game). */
+function buildDigestInApp(digestGames: DigestGame[]): NotificationPayload {
+  const count = digestGames.length;
+  const names = digestGames.slice(0, 3).map((g) => g.title);
+  const remainder = count - names.length;
+  const list = remainder > 0 ? `${names.join(', ')} and ${remainder} more` : names.join(', ');
+  return {
+    title: `${count} game${count === 1 ? '' : 's'} still at all-time low`,
+    body: list,
+    link: '/wishlist',
+    metadata: {
+      count,
+      games: digestGames.map((g) => ({
+        title: g.title,
+        currentPrice: g.currentPrice,
+        discountPercent: g.discountPercent,
+        store: g.store,
+        storeUrl: g.storeUrl,
+      })),
+    },
   };
 }
 
@@ -226,24 +272,36 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     const digestAlerts = pending.filter((p) => p.type === 'digest');
 
     for (const item of individualAlerts) {
-      const sent = await discord.sendPriceAlert(item.alertPayload!);
-      if (sent) {
+      const payload = item.alertPayload!;
+      const { inAppDelivered, discordDelivered } = await emitNotification({
+        category: 'deal-individual',
+        userId: effectiveUserId,
+        inApp: mapDealToInApp(payload),
+        discord: () => discord.sendPriceAlert(payload),
+      });
+      // Consume the throttle slot if the deal reached the user on any channel.
+      if (inAppDelivered || discordDelivered) {
         item.onSent();
         notifiedCount++;
         if (!firstDealFiredThisRun) {
           firstDealFiredThisRun = true;
           // Idempotent across runs via the milestones ledger.
-          void milestones.firstDeal(effectiveUserId, item.alertPayload!.title);
+          void milestones.firstDeal(effectiveUserId, payload.title);
         }
-        console.log(`[AlertCheck] Notified: ${item.alertPayload!.title} at $${item.alertPayload!.currentPrice.toFixed(2)}`);
+        console.log(`[AlertCheck] Notified: ${payload.title} at $${payload.currentPrice.toFixed(2)}`);
       }
     }
 
-    // Send digest
+    // Send digest — one fan-out for the whole batch (one Discord embed, one in-app summary)
     if (digestAlerts.length > 0) {
       const digestGames = digestAlerts.map((d) => d.digestGame!);
-      const sent = await discord.sendAtlDigest(digestGames);
-      if (sent) {
+      const { inAppDelivered, discordDelivered } = await emitNotification({
+        category: 'deal-digest',
+        userId: effectiveUserId,
+        inApp: buildDigestInApp(digestGames),
+        discord: () => discord.sendAtlDigest(digestGames),
+      });
+      if (inAppDelivered || discordDelivered) {
         for (const item of digestAlerts) {
           item.onSent();
         }
