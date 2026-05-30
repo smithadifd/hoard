@@ -17,6 +17,45 @@ informed purchasing decisions from price history, review scores, and play-time e
 user, runs in Docker (typically a Synology NAS behind a Caddy reverse proxy). Status: all phases
 shipped; active work is incremental.
 
+## Product identity
+
+Architecture has its "why" in [`docs/.../design-decisions.md`](docs/src/content/docs/design-decisions.md).
+This section is the *product* "why" — what Hoard is for, so a new feature can be judged against intent
+rather than vibe. These are observed tenets (reverse-engineered from decisions actually made), not
+aspirations. Each carries a **revisit signal**: the condition under which it should be reopened. Argue
+with them — a tenet that can't be challenged is dogma, not a principle.
+
+**The thesis.** Hoard helps you *collect games at a good price and extract/surface the value of the
+games you own* — quantifying a product (price-to-ATL, review %, $/hour, interest) to **inform the
+user's decision**. Every legitimate feature is a new way to surface honest value that informs a
+decision: buy, skip, wait, or play.
+
+**The test for any new feature:** *Does it surface honest value that informs a decision?* If yes, the
+genre is irrelevant (card, notification, recap, even gamification). If it manufactures engagement that
+doesn't inform a decision, or shows value that isn't true, it's out. The thesis says what to build;
+the non-goals say what to refuse even when tempting. Both halves are load-bearing.
+
+**Non-goals (and why):**
+
+- **No engagement machinery.** No XP, streaks, leaderboards, or daily-login carrots. These exist to
+  juice retention in multi-user products with a growth metric; Hoard is single-user and has no such
+  metric for them to grab. *Revisit if Hoard becomes genuinely multi-user/social.*
+- **Anti-transactional.** The app disciplines buying decisions; it never nudges *more* buying. Never
+  reward acquisition for its own sake. *Revisit signal: none expected — this is core.*
+- **Honesty over compulsion.** Surface only true data; no fabricated dopamine. A metric we can't back
+  with real data (e.g. "money you saved" without purchase price) doesn't ship dressed as fact. Be a
+  mirror, not a slot machine. *Revisit if the backing data genuinely becomes available.*
+- **Restraint over configurability.** Default-sensible beats toggle-everything; every option is
+  surface area and a decision pushed onto the user. Don't duplicate a surface that already exists
+  (e.g. a homepage card that mirrors the bell or the activity feed). *Revisit per-feature when a
+  default genuinely can't serve two real, conflicting needs.*
+- **Generic by default.** Build for any user's library, not the maintainer's specific one — even
+  though it's single-user today. *Revisit signal: none expected — this keeps the app honest.*
+
+Note the symmetry with the test: gamification is a *non-goal as engagement machinery*, but **not**
+banned if a feature passes the test honestly (a truthful "12 of 40 backlog hours played" informs a
+decision and is fair game). The line is honesty + informs-a-decision, never the genre label.
+
 ## Tech stack
 
 | Layer | Technology |
