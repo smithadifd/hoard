@@ -204,6 +204,11 @@ describe('gameUpdateSchema', () => {
     const result = gameUpdateSchema.safeParse({ pricePaid: 100001 });
     expect(result.success).toBe(false);
   });
+
+  it('accepts the dismissPriceSuggestion action flag', () => {
+    const result = gameUpdateSchema.safeParse({ dismissPriceSuggestion: true });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('interestSchema', () => {
@@ -330,6 +335,11 @@ describe('settingsUpdateSchema', () => {
 
   it('accepts empty settings object', () => {
     const result = settingsUpdateSchema.safeParse({ settings: {} });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts the price_paid_suggestions_enabled toggle', () => {
+    const result = settingsUpdateSchema.safeParse({ settings: { price_paid_suggestions_enabled: 'false' } });
     expect(result.success).toBe(true);
   });
 });

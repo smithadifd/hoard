@@ -34,6 +34,10 @@ const CATEGORY_META: Record<NotificationCategory, { label: string; description: 
     label: 'Milestones',
     description: 'Onboarding and setup milestones.',
   },
+  'price-paid-suggestion': {
+    label: 'Price-paid suggestions',
+    description: 'When a wishlisted game becomes owned, a nudge to confirm what you paid.',
+  },
   system: {
     label: 'System',
     description: 'Sync-health warnings, backup failures, and other ops alerts.',

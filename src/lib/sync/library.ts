@@ -16,8 +16,11 @@ import {
   getExistingGamesByAppIds,
   getPreOwnershipState,
   cascadePurchaseCleanup,
+  capturePricePaidSuggestions,
+  getSetting,
 } from '../db/queries';
 import { getDb } from '../db';
+import { emitNotification } from '../notifications/dispatch';
 import type { SyncResult, ProgressCallback } from './types';
 
 export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
@@ -31,6 +34,10 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
     const total = response.games.length;
     let processed = 0;
     let newlyPurchasedCount = 0;
+    // Price-paid suggestions captured this run (written in-txn, notified after commit).
+    let capturedSuggestions: { gameId: number; title: string; suggested: number; asOf: string }[] = [];
+    // Master opt-out — skip the whole capture (and thus all surfaces) when disabled.
+    const suggestPrices = getSetting('price_paid_suggestions_enabled') !== 'false';
 
     const appIds = response.games.map((g) => g.appid);
 
@@ -74,6 +81,9 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
 
       if (newlyPurchasedIds.length > 0) {
         cascadePurchaseCleanup(newlyPurchasedIds, effectiveUserId);
+        if (suggestPrices) {
+          capturedSuggestions = capturePricePaidSuggestions(newlyPurchasedIds, effectiveUserId);
+        }
         newlyPurchasedCount = newlyPurchasedIds.length;
       }
     });
@@ -83,6 +93,23 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
       console.log(
         `[LibrarySync] Detected ${newlyPurchasedCount} purchase(s) — deactivated alerts, removed from wishlist`,
       );
+    }
+
+    // Fire price-paid-suggestion nudges AFTER the commit: emitNotification is async
+    // and a better-sqlite3 transaction callback must stay synchronous. Each call is
+    // self-isolating (never throws), so a notification failure can't fail the sync.
+    for (const s of capturedSuggestions) {
+      await emitNotification({
+        category: 'price-paid-suggestion',
+        userId: effectiveUserId,
+        inApp: {
+          title: `Confirm what you paid for ${s.title}`,
+          body: `Last tracked at ~$${s.suggested.toFixed(2)} on ${s.asOf}. Confirm or update it to unlock realized $/hr.`,
+          link: `/games/${s.gameId}`,
+          metadata: { gameId: s.gameId, suggested: s.suggested, asOf: s.asOf },
+        },
+        discord: () => Promise.resolve(false),
+      });
     }
 
     completeSyncLog(syncLogId, 'success', processed, undefined, total, 0, getAndResetSteamApiCalls());

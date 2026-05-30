@@ -164,6 +164,14 @@ export function GameCard({ game }: GameCardProps) {
           <div className="text-[10px] text-muted-foreground/60">No price data</div>
         )}
 
+        {/* Price-paid suggestion hint — links (via the card) to the detail-page confirm prompt */}
+        {game.hasPricePaidSuggestion && game.pricePaidSuggested !== undefined && (
+          <div className="flex items-center gap-1 text-[10px] font-label uppercase tracking-wide text-amber-400/90">
+            <DollarSign className="h-3 w-3" />
+            Paid ~${game.pricePaidSuggested.toFixed(2)}?
+          </div>
+        )}
+
         {/* Deal-section badge — set by /deals page sections */}
         {game.dealBadge === 'new-atl' && game.atlHitDate && (
           <div className="flex items-center gap-1 text-[10px] font-label uppercase tracking-wide text-teal/80">

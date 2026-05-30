@@ -86,6 +86,8 @@ export const gameUpdateSchema = z.object({
   priceThreshold: z.number().min(0).max(10000).optional(),
   // What the user paid for an owned game (USD); null clears → reverts to time lens
   pricePaid: z.number().min(0).max(100000).nullable().optional(),
+  // Action flag: "Not now" on a price-paid suggestion → server stamps pricePaidSuggestionDismissedAt
+  dismissPriceSuggestion: z.boolean().optional(),
   // Manual HLTB data entry (null to clear)
   hltbMain: z.number().min(0).max(10000).nullable().optional(),
   hltbMainExtra: z.number().min(0).max(10000).nullable().optional(),
@@ -139,6 +141,7 @@ const settingsKeyEnum = z.enum([
   'play_again_dormant_months',
   'auto_atl_deal_alerts',
   'min_snapshots_for_atl_alert',
+  'price_paid_suggestions_enabled',
   'notification_preferences',
 ]);
 

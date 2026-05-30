@@ -26,6 +26,7 @@ import {
   getExistingGamesByAppIds,
   upsertUserGame,
   updateUserGame,
+  capturePricePaidSuggestions,
   upsertTags,
   getEnrichedGames,
   getEnrichedGameById,
@@ -353,6 +354,27 @@ describe('updateUserGame', () => {
     expect(row?.pricePaid).toBeNull();
     expect(row?.pricePaidAt).toBeNull();
   });
+
+  it('clears a pending suggestion when a real price is confirmed', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 14.99 });
+
+    updateUserGame(gameId, { pricePaid: 14.99 }, 'default');
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBe(14.99);
+    expect(row?.pricePaidSuggested).toBeNull();
+  });
+
+  it('stamps pricePaidSuggestionDismissedAt on dismiss without writing a price', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 14.99 });
+
+    updateUserGame(gameId, { dismissPriceSuggestion: true }, 'default');
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidSuggestionDismissedAt).not.toBeNull();
+    expect(row?.pricePaid).toBeNull();
+    expect(row?.pricePaidSuggested).toBe(14.99); // retained, just dismissed
+  });
 });
 
 // ============================================
@@ -477,6 +499,119 @@ describe('value received (owned games)', () => {
     const sv = result.games.find((g) => g.title === 'Stardew Valley');
     expect(sv?.valueReceivedTier).toBe('unrealized');
     expect(sv?.valueReceivedLens).toBe('time');
+  });
+});
+
+describe('capturePricePaidSuggestions (price-paid suggestion capture)', () => {
+  it('writes a suggestion from the latest snapshot for a newly-owned game with no recorded price', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true });
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 8.99, snapshotDate: '2026-05-01' });
+
+    const captured = capturePricePaidSuggestions([gameId], 'default');
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({ gameId, title: 'TF2', suggested: 8.99, asOf: '2026-05-01' });
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidSuggested).toBe(8.99);
+  });
+
+  it('picks the cheapest store on the most recent snapshot date', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true });
+    seedPriceSnapshot(testDb, gameId, { store: 'steam', priceCurrent: 12.0, snapshotDate: '2026-05-02' });
+    seedPriceSnapshot(testDb, gameId, { store: 'gog', priceCurrent: 9.5, snapshotDate: '2026-05-02' });
+    // An older, cheaper snapshot must be ignored — only the latest date counts.
+    seedPriceSnapshot(testDb, gameId, { store: 'humble', priceCurrent: 4.0, snapshotDate: '2026-04-01' });
+
+    const captured = capturePricePaidSuggestions([gameId], 'default');
+    expect(captured[0].suggested).toBe(9.5);
+  });
+
+  it('makes no suggestion when the game has no price snapshot (honest boundary)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true });
+
+    const captured = capturePricePaidSuggestions([gameId], 'default');
+    expect(captured).toHaveLength(0);
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidSuggested).toBeNull();
+  });
+
+  it('makes no suggestion for a free/$0 snapshot', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true });
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 0, priceRegular: 0, discountPercent: 0 });
+
+    const captured = capturePricePaidSuggestions([gameId], 'default');
+    expect(captured).toHaveLength(0);
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidSuggested).toBeNull();
+  });
+
+  it('never clobbers a price the user already recorded', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 59.99 });
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 8.99 });
+
+    const captured = capturePricePaidSuggestions([gameId], 'default');
+    expect(captured).toHaveLength(0);
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBe(59.99);
+    expect(row?.pricePaidSuggested).toBeNull();
+  });
+
+  it('clears a stale dismissal when a fresh suggestion is captured', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, {
+      isOwned: true,
+      pricePaidSuggestionDismissedAt: '2026-01-01T00:00:00.000Z',
+    });
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 8.99 });
+
+    capturePricePaidSuggestions([gameId], 'default');
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidSuggested).toBe(8.99);
+    expect(row?.pricePaidSuggestionDismissedAt).toBeNull();
+  });
+});
+
+describe('getEnrichedGame — hasPricePaidSuggestion flag', () => {
+  it('is true for an owned game with an un-dismissed suggestion and no recorded price', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 8.99 });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.hasPricePaidSuggestion).toBe(true);
+    expect(game?.pricePaidSuggested).toBe(8.99);
+  });
+
+  it('is false once a real price is recorded', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 8.99, pricePaidSuggested: 8.99 });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.hasPricePaidSuggestion).toBe(false);
+  });
+
+  it('is false once the suggestion is dismissed', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, {
+      isOwned: true,
+      pricePaidSuggested: 8.99,
+      pricePaidSuggestionDismissedAt: '2026-05-01T00:00:00.000Z',
+    });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.hasPricePaidSuggestion).toBe(false);
+  });
+
+  it('surfaces the flag through the list query too', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 8.99 });
+
+    const result = getEnrichedGames({ view: 'library' }, undefined, undefined, 'default');
+    const g = result.games.find((x) => x.id === gameId);
+    expect(g?.hasPricePaidSuggestion).toBe(true);
   });
 });
 

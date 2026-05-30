@@ -93,6 +93,9 @@ export const userGames = sqliteTable('user_games', {
   // Value received (backward-looking) — what the user actually paid for an owned game
   pricePaid: real('price_paid'), // USD, nullable — user-entered; NULL = use time/completion lens only
   pricePaidAt: text('price_paid_at'), // ISO date the price was recorded
+  // Price-paid suggestion (Phase 3) — system estimate captured at purchase detection; never auto-applied
+  pricePaidSuggested: real('price_paid_suggested'), // USD, nullable — proposed at wishlist→owned flip; user confirms/edits/dismisses
+  pricePaidSuggestionDismissedAt: text('price_paid_suggestion_dismissed_at'), // ISO; non-null = dismissed, don't re-surface
   // Timestamps
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),

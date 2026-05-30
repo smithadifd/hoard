@@ -21,6 +21,7 @@ const CATEGORY_TO_IN_APP_TYPE: Record<NotificationCategory, NotificationType> = 
   'deal-digest': 'deal-alert',
   release: 'release',
   milestone: 'milestone',
+  'price-paid-suggestion': 'price-paid-suggestion',
   system: 'system',
 };
 

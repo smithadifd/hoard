@@ -78,6 +78,13 @@
       "when": 1780163683894,
       "tag": "0010_reflective_hairball",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1780168241861,
+      "tag": "0011_open_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }

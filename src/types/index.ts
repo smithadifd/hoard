@@ -64,6 +64,10 @@ export interface EnrichedGame {
 
   // Value received (owned games) — backward-looking "did I get my money's worth?"
   pricePaid?: number;
+  /** Phase 3 — system estimate of price paid, captured at purchase, pending user confirmation. */
+  pricePaidSuggested?: number;
+  /** True when an un-dismissed price-paid suggestion exists and no real price is recorded yet. */
+  hasPricePaidSuggestion?: boolean;
   valueReceivedTier?: ValueReceivedTier;
   valueReceivedLens?: ValueReceivedLens;
   completionRatio?: number;
