@@ -13,6 +13,7 @@ interface ValueReceivedIndicatorProps {
   lens: ValueReceivedLens;
   completionRatio?: number;
   realizedDollarsPerHour?: number;
+  hoursPlayed?: number;
   summary?: string;
 }
 
@@ -28,8 +29,23 @@ export function ValueReceivedIndicator({
   lens,
   completionRatio,
   realizedDollarsPerHour,
+  hoursPlayed,
   summary,
 }: ValueReceivedIndicatorProps) {
+  // No honest baseline (played, but no HLTB estimate and no price): show a neutral
+  // played-hours chip rather than a value tier we can't actually justify.
+  if (lens === 'none') {
+    const hrs = hoursPlayed !== undefined ? `Played ${hoursPlayed}h` : 'Played';
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-label font-bold text-muted-foreground bg-secondary"
+        title="No HowLongToBeat estimate or price recorded — add one to grade value."
+      >
+        <span>{hrs}</span>
+      </span>
+    );
+  }
+
   const label = valueReceivedTierLabel(tier);
   const isMuted = tier === 'unrealized';
 

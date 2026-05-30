@@ -4,6 +4,35 @@ import { useState, useRef, useEffect } from 'react';
 import { Search, SlidersHorizontal, Shuffle, X, ArrowUpNarrowWide, ArrowDownNarrowWide } from 'lucide-react';
 import type { GameFilters as GameFiltersType } from '@/types';
 
+export type SortOption = { value: NonNullable<GameFiltersType['sortBy']>; label: string };
+
+/** Sort options every game list shares. */
+export const BASE_SORT_OPTIONS: SortOption[] = [
+  { value: 'title', label: 'Title' },
+  { value: 'dealScore', label: 'Deal Score' },
+  { value: 'price', label: 'Price' },
+  { value: 'review', label: 'Review Score' },
+  { value: 'hltbMain', label: 'Duration' },
+  { value: 'playtime', label: 'Playtime' },
+  { value: 'releaseDate', label: 'Release Date' },
+];
+
+/** Library adds the backward-looking Value Received sorts (owned games). */
+export const LIBRARY_SORT_OPTIONS: SortOption[] = [
+  ...BASE_SORT_OPTIONS,
+  { value: 'valueReceived', label: 'Value Received' },
+  { value: 'realizedDollarsPerHour', label: 'Realized $/hr' },
+  { value: 'completionRatio', label: 'Completion %' },
+  { value: 'pricePaid', label: 'Price Paid' },
+];
+
+/** Backlog (unplayed) — forward-looking value + spend; $/hr & completion are ~empty here. */
+export const BACKLOG_SORT_OPTIONS: SortOption[] = [
+  ...BASE_SORT_OPTIONS,
+  { value: 'valueWaiting', label: 'Most Value Waiting' },
+  { value: 'pricePaid', label: 'Price Paid' },
+];
+
 interface GameFiltersProps {
   filters: GameFiltersType;
   onFiltersChange: (filters: GameFiltersType) => void;
@@ -11,6 +40,7 @@ interface GameFiltersProps {
   showRandomPick?: boolean;
   availableGenres?: string[];
   hidePricing?: boolean;
+  sortOptions?: SortOption[];
 }
 
 export function GameFilters({
@@ -20,6 +50,7 @@ export function GameFilters({
   showRandomPick = false,
   availableGenres,
   hidePricing = false,
+  sortOptions = BASE_SORT_OPTIONS,
 }: GameFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [genreDropdownOpen, setGenreDropdownOpen] = useState(false);
@@ -347,13 +378,9 @@ export function GameFilters({
                 onChange={(e) => updateFilter('sortBy', e.target.value as GameFiltersType['sortBy'])}
                 className="min-w-0 flex-1 px-2 py-2.5 rounded-md bg-background border border-input text-sm"
               >
-                <option value="title">Title</option>
-                <option value="dealScore">Deal Score</option>
-                <option value="price">Price</option>
-                <option value="review">Review Score</option>
-                <option value="hltbMain">Duration</option>
-                <option value="playtime">Playtime</option>
-                <option value="releaseDate">Release Date</option>
+                {sortOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
               <button
                 onClick={() => updateFilter('sortOrder', filters.sortOrder === 'desc' ? 'asc' : 'desc')}

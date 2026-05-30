@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { GameFilters } from '@/components/filters/GameFilters';
+import { GameFilters, BACKLOG_SORT_OPTIONS } from '@/components/filters/GameFilters';
 import { PresetButtons } from './PresetButtons';
 import { PickForMePanel, weightedPick } from './PickForMePanel';
 import { RandomPickModal } from './RandomPickModal';
@@ -30,8 +30,10 @@ export function BacklogFilters({ currentFilters, totalCount, availableGenres, pr
     (newFilters: GameFiltersType) => {
       const params = new URLSearchParams();
       if (newFilters.search) params.set('search', newFilters.search);
-      if (newFilters.sortBy && newFilters.sortBy !== 'title') params.set('sortBy', newFilters.sortBy);
-      if (newFilters.sortOrder && newFilters.sortOrder !== 'asc') params.set('sortOrder', newFilters.sortOrder);
+      // Backlog defaults to "Most Value Waiting" (valueWaiting desc) — omit those from
+      // the URL so the clean /backlog path lands on the default; serialize anything else.
+      if (newFilters.sortBy && newFilters.sortBy !== 'valueWaiting') params.set('sortBy', newFilters.sortBy);
+      if (newFilters.sortOrder && newFilters.sortOrder !== 'desc') params.set('sortOrder', newFilters.sortOrder);
       if (newFilters.maxHours !== undefined) params.set('maxHours', String(newFilters.maxHours));
       if (newFilters.minHours !== undefined) params.set('minHours', String(newFilters.minHours));
       if (newFilters.coop !== undefined) params.set('coop', String(newFilters.coop));
@@ -93,6 +95,7 @@ export function BacklogFilters({ currentFilters, totalCount, availableGenres, pr
         onFiltersChange={handleFiltersChange}
         availableGenres={availableGenres}
         hidePricing={true}
+        sortOptions={BACKLOG_SORT_OPTIONS}
       />
       {hiddenByStrictCount > 0 && currentFilters.strictFilters && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-500/10 text-amber-400 text-sm">

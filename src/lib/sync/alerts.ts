@@ -69,6 +69,7 @@ export function alreadyNotifiedForSnapshot(
 }
 
 interface DigestGame {
+  gameId: number;
   title: string;
   currentPrice: number;
   regularPrice: number;
@@ -79,6 +80,8 @@ interface DigestGame {
 
 interface PendingNotification {
   type: 'individual' | 'digest';
+  // Internal games.id, so the in-app notification can deep-link to the detail page.
+  gameId: number;
   // For individual alerts
   alertPayload?: Parameters<ReturnType<typeof getDiscordClient>['sendPriceAlert']>[0];
   // For digest
@@ -112,16 +115,19 @@ function buildAlertPayload(alert: ActiveAlertRow | AutoAlertCandidate, dealScore
 type DealPayload = NonNullable<PendingNotification['alertPayload']>;
 
 /** Map a Discord deal payload to an in-app notification (one row per deal). */
-function mapDealToInApp(payload: DealPayload): NotificationPayload {
+function mapDealToInApp(payload: DealPayload, gameId: number): NotificationPayload {
   const isFree = payload.currentPrice === 0;
   const priceStr = `$${payload.currentPrice.toFixed(2)}`;
   const discountStr = payload.discountPercent > 0 ? ` (-${payload.discountPercent}%)` : '';
   return {
     title: isFree ? `${payload.title} is now free` : `${payload.title} — ${priceStr}`,
     body: isFree ? `Free on ${payload.store}` : `${priceStr} on ${payload.store}${discountStr}`,
-    link: payload.storeUrl,
+    // Deep-link to the game detail page (price history, value, and store links live there)
+    // rather than straight to the store; the store URL stays in metadata.
+    link: `/games/${gameId}`,
     metadata: {
       store: payload.store,
+      storeUrl: payload.storeUrl,
       currentPrice: payload.currentPrice,
       regularPrice: payload.regularPrice,
       discountPercent: payload.discountPercent,
@@ -143,6 +149,7 @@ function buildDigestInApp(digestGames: DigestGame[]): NotificationPayload {
     metadata: {
       count,
       games: digestGames.map((g) => ({
+        gameId: g.gameId,
         title: g.title,
         currentPrice: g.currentPrice,
         discountPercent: g.discountPercent,
@@ -223,6 +230,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       if (isFree || triggeredByThreshold || isNew) {
         pending.push({
           type: 'individual',
+          gameId: alert.gameId,
           alertPayload: payload,
           onSent: () => updateAlertLastNotified(alert.id),
         });
@@ -230,7 +238,9 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         // Still-at-ATL with a real discount — goes to digest
         pending.push({
           type: 'digest',
+          gameId: alert.gameId,
           digestGame: {
+            gameId: alert.gameId,
             title: alert.title,
             currentPrice: alert.currentPrice,
             regularPrice: alert.regularPrice,
@@ -284,13 +294,16 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         if (isFree || isNew) {
           pending.push({
             type: 'individual',
+            gameId: candidate.gameId,
             alertPayload: payload,
             onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
           });
         } else if (candidate.discountPercent > 0) {
           pending.push({
             type: 'digest',
+            gameId: candidate.gameId,
             digestGame: {
+              gameId: candidate.gameId,
               title: candidate.title,
               currentPrice: candidate.currentPrice,
               regularPrice: candidate.regularPrice,
@@ -316,7 +329,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       const { inAppDelivered, discordDelivered } = await emitNotification({
         category: 'deal-individual',
         userId: effectiveUserId,
-        inApp: mapDealToInApp(payload),
+        inApp: mapDealToInApp(payload, item.gameId),
         discord: () => discord.sendPriceAlert(payload),
       });
       // Consume the throttle slot if the deal reached the user on any channel.

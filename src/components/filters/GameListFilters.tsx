@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback } from 'react';
-import { GameFilters } from './GameFilters';
+import { GameFilters, LIBRARY_SORT_OPTIONS } from './GameFilters';
 import type { GameFilters as GameFiltersType } from '@/types';
 
 interface GameListFiltersProps {
@@ -53,5 +53,5 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
     [navigate, currentFilters.search]
   );
 
-  return <GameFilters filters={currentFilters} onFiltersChange={handleFiltersChange} />;
+  return <GameFilters filters={currentFilters} onFiltersChange={handleFiltersChange} sortOptions={LIBRARY_SORT_OPTIONS} />;
 }

@@ -55,6 +55,14 @@ Notifications were unified behind a single dispatcher. Until now deal alerts onl
 
 A new Settings → Notifications page exposes the controls. A routing matrix decides, per category — individual deals, the still-at-ATL digest, releases, milestones, and system alerts — whether each lands in the bell, on Discord, or both. Routing the individual-deal and digest rows separately means you can keep loud per-deal pings on Discord while the digest collects quietly in the bell, or mute the individual row entirely for a digest-only experience. The per-game throttle moved here from the Alerts page. Quiet hours pause Discord deal pings during a nightly window — evaluated in the server's timezone — while the bell keeps recording silently, so nothing is missed; milestones and system alerts are never paused. Releases, Early Access graduations, backup failures, and the first-deal and first-ten-rated milestones now surface in the bell too, where before they were Discord-only.
 
+## Value-data polish
+
+A feedback round after the Value Received launch tightened how owned-game value is shown and put the new data to work. The scoring engine stopped inventing a value tier when it had no honest baseline: a game with no HowLongToBeat estimate *and* no recorded price used to fall back to raw playtime hours, which mislabeled a 15-minute game as "Approaching" and a 100-hour sandbox as "Exceeded." Both now show a neutral "Played Xh" chip until you add a duration or a price — the same honesty-over-compulsion stance the price-paid suggestions take.
+
+In-app notifications got more useful: clicking a deal alert now opens the game's detail page (where the price history, value breakdown, and store links live) instead of jumping straight to the store, and the still-at-ATL digest opens a modal listing every game in it — each linking to its detail page — rather than dumping you on the wishlist.
+
+The dashboard gained a Value Received donut (owned games by tier) and a Spending & Value tile (total spent, hours played, blended $/hour, and how often you reached expected value), plus a Most Value Waiting card. The Library added four value sorts — Value Received tier, Realized $/hour, Completion %, and Price Paid — and the Backlog now defaults to its Most Value Waiting sort and offers it directly in the sort menu.
+
 ## What's next
 
 Two features are planned but not yet built: a post-purchase enjoyment rating (a two-field model tracking expected versus actual enjoyment, feeding into expected value metrics) and an onboarding wizard that walks through initial setup with background sync running in parallel.

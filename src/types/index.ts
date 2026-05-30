@@ -130,7 +130,7 @@ export interface GameFilters {
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
   earlyAccess?: boolean;
-  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent' | 'valueWaiting';
+  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent' | 'valueWaiting' | 'pricePaid' | 'completionRatio' | 'realizedDollarsPerHour' | 'valueReceived';
   sortOrder?: 'asc' | 'desc';
 }
 

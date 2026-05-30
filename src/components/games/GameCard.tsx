@@ -57,6 +57,7 @@ export function GameCard({ game }: GameCardProps) {
               lens={game.valueReceivedLens ?? 'time'}
               completionRatio={game.completionRatio}
               realizedDollarsPerHour={game.realizedDollarsPerHour}
+              hoursPlayed={Math.round((game.playtimeMinutes / 60) * 10) / 10}
               summary={game.valueReceivedSummary}
             />
           </div>
