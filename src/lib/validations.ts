@@ -66,7 +66,7 @@ export const gameFiltersSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v ? v.split(',').filter(Boolean) : undefined)),
-  sortBy: z.enum(['title', 'playtime', 'review', 'price', 'dealScore', 'hltbMain', 'releaseDate', 'lastPlayed', 'atlHitDate', 'discount', 'belowAvgPercent']).default('title'),
+  sortBy: z.enum(['title', 'playtime', 'review', 'price', 'dealScore', 'hltbMain', 'releaseDate', 'lastPlayed', 'atlHitDate', 'discount', 'belowAvgPercent', 'valueWaiting']).default('title'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(24),

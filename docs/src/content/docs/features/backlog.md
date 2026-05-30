@@ -41,7 +41,7 @@ The data-quality filters that operate independently of `strictFilters`:
 
 ## Presets
 
-Five presets live in `src/lib/backlog/presets.ts` as `BACKLOG_PRESETS`. Each one is a named `Partial<GameFilters>` — clicking one applies the full filter combination at once. The page counts matching games for each preset before rendering so the preset buttons show live numbers.
+Six presets live in `src/lib/backlog/presets.ts` as `BACKLOG_PRESETS`. Each one is a named `Partial<GameFilters>` — clicking one applies the full filter combination at once. The page counts matching games for each preset before rendering so the preset buttons show live numbers.
 
 | Preset | Filters applied |
 |---|---|
@@ -50,10 +50,13 @@ Five presets live in `src/lib/backlog/presets.ts` as `BACKLOG_PRESETS`. Each one
 | Deep Dive | `minHours: 40`, `minReview: 75` |
 | Hidden Gems | `minReview: 85`, `maxReviewCount: 5000` |
 | Play Again | `playtimeStatus: 'play-again'`, sorted by `lastPlayed` ascending |
+| Most Value Waiting | `minReview: 70`, sorted by `valueWaiting` descending |
 
 All presets also set `strictFilters: true` and `playtimeStatus: 'backlog'` (except Play Again, which uses `play-again`).
 
 "Play Again" uses different logic than the standard backlog. A game qualifies when you've played past a completion threshold (default: 50% of HLTB estimate) and haven't launched it in a while (default: 24 months). Both thresholds are configurable via `play_again_completion_pct` and `play_again_dormant_months`.
+
+"Most Value Waiting" is the backward-looking counterpart to the wishlist's deal score, pointed at your own backlog. It sorts by a `valueWaiting` score — review quality × personal interest × remaining unplayed main-story hours — so the games that bubble up are the ones you'll most likely be glad you played: highly rated, genuinely wanted, and with the most content still ahead of you. A game you've finished contributes no remaining hours, and a game without HowLongToBeat sizing contributes none either (Hoard won't claim unplayed value it can't measure), so both sink to the bottom. It's a *sort*, not a hard filter — every backlog game still shows, just ordered by how much value is sitting unplayed. See [value received](/features/value-received/) for how the same completion axis scores games you've already played.
 
 ## Pick for me
 
