@@ -270,6 +270,33 @@ describe('syncPrices', () => {
     expect(result.stats.succeeded).toBe(0);
   });
 
+  it('skips foreign-currency deals (regional storefronts) to keep the USD axis honest', async () => {
+    const games = [makeGame(1, 440, 'TF2', 'tf2')];
+    mockGetGamesForPriceSync.mockReturnValue(games);
+
+    const mockClient = makeMockITADClient({
+      getOverview: vi.fn().mockResolvedValue([{
+        id: 'tf2',
+        // ITAD handed back a GamesPlanet UK GBP deal as the "current" best price.
+        current: {
+          price: { amount: 31.99, currency: 'GBP' },
+          regular: { amount: 44.99, currency: 'GBP' },
+          cut: 29,
+          shop: { name: 'GamesPlanet UK' },
+        },
+        lowest: { price: { amount: 31.99, currency: 'GBP' } },
+        urls: {},
+      }]),
+    });
+    mockGetITADClient.mockReturnValue(mockClient);
+
+    const result = await syncPrices();
+
+    expect(mockInsertPriceSnapshot).not.toHaveBeenCalled();
+    expect(result.stats.skipped).toBe(1);
+    expect(result.stats.succeeded).toBe(0);
+  });
+
   it('returns early when all games fail ITAD ID resolution', async () => {
     const games = [makeGame(1, 440, 'TF2')]; // no itadGameId
     mockGetGamesForPriceSync.mockReturnValue(games);

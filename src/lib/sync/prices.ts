@@ -19,6 +19,7 @@ import {
   getScoringConfig,
 } from '../db/queries';
 import type { SyncResult, ProgressCallback } from './types';
+import { BASE_CURRENCY } from './types';
 import { SUCCESS_RATE_THRESHOLDS } from './health';
 
 export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
@@ -104,11 +105,18 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       const regularPrice = current?.regular?.amount;
       const cut = current?.cut ?? 0;
       const historicalLowPrice = lowest?.price?.amount;
-      const currency = current?.price?.currency ?? 'USD';
+      const currency = current?.price?.currency ?? BASE_CURRENCY;
       const storeName = current?.shop?.name;
 
       // Skip if no price data available
       if (currentPrice === undefined || regularPrice === undefined) {
+        skipped++;
+        continue;
+      }
+
+      // Skip foreign-currency deals — a regional storefront's native-currency amount
+      // (e.g. GamesPlanet UK in GBP) charted on the USD axis fabricates sub-ATL dips.
+      if (currency !== BASE_CURRENCY) {
         skipped++;
         continue;
       }

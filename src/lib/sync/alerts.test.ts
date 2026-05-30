@@ -19,7 +19,7 @@ vi.mock('../db/queries', () => ({
   getFirstUserId: vi.fn(),
 }));
 
-import { checkPriceAlerts, isNewAtl } from './alerts';
+import { checkPriceAlerts, isNewAtl, alreadyNotifiedForSnapshot } from './alerts';
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
 import {
@@ -66,6 +66,8 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
     prevHistoricalLowPrice: null as number | null,
     // Default to plenty of history so existing tests bypass the min-snapshot gate
     snapshotCount: 10,
+    // Default null = "unknown snapshot age", which never suppresses the new-ATL bypass.
+    latestSnapshotAt: null as string | null,
     ...overrides,
   };
 }
@@ -101,6 +103,30 @@ describe('isNewAtl', () => {
 
   it('returns false when currentHistoricalLow is null', () => {
     expect(isNewAtl(4.99, null)).toBe(false);
+  });
+});
+
+describe('alreadyNotifiedForSnapshot', () => {
+  it('returns false when either timestamp is missing', () => {
+    expect(alreadyNotifiedForSnapshot(null, '2026-05-30 00:00:04')).toBe(false);
+    expect(alreadyNotifiedForSnapshot('2026-05-30T00:00:05.000Z', null)).toBe(false);
+    expect(alreadyNotifiedForSnapshot(null, null)).toBe(false);
+  });
+
+  it('returns true when notified at/after the snapshot was recorded (already announced)', () => {
+    // ISO 'Z' notification vs SQLite space-form snapshot, both UTC — the real prod shapes.
+    expect(alreadyNotifiedForSnapshot('2026-05-30T00:00:05.000Z', '2026-05-30 00:00:04')).toBe(true);
+    expect(alreadyNotifiedForSnapshot('2026-05-30 00:00:04', '2026-05-30 00:00:04')).toBe(true);
+  });
+
+  it('returns false when the snapshot is newer than the last notification (fresh ATL)', () => {
+    expect(alreadyNotifiedForSnapshot('2026-05-29T12:00:00.000Z', '2026-05-30 00:00:04')).toBe(false);
+  });
+
+  it('treats the SQLite space-form timestamp as UTC, not local time', () => {
+    // If the space form were parsed as local time, a +/- offset would flip the comparison.
+    const a = alreadyNotifiedForSnapshot('2026-05-30T00:00:00.000Z', '2026-05-30 00:00:00');
+    expect(a).toBe(true);
   });
 });
 
@@ -436,6 +462,66 @@ describe('checkPriceAlerts', () => {
       expect.objectContaining({ currentPrice: 21.49 })
     );
     expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('does not re-fire a new ATL on a second same-day run (Story of Seasons regression)', async () => {
+    // Repro: cron runs every 12h (00:00 + 12:00 UTC) but snapshots dedup to one row
+    // per day. A genuine new ATL fires on the 00:00 run and stamps lastNotifiedAt.
+    // The 12:00 run sees the *same* (unadvanced) snapshot, so isNewAtl still reads the
+    // previous-day baseline and the new-ATL throttle bypass re-fired the identical alert.
+    // Fix: the bypass only applies once per snapshot — if we already notified at/after
+    // the latest snapshot was recorded, fall back to the throttle (which then skips it).
+    const snapshotAt = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(); // recorded 12h ago
+    const notifiedAt = new Date(Date.now() - 12 * 60 * 60 * 1000 + 1000).toISOString(); // fired 1s later
+    const alert = makeAlert({
+      currentPrice: 33.45,
+      targetPrice: 30, // above current, so threshold never triggers
+      notifyOnThreshold: true,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 33.45,
+      prevHistoricalLowPrice: 33.49, // previous-day baseline, looks like a "new" ATL
+      lastNotifiedAt: notifiedAt,
+      latestSnapshotAt: snapshotAt,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.skipped).toBe(1);
+  });
+
+  it('still fires a genuine new ATL recorded after the last notification', async () => {
+    // Complement to the regression above: when the latest snapshot was recorded *after*
+    // the last notification (a real new low landed this run), the bypass must still fire
+    // even inside the 24h throttle window — this is the Atomfall day-N+1 case.
+    const notifiedAt = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(); // 12h ago
+    const snapshotAt = new Date(Date.now() - 60 * 1000).toISOString(); // recorded 1 min ago
+    const alert = makeAlert({
+      currentPrice: 19.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 19.99,
+      prevHistoricalLowPrice: 22.49, // real drop = new ATL
+      lastNotifiedAt: notifiedAt,
+      latestSnapshotAt: snapshotAt,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ currentPrice: 19.99 })
+    );
     expect(result.stats.succeeded).toBe(1);
   });
 
