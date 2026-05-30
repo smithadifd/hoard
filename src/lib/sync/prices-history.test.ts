@@ -100,6 +100,36 @@ describe('mapHistoryToSnapshots', () => {
     expect(rows[0].store).toBe('Steam');
   });
 
+  it('drops foreign-currency events (regional storefronts) to keep the USD axis honest', () => {
+    // Repro: GamesPlanet UK reports GBP prices even for a country=US query. A £31.99 deal
+    // charted as "$31.99" dipped below the genuine USD all-time low. Only USD survives.
+    const events: ITADHistoryEntry[] = [
+      makeEvent('2026-05-22T00:00:00Z', 'GameBillet', 33.55, 49.99, 33), // USD — kept
+      {
+        timestamp: '2026-05-22T00:00:00Z',
+        shop: { id: 9, name: 'GamesPlanet UK' },
+        deal: {
+          price: { amount: 31.99, amountInt: 3199, currency: 'GBP' },
+          regular: { amount: 44.99, amountInt: 4499, currency: 'GBP' },
+          cut: 29,
+        },
+      },
+      {
+        timestamp: '2026-05-22T00:00:00Z',
+        shop: { id: 10, name: 'GamesPlanet DE' },
+        deal: {
+          price: { amount: 34.99, amountInt: 3499, currency: 'EUR' },
+          regular: { amount: 49.99, amountInt: 4999, currency: 'EUR' },
+          cut: 30,
+        },
+      },
+    ];
+    const rows = mapHistoryToSnapshots(42, events);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].store).toBe('GameBillet');
+    expect(rows[0].currency).toBe('USD');
+  });
+
   it('returns an empty array for no events', () => {
     expect(mapHistoryToSnapshots(1, [])).toEqual([]);
   });

@@ -19,6 +19,7 @@ import {
   type PriceSnapshotInsert,
 } from '../db/queries';
 import type { ITADHistoryEntry } from '../itad/types';
+import { BASE_CURRENCY } from './types';
 
 export interface BackfillResult {
   gameId: number;
@@ -87,6 +88,7 @@ export function mapHistoryToSnapshots(
     const priceRegular = event.deal?.regular?.amount;
     const storeName = event.shop?.name;
     const snapshotDate = event.timestamp?.slice(0, 10);
+    const currency = event.deal?.price?.currency ?? BASE_CURRENCY;
 
     if (
       priceCurrent === undefined ||
@@ -97,13 +99,20 @@ export function mapHistoryToSnapshots(
       continue;
     }
 
+    // Drop regional storefronts priced in a foreign currency (e.g. GamesPlanet UK in
+    // GBP). ITAD returns them even for a US query; charting their raw amount on the USD
+    // axis produces phantom sub-ATL dips. See BASE_CURRENCY.
+    if (currency !== BASE_CURRENCY) {
+      continue;
+    }
+
     rows.push({
       gameId,
       store: storeName,
       priceCurrent,
       priceRegular,
       discountPercent: event.deal?.cut ?? 0,
-      currency: event.deal?.price?.currency ?? 'USD',
+      currency,
       snapshotDate,
     });
   }
