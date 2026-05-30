@@ -69,4 +69,17 @@ export const BACKLOG_PRESETS: BacklogPreset[] = [
       strictFilters: true,
     },
   },
+  {
+    id: 'most-value-waiting',
+    label: 'Most Value Waiting',
+    description: 'Well-reviewed games with the most unplayed content — the biggest value sitting in your backlog',
+    icon: 'hourglass',
+    filters: {
+      playtimeStatus: 'backlog',
+      sortBy: 'valueWaiting',
+      sortOrder: 'desc',
+      minReview: 70,
+      strictFilters: true,
+    },
+  },
 ];

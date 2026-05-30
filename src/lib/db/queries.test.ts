@@ -480,6 +480,58 @@ describe('value received (owned games)', () => {
   });
 });
 
+describe('getEnrichedGames — "Most Value Waiting" sort (valueWaiting)', () => {
+  it('ranks highly-rated, lots-unplayed games above played-through and unsized ones', () => {
+    // All owned, default interest (3); review held constant so remaining unplayed
+    // content drives the order: remaining = (1 − min(1, played/hltb)) × hltb.
+    const gem = seedGame(testDb, { steamAppId: 800, title: 'Unplayed Gem', reviewScore: 95, hltbMain: 40 });
+    seedUserGame(testDb, gem, { isOwned: true, playtimeMinutes: 0 }); // 40h remaining → highest
+
+    const half = seedGame(testDb, { steamAppId: 801, title: 'Half Played', reviewScore: 95, hltbMain: 40 });
+    seedUserGame(testDb, half, { isOwned: true, playtimeMinutes: 1200 }); // 20h played → 20h remaining
+
+    const done = seedGame(testDb, { steamAppId: 802, title: 'Finished', reviewScore: 95, hltbMain: 40 });
+    seedUserGame(testDb, done, { isOwned: true, playtimeMinutes: 2400 }); // fully played → 0 remaining
+
+    // No HLTB sizing → 0 remaining (we don't claim unplayed value we can't measure) → sorts last.
+    const unsized = seedGame(testDb, { steamAppId: 803, title: 'No Duration', reviewScore: 95 });
+    seedUserGame(testDb, unsized, { isOwned: true, playtimeMinutes: 0 });
+
+    const result = getEnrichedGames(
+      { view: 'library', sortBy: 'valueWaiting', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    );
+    const order = result.games.map((g) => g.title);
+
+    expect(order[0]).toBe('Unplayed Gem');
+    expect(order[1]).toBe('Half Played');
+    // Both zero-remaining games (played-through and unsized) rank below the rest.
+    expect(order.indexOf('Unplayed Gem')).toBeLessThan(order.indexOf('Finished'));
+    expect(order.indexOf('Unplayed Gem')).toBeLessThan(order.indexOf('No Duration'));
+    expect(order.indexOf('Half Played')).toBeLessThan(order.indexOf('Finished'));
+  });
+
+  it('weights review quality and personal interest, not just remaining hours', () => {
+    // Identical remaining content (both unplayed, same HLTB); review × interest breaks the tie.
+    const strong = seedGame(testDb, { steamAppId: 810, title: 'Strong Signal', reviewScore: 95, hltbMain: 20 });
+    seedUserGame(testDb, strong, { isOwned: true, playtimeMinutes: 0, personalInterest: 5 });
+
+    const weak = seedGame(testDb, { steamAppId: 811, title: 'Weak Signal', reviewScore: 60, hltbMain: 20 });
+    seedUserGame(testDb, weak, { isOwned: true, playtimeMinutes: 0, personalInterest: 1 });
+
+    const result = getEnrichedGames(
+      { view: 'library', sortBy: 'valueWaiting', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    );
+    const order = result.games.map((g) => g.title);
+    expect(order.indexOf('Strong Signal')).toBeLessThan(order.indexOf('Weak Signal'));
+  });
+});
+
 describe('getEnrichedGameById', () => {
   it('returns game for valid ID', () => {
     const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
