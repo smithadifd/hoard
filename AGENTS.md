@@ -55,6 +55,12 @@ build; the non-goals say what to refuse even when tempting. Both halves are load
 - **Generic by default.** Build for any user's library, not the maintainer's specific one — and for
   any reasonable household using one install (roommates, a family on a shared account), not a single
   assumed user. *Revisit signal: none expected — this keeps the app honest.*
+- **Free, low-friction core.** Hoard's core value runs on services that cost nothing — Steam, ITAD,
+  and HowLongToBeat are all free — so a working install never requires a paid subscription. Features
+  that add cost (e.g. a paid AI service) or friction (e.g. hand-entering each game's purchase price)
+  are welcome, but only as opt-in depth that never gates or degrades the base experience for those who
+  skip them. *Revisit if a core dependency (Steam, ITAD, or HLTB) moves its required API behind a
+  mandatory paid tier — a fundamental shift that would force the question, not a casual one.*
 
 Note the symmetry with the test: gamification is a *non-goal as engagement machinery*, but **not**
 banned if a feature passes the test honestly (a truthful "12 of 40 backlog hours played" informs a
