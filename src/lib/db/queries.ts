@@ -21,7 +21,7 @@ import {
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore } from '@/lib/scoring/engine';
-import { calculateValueReceived } from '@/lib/scoring/valueReceived';
+import { calculateValueReceived, type ValueReceivedTier } from '@/lib/scoring/valueReceived';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 import type { NotificationPreferences, ChannelRouting, NotificationCategory } from '@/lib/notifications/preferences';
@@ -853,6 +853,22 @@ export function getEnrichedGames(
 
   const where = and(...conditions);
 
+  // Value Received sorts are computed per-game in JS (calculateValueReceived) AFTER
+  // pagination, so they must be expressed in SQL here to survive paging. The tier sort
+  // mirrors calculateValueReceived's bands using the user's LIVE configured $/hr
+  // thresholds (interpolated below), so it can't drift from the on-card badges.
+  const { thresholds: vrThresholds } = getScoringConfig();
+  const dphT = vrThresholds.maxDollarsPerHour;
+  const hoursPlayedExpr = sql`(CAST(${userGames.playtimeMinutes} AS REAL) / 60.0)`;
+  // Per-game $/hr target, picked by review tier (mirrors getMaxDollarsPerHour).
+  const dphTargetExpr = sql`(CASE
+    WHEN ${games.reviewScore} IS NULL THEN ${dphT.positive}
+    WHEN ${games.reviewScore} >= 95 THEN ${dphT.overwhelminglyPositive}
+    WHEN ${games.reviewScore} >= 80 THEN ${dphT.veryPositive}
+    WHEN ${games.reviewScore} >= 70 THEN ${dphT.positive}
+    WHEN ${games.reviewScore} >= 40 THEN ${dphT.mixed}
+    ELSE ${dphT.negative} END)`;
+
   // Sort mapping — includes subqueries for price/dealScore from latest snapshots.
   // Note: dealScore sort uses the cached snapshot value (can't compute weighted score in SQL).
   // The displayed badges are always recomputed live, so sort order may slightly differ from badges.
@@ -911,6 +927,34 @@ export function getEnrichedGames(
            ELSE 0.0
          END)
     )`,
+    // Owned-game Value Received sorts (backward-looking; NULL for games we can't grade,
+    // which SQLite sorts last under the common DESC direction).
+    pricePaid: userGames.pricePaid,
+    completionRatio: sql`(CASE
+      WHEN ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0
+        THEN ${hoursPlayedExpr} / ${games.hltbMain}
+      ELSE NULL END)`,
+    realizedDollarsPerHour: sql`(CASE
+      WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0
+        THEN ${userGames.pricePaid} / ${hoursPlayedExpr}
+      ELSE NULL END)`,
+    // Discrete tier ordinal (exceeded 4 → unrealized 1), mirroring moneyTier/timeTier.
+    // No baseline (played, but no HLTB and no price) → NULL → sorts last.
+    valueReceived: sql`(CASE
+      WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
+        CASE
+          WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 0.5 THEN 4
+          WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} THEN 3
+          WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 2 THEN 2
+          ELSE 1 END
+      WHEN ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
+        CASE
+          WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 1.1 THEN 4
+          WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 0.8 THEN 3
+          WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 0.2 THEN 2
+          ELSE 1 END
+      WHEN ${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} <= 0 THEN 1
+      ELSE NULL END)`,
   } as const;
   type SortKey = keyof typeof sortMap;
   const sortKey = (filters.sortBy && filters.sortBy in sortMap ? filters.sortBy : 'title') as SortKey;
@@ -3372,6 +3416,107 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
   }
 
   return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
+}
+
+export type ValueReceivedBucket = ValueReceivedTier | 'none';
+
+export interface ValueReceivedOverview {
+  /** Owned-game counts per value tier, plus a "none" bucket (no baseline to grade). */
+  distribution: Array<{ bucket: ValueReceivedBucket; count: number }>;
+  stats: {
+    totalSpent: number; // sum of recorded price_paid across owned games (USD)
+    pricedGames: number; // owned games with a recorded price
+    totalHours: number; // total hours played across owned games
+    blendedDollarsPerHour: number | null; // totalSpent(money-lens) / hours(money-lens)
+    expectedValueHits: number; // money-lens games that reached/exceeded expected value
+    moneyLensGames: number; // owned games graded on the money lens (priced + played)
+  };
+}
+
+/**
+ * Dashboard rollup of Value Received across the owned library. Computes each game's
+ * tier in JS via {@link calculateValueReceived} (the score has no stored column), so
+ * the donut and the stat tile stay in lockstep with the per-card badges.
+ */
+export function getValueReceivedOverview(userId: string): ValueReceivedOverview {
+  const db = getDb();
+  const { thresholds } = getScoringConfig();
+
+  const rows = db.all(sql`
+    SELECT ug.playtime_minutes as playtimeMinutes,
+           ug.price_paid as pricePaid,
+           g.review_score as reviewScore,
+           g.hltb_main as hltbMain
+    FROM user_games ug
+    JOIN games g ON g.id = ug.game_id
+    WHERE ug.user_id = ${userId} AND ug.is_owned = 1
+  `) as Array<{
+    playtimeMinutes: number | null;
+    pricePaid: number | null;
+    reviewScore: number | null;
+    hltbMain: number | null;
+  }>;
+
+  const buckets: Record<ValueReceivedBucket, number> = {
+    exceeded: 0,
+    realized: 0,
+    approaching: 0,
+    unrealized: 0,
+    none: 0,
+  };
+
+  let totalSpent = 0;
+  let pricedGames = 0;
+  let totalMinutes = 0;
+  let moneyLensSpent = 0;
+  let moneyLensMinutes = 0;
+  let expectedValueHits = 0;
+  let moneyLensGames = 0;
+
+  for (const r of rows) {
+    const vr = calculateValueReceived(
+      {
+        playtimeMinutes: r.playtimeMinutes ?? 0,
+        hltbMainHours: r.hltbMain,
+        reviewPercent: r.reviewScore,
+        pricePaid: r.pricePaid,
+      },
+      thresholds,
+    );
+
+    buckets[vr.lens === 'none' ? 'none' : vr.tier]++;
+    totalMinutes += Math.max(0, r.playtimeMinutes ?? 0);
+    if (r.pricePaid != null && r.pricePaid > 0) {
+      totalSpent += r.pricePaid;
+      pricedGames++;
+    }
+    if (vr.lens === 'money') {
+      // Money lens implies pricePaid > 0 and playtime > 0 (see calculateValueReceived).
+      moneyLensGames++;
+      moneyLensSpent += r.pricePaid ?? 0;
+      moneyLensMinutes += Math.max(0, r.playtimeMinutes ?? 0);
+      if (vr.receivedExpectedValue) expectedValueHits++;
+    }
+  }
+
+  const moneyLensHours = moneyLensMinutes / 60;
+  const blendedDollarsPerHour =
+    moneyLensHours > 0 ? Math.round((moneyLensSpent / moneyLensHours) * 100) / 100 : null;
+
+  return {
+    distribution: (Object.keys(buckets) as ValueReceivedBucket[]).map((bucket) => ({
+      bucket,
+      count: buckets[bucket],
+    })),
+    stats: {
+      totalSpent: Math.round(totalSpent * 100) / 100,
+      pricedGames,
+      totalHours: Math.round(totalMinutes / 60),
+      blendedDollarsPerHour,
+      expectedValueHits,
+      moneyLensGames,
+    },
+  };
 }
 
 export type ActivityType = 'wishlisted' | 'played' | 'new_atl';

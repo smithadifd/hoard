@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { NotificationPanel } from './NotificationPanel';
+import { DealDigestModal, type DealDigestGame } from '@/components/notifications/DealDigestModal';
 import type { NotificationRow } from '@/lib/notifications/types';
 
 const UNREAD_POLL_MS = 30_000;
@@ -25,6 +26,7 @@ export function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [digestGames, setDigestGames] = useState<DealDigestGame[] | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Click-outside dismiss (matches UserMenu pattern)
@@ -119,9 +121,15 @@ export function NotificationBell() {
           loading={loading}
           onDismiss={handleDismiss}
           onDismissAll={handleDismissAll}
+          onOpenDigest={(games) => {
+            setDigestGames(games);
+            setOpen(false);
+          }}
           onClose={() => setOpen(false)}
         />
       )}
+
+      <DealDigestModal games={digestGames} onClose={() => setDigestGames(null)} />
     </div>
   );
 }

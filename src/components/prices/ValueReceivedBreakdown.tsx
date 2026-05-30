@@ -27,6 +27,30 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
 
   const lens = game.valueReceivedLens ?? 'time';
   const hoursPlayed = Math.round((game.playtimeMinutes / 60) * 10) / 10;
+
+  // No honest baseline: played, but no HLTB estimate and no recorded price. Don't
+  // claim a value tier — explain what's missing and how to unlock the grade.
+  if (lens === 'none') {
+    return (
+      <div className="rounded-xl bg-card p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">
+            Value Received
+          </h3>
+          <span className="text-sm font-bold text-muted-foreground">No estimate</span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">Playtime</span>
+          <span className="font-label font-medium tabular-nums">{hoursPlayed}h</span>
+        </div>
+        <p className="text-[10px] text-muted-foreground/60 pt-1">
+          No HowLongToBeat main-story estimate and no recorded price, so there&apos;s no honest
+          baseline to grade value against. Add a duration or what you paid to score this game.
+        </p>
+      </div>
+    );
+  }
+
   const completionRatio = game.completionRatio ?? 0;
   const pct = Math.round(completionRatio * 100);
   const hasHltb = game.hltbMain !== undefined && game.hltbMain > 0;

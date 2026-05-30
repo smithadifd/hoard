@@ -131,15 +131,29 @@ describe('calculateValueReceived', () => {
       expect(r.tier).toBe('exceeded'); // 20h / 10h = 2.0
     });
 
-    it('missing HLTB + no price uses the absolute-hours fallback', () => {
+    it('missing HLTB + no price has no honest baseline → lens "none", no faked tier', () => {
       const base = { hltbMainHours: null, reviewPercent: 85 as number | null, pricePaid: null as number | null };
-      expect(calculateValueReceived({ ...base, playtimeMinutes: 10 }).tier).toBe('unrealized'); // <0.25h
-      expect(calculateValueReceived({ ...base, playtimeMinutes: 300 }).tier).toBe('approaching'); // 5h
-      expect(calculateValueReceived({ ...base, playtimeMinutes: 600 }).tier).toBe('realized'); // 10h
-      expect(calculateValueReceived({ ...base, playtimeMinutes: 1500 }).tier).toBe('exceeded'); // 25h
+      // Any amount of playtime with neither a duration estimate nor a price can't be graded.
+      for (const playtimeMinutes of [10, 300, 600, 1500]) {
+        const r = calculateValueReceived({ ...base, playtimeMinutes });
+        expect(r.lens).toBe('none');
+        expect(r.completionRatio).toBe(0);
+        expect(r.realizedDollarsPerHour).toBeNull();
+      }
       const r = calculateValueReceived({ ...base, playtimeMinutes: 600 });
-      expect(r.completionRatio).toBe(0);
+      expect(r.summary).toBe('10 hours played — add a duration or price to grade value');
+    });
+
+    it('never-played with no HLTB stays "unrealized" on the time lens (not "none")', () => {
+      const r = calculateValueReceived({
+        hltbMainHours: null,
+        reviewPercent: 85,
+        pricePaid: null,
+        playtimeMinutes: 0,
+      });
+      expect(r.tier).toBe('unrealized');
       expect(r.lens).toBe('time');
+      expect(r.summary).toBe('Never played — value unrealized');
     });
 
     it('missing HLTB + price still grades via the money lens', () => {

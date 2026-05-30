@@ -22,8 +22,10 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
   const filters: GameFilters = {
     view: 'library',
     strictFilters: true, // Backlog always uses strict filters — no NULL pass-through
-    sortBy: 'title',
-    sortOrder: 'asc',
+    // Default to "Most Value Waiting": the backlog's whole job is "what should I play
+    // next?", and valueWaiting (well-reviewed × high-interest × unplayed hours) answers it.
+    sortBy: 'valueWaiting',
+    sortOrder: 'desc',
     playtimeStatus: 'backlog', // Default to smart backlog (unplayed + barely started)
     ...parseGameFiltersFromParams(params),
   };

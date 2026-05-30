@@ -89,7 +89,7 @@ All fetching goes through `GET /api/games` with `view=library` and `playtimeStat
 
 ## Scoring and the backlog
 
-The backlog uses the same deal score computed by the [scoring engine](/architecture/scoring-engine/) — you can see it on game cards and in the detail page. But deal score isn't the sorting axis here. The default sort is alphabetical (`sortBy: 'title'`), and the Pick for Me weighting emphasizes `personalInterest` over deal score. The intent is to surface games you actually want to play, not games that happen to be on sale.
+The backlog uses the same deal score computed by the [scoring engine](/architecture/scoring-engine/) — you can see it on game cards and in the detail page. But deal score isn't the sorting axis here. The default sort is **Most Value Waiting** (`sortBy: 'valueWaiting'` descending) — the backlog's whole job is answering "what should I play next?", and that's the axis that answers it — and it's offered directly in the sort menu alongside the usual options. The Pick for Me weighting emphasizes `personalInterest` over deal score. The intent is to surface games you actually want to play, not games that happen to be on sale.
 
 If you want to surface the best deals in your backlog specifically, add `minInterest` and sort by deal score manually using the sort controls.
 

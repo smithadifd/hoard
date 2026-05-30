@@ -31,6 +31,7 @@ import {
   getEnrichedGames,
   getEnrichedGameById,
   getDashboardStats,
+  getValueReceivedOverview,
   createSyncLog,
   completeSyncLog,
   getRecentSyncLogs,
@@ -500,6 +501,16 @@ describe('value received (owned games)', () => {
     expect(sv?.valueReceivedTier).toBe('unrealized');
     expect(sv?.valueReceivedLens).toBe('time');
   });
+
+  it('reports the "none" lens for a played game with no HLTB and no price (no honest baseline)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 704, title: 'Age of Empires II', reviewScore: 95, hltbMain: null });
+    seedUserGame(testDb, gameId, { isOwned: true, playtimeMinutes: 6000 }); // 100h, no duration, no price
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.valueReceivedLens).toBe('none');
+    // Tier carries an inert placeholder; the UI keys off the 'none' lens, not the tier.
+    expect(game?.realizedDollarsPerHour).toBeUndefined();
+  });
 });
 
 describe('capturePricePaidSuggestions (price-paid suggestion capture)', () => {
@@ -664,6 +675,119 @@ describe('getEnrichedGames — "Most Value Waiting" sort (valueWaiting)', () => 
     );
     const order = result.games.map((g) => g.title);
     expect(order.indexOf('Strong Signal')).toBeLessThan(order.indexOf('Weak Signal'));
+  });
+});
+
+describe('getEnrichedGames — Value Received sorts', () => {
+  it('sorts by price paid (desc = most expensive first; unpriced last)', () => {
+    const a = seedGame(testDb, { steamAppId: 820, title: 'Pricey' });
+    seedUserGame(testDb, a, { isOwned: true, pricePaid: 59.99 });
+    const b = seedGame(testDb, { steamAppId: 821, title: 'Cheap' });
+    seedUserGame(testDb, b, { isOwned: true, pricePaid: 4.99 });
+    const c = seedGame(testDb, { steamAppId: 822, title: 'Unpriced' });
+    seedUserGame(testDb, c, { isOwned: true });
+
+    const order = getEnrichedGames(
+      { view: 'library', sortBy: 'pricePaid', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    ).games.map((g) => g.title);
+
+    expect(order[0]).toBe('Pricey');
+    expect(order[1]).toBe('Cheap');
+    expect(order.indexOf('Unpriced')).toBe(order.length - 1);
+  });
+
+  it('sorts by realized $/hr (asc = best ROI first)', () => {
+    const cheap = seedGame(testDb, { steamAppId: 830, title: 'Great ROI', reviewScore: 90 });
+    seedUserGame(testDb, cheap, { isOwned: true, pricePaid: 10, playtimeMinutes: 6000 }); // $0.10/hr
+    const dear = seedGame(testDb, { steamAppId: 831, title: 'Poor ROI', reviewScore: 90 });
+    seedUserGame(testDb, dear, { isOwned: true, pricePaid: 60, playtimeMinutes: 60 }); // $60/hr
+
+    const order = getEnrichedGames(
+      { view: 'library', sortBy: 'realizedDollarsPerHour', sortOrder: 'asc' },
+      undefined,
+      undefined,
+      'default'
+    ).games.map((g) => g.title);
+
+    expect(order.indexOf('Great ROI')).toBeLessThan(order.indexOf('Poor ROI'));
+  });
+
+  it('sorts by completion ratio (desc = most finished first)', () => {
+    const done = seedGame(testDb, { steamAppId: 840, title: 'Finished', hltbMain: 10 });
+    seedUserGame(testDb, done, { isOwned: true, playtimeMinutes: 900 }); // 15h / 10h = 1.5
+    const barely = seedGame(testDb, { steamAppId: 841, title: 'Barely Touched', hltbMain: 10 });
+    seedUserGame(testDb, barely, { isOwned: true, playtimeMinutes: 60 }); // 1h / 10h = 0.1
+
+    const order = getEnrichedGames(
+      { view: 'library', sortBy: 'completionRatio', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    ).games.map((g) => g.title);
+
+    expect(order.indexOf('Finished')).toBeLessThan(order.indexOf('Barely Touched'));
+  });
+
+  it('sorts by value received tier (desc = exceeded first; no-baseline last)', () => {
+    // Time lens: 2.0 ratio → exceeded.
+    const exceeded = seedGame(testDb, { steamAppId: 850, title: 'Exceeded', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, exceeded, { isOwned: true, playtimeMinutes: 1200 });
+    // Time lens: 0.1 ratio → unrealized.
+    const unrealized = seedGame(testDb, { steamAppId: 851, title: 'Unrealized', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, unrealized, { isOwned: true, playtimeMinutes: 60 });
+    // No HLTB, no price, played → no baseline → sorts last.
+    const none = seedGame(testDb, { steamAppId: 852, title: 'No Baseline', reviewScore: 90, hltbMain: null });
+    seedUserGame(testDb, none, { isOwned: true, playtimeMinutes: 600 });
+
+    const order = getEnrichedGames(
+      { view: 'library', sortBy: 'valueReceived', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    ).games.map((g) => g.title);
+
+    expect(order[0]).toBe('Exceeded');
+    expect(order.indexOf('Exceeded')).toBeLessThan(order.indexOf('Unrealized'));
+    expect(order.indexOf('No Baseline')).toBe(order.length - 1);
+  });
+});
+
+describe('getValueReceivedOverview', () => {
+  it('buckets owned games by tier and rolls up spend/value stats', () => {
+    // Money lens, $0.61/hr vs OP $4 target → exceeded, received expected value.
+    const a = seedGame(testDb, { steamAppId: 860, title: 'Celeste', reviewScore: 96, hltbMain: 8 });
+    seedUserGame(testDb, a, { isOwned: true, playtimeMinutes: 2460, pricePaid: 24.99 });
+    // Time lens, 0.1 ratio → unrealized, no price.
+    const b = seedGame(testDb, { steamAppId: 861, title: 'Backlog Item', reviewScore: 90, hltbMain: 50 });
+    seedUserGame(testDb, b, { isOwned: true, playtimeMinutes: 300 });
+    // No HLTB, no price, played → none bucket.
+    const c = seedGame(testDb, { steamAppId: 862, title: 'Sandbox', reviewScore: 90, hltbMain: null });
+    seedUserGame(testDb, c, { isOwned: true, playtimeMinutes: 6000 });
+    // Wishlist-only game must be ignored entirely.
+    const w = seedGame(testDb, { steamAppId: 863, title: 'Wishlisted', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, w, { isOwned: false, isWishlisted: true, playtimeMinutes: 0 });
+
+    const overview = getValueReceivedOverview('default');
+    const counts = Object.fromEntries(overview.distribution.map((d) => [d.bucket, d.count]));
+
+    expect(counts.exceeded).toBe(1);
+    expect(counts.unrealized).toBe(1);
+    expect(counts.none).toBe(1);
+    expect(overview.stats.pricedGames).toBe(1);
+    expect(overview.stats.totalSpent).toBe(24.99);
+    expect(overview.stats.moneyLensGames).toBe(1);
+    expect(overview.stats.expectedValueHits).toBe(1);
+    expect(overview.stats.blendedDollarsPerHour).toBe(0.61);
+  });
+
+  it('returns all-zero buckets and null blended $/hr for an empty library', () => {
+    const overview = getValueReceivedOverview('default');
+    expect(overview.distribution.every((d) => d.count === 0)).toBe(true);
+    expect(overview.stats.blendedDollarsPerHour).toBeNull();
+    expect(overview.stats.totalSpent).toBe(0);
   });
 });
 
