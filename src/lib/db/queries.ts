@@ -2705,6 +2705,9 @@ export interface ActiveAlertRow extends PriceAlertRow {
   prevHistoricalLowPrice: number | null;
   // Total snapshots observed for this game (gate against firing alerts on too little history)
   snapshotCount: number;
+  // When the latest snapshot was recorded — used to suppress re-firing a "new ATL"
+  // on a second same-day run, when the daily-deduped snapshot hasn't advanced.
+  latestSnapshotAt: string | null;
 }
 
 export interface AlertWithGame extends PriceAlertRow {
@@ -2813,6 +2816,7 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     storeUrl: string | null;
     prevHistoricalLowPrice: number | null;
     snapshotCount: number;
+    latestSnapshotAt: string | null;
   }
 
   const rows = db.all(sql`
@@ -2843,7 +2847,8 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
               OR (ps_prev.snapshot_date = ps.snapshot_date AND ps_prev.id < ps.id))
        ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
        LIMIT 1) as prevHistoricalLowPrice,
-      (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount
+      (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount,
+      ps.created_at as latestSnapshotAt
     FROM price_alerts pa
     INNER JOIN games g ON pa.game_id = g.id
     INNER JOIN user_games ug ON g.id = ug.game_id AND ug.user_id = ${userId}
@@ -2880,6 +2885,7 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     storeUrl: r.storeUrl,
     prevHistoricalLowPrice: r.prevHistoricalLowPrice,
     snapshotCount: r.snapshotCount,
+    latestSnapshotAt: r.latestSnapshotAt,
   }));
 }
 
@@ -3040,6 +3046,9 @@ export interface AutoAlertCandidate {
   prevHistoricalLowPrice: number | null;
   // Total snapshots observed for this game (gate against firing alerts on too little history)
   snapshotCount: number;
+  // When the latest snapshot was recorded — used to suppress re-firing a "new ATL"
+  // on a second same-day run, when the daily-deduped snapshot hasn't advanced.
+  latestSnapshotAt: string | null;
 }
 
 /**
@@ -3066,6 +3075,7 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
     lastAutoAlertAt: string | null;
     prevHistoricalLowPrice: number | null;
     snapshotCount: number;
+    latestSnapshotAt: string | null;
   }
 
   const rows = db.all(sql`
@@ -3091,7 +3101,8 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
               OR (ps_prev.snapshot_date = ps.snapshot_date AND ps_prev.id < ps.id))
        ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
        LIMIT 1) as prevHistoricalLowPrice,
-      (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount
+      (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount,
+      ps.created_at as latestSnapshotAt
     FROM user_games ug
     INNER JOIN games g ON ug.game_id = g.id
     INNER JOIN price_snapshots ps ON g.id = ps.game_id

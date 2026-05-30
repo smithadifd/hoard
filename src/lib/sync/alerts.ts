@@ -38,6 +38,36 @@ export function isNewAtl(prevHistoricalLow: number | null | undefined, currentHi
   return false;
 }
 
+/**
+ * Parse a timestamp that may be either ISO-8601 (`...Z`, from `toISOString()`) or
+ * SQLite's `datetime('now')` form (`YYYY-MM-DD HH:MM:SS`, UTC, no zone). Returns ms,
+ * or NaN if unparseable. The container runs in UTC, but normalizing explicitly keeps
+ * the comparison correct in dev/test environments on other timezones.
+ */
+function parseTimestampMs(ts: string | null | undefined): number {
+  if (!ts) return NaN;
+  const iso = ts.includes('T') ? ts : `${ts.replace(' ', 'T')}Z`;
+  return new Date(iso).getTime();
+}
+
+/**
+ * True if we've already notified for the current (latest) snapshot — i.e. the last
+ * notification happened at or after that snapshot was recorded. Snapshots are deduped
+ * to one row per (game, store, day), so a second same-day price-check run re-evaluates
+ * the *same* latest snapshot. Without this guard, a genuine-new-ATL run earlier in the
+ * day re-fires on the next run because `isNewAtl` still sees the (unchanged) previous-day
+ * baseline. This lets the new-ATL throttle bypass fire once per snapshot, not once per run.
+ */
+export function alreadyNotifiedForSnapshot(
+  lastNotifiedAt: string | null | undefined,
+  latestSnapshotAt: string | null | undefined,
+): boolean {
+  const notified = parseTimestampMs(lastNotifiedAt);
+  const snapshot = parseTimestampMs(latestSnapshotAt);
+  if (Number.isNaN(notified) || Number.isNaN(snapshot)) return false;
+  return notified >= snapshot;
+}
+
 interface DigestGame {
   title: string;
   currentPrice: number;
@@ -164,7 +194,13 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
       if (atlGated) insufficientHistory++;
       const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated;
-      const isNew = atlTriggered ? isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) : false;
+      // A new ATL only counts as "new" once per snapshot. The daily-deduped snapshot
+      // doesn't advance on a second same-day run, so without this guard isNewAtl would
+      // keep seeing the previous-day baseline and re-fire the same alert every run.
+      const isNew =
+        atlTriggered &&
+        isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) &&
+        !alreadyNotifiedForSnapshot(alert.lastNotifiedAt, alert.latestSnapshotAt);
 
       const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
       if (!shouldNotify) continue;
@@ -224,7 +260,11 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         }
 
         const isFree = candidate.currentPrice === 0;
-        const isNew = isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice);
+        // See the explicit-alert path: gate the new-ATL bypass to once per snapshot so a
+        // second same-day run doesn't re-fire against the unchanged daily snapshot.
+        const isNew =
+          isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice) &&
+          !alreadyNotifiedForSnapshot(candidate.lastAutoAlertAt, candidate.latestSnapshotAt);
 
         // Throttle: skip if recently notified. A genuine new ATL bypasses — a
         // "still at ATL" digest entry on day N must not silence a genuine new ATL
