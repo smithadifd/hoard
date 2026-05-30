@@ -15,6 +15,7 @@ export type NotificationCategory =
   | 'deal-digest' // still-at-ATL roundup — batched, lower signal
   | 'release' // game launch + early-access graduation
   | 'milestone' // onboarding milestones
+  | 'price-paid-suggestion' // owned-game: confirm what you paid (capture → confirm)
   | 'system'; // sync-health, backup failure, ops
 
 /** Stable order for iterating categories in the UI and when merging defaults. */
@@ -23,6 +24,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   'deal-digest',
   'release',
   'milestone',
+  'price-paid-suggestion',
   'system',
 ];
 
@@ -55,6 +57,8 @@ export const DEFAULT_PREFERENCES: NotificationPreferences = {
     'deal-digest': { inApp: true, discord: true },
     release: { inApp: true, discord: true },
     milestone: { inApp: true, discord: true },
+    // Transactional nudge — in-app only by default; a Discord ping would be noise.
+    'price-paid-suggestion': { inApp: true, discord: false },
     system: { inApp: true, discord: true },
   },
   frequency: { throttleHours: DEFAULT_THROTTLE_HOURS },

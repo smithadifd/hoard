@@ -475,6 +475,79 @@ export function cascadePurchaseCleanup(gameIds: number[], userId: string): void 
     .run();
 }
 
+/**
+ * Capture a price-paid *suggestion* for newly-purchased games (Phase 3).
+ *
+ * Called at wishlist→owned detection (see syncLibrary) for the games that just
+ * flipped. For each game with no recorded price yet, estimate what the user
+ * likely paid from the *last tracked price* — the cheapest store's current price
+ * on the most recent snapshot date we hold. All snapshots are USD (BASE_CURRENCY
+ * ingest filter), so no conversion. This is only ever a suggestion: it's written
+ * to `pricePaidSuggested`, never to `pricePaid`, and becomes the real price only
+ * on an explicit user confirm.
+ *
+ * Honest boundary: a game with no snapshot (never wishlisted long enough to be
+ * price-synced, or owned before Hoard) gets no suggestion — we don't fabricate a
+ * number. Returns the rows it actually set so the caller can notify.
+ *
+ * Pure synchronous DB writes — safe to call inside the syncLibrary transaction.
+ */
+export function capturePricePaidSuggestions(
+  gameIds: number[],
+  userId: string,
+): { gameId: number; title: string; suggested: number; asOf: string }[] {
+  if (gameIds.length === 0) return [];
+  const db = getDb();
+  const now = new Date().toISOString();
+  const captured: { gameId: number; title: string; suggested: number; asOf: string }[] = [];
+
+  for (const gameId of gameIds) {
+    // Never clobber a price the user already recorded.
+    const ug = db
+      .select({ pricePaid: userGames.pricePaid, title: games.title })
+      .from(userGames)
+      .innerJoin(games, eq(games.id, userGames.gameId))
+      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+      .get();
+    if (!ug || ug.pricePaid != null) continue;
+
+    // Last tracked price = cheapest store's current price on the latest snapshot
+    // date for this game. No snapshot ⇒ no suggestion (the honest boundary).
+    const snap = db
+      .select({
+        priceCurrent: priceSnapshots.priceCurrent,
+        snapshotDate: priceSnapshots.snapshotDate,
+      })
+      .from(priceSnapshots)
+      .where(
+        and(
+          eq(priceSnapshots.gameId, gameId),
+          sql`${priceSnapshots.snapshotDate} = (SELECT MAX(snapshot_date) FROM price_snapshots WHERE game_id = ${gameId})`,
+        ),
+      )
+      .orderBy(asc(priceSnapshots.priceCurrent))
+      .limit(1)
+      .get();
+    // No snapshot, or a free/$0 price → no suggestion (a "you paid $0" prompt is
+    // meaningless; mirrors how the money lens treats free games).
+    if (!snap || snap.priceCurrent == null || snap.priceCurrent <= 0) continue;
+
+    db.update(userGames)
+      .set({
+        pricePaidSuggested: snap.priceCurrent,
+        // Clear any stale dismissal so a fresh purchase re-surfaces the estimate.
+        pricePaidSuggestionDismissedAt: null,
+        updatedAt: now,
+      })
+      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+      .run();
+
+    captured.push({ gameId, title: ug.title, suggested: snap.priceCurrent, asOf: snap.snapshotDate });
+  }
+
+  return captured;
+}
+
 export function upsertTags(gameId: number, tagNames: string[], type: string): void {
   const db = getDb();
   const sqlite = db.$client;
@@ -878,6 +951,8 @@ export function getEnrichedGames(
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
       pricePaid: userGames.pricePaid,
+      pricePaidSuggested: userGames.pricePaidSuggested,
+      pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
       atlHitDate:
         filters.view === 'recent-deals'
           ? sql<string | null>`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`
@@ -1064,6 +1139,9 @@ export function getEnrichedGames(
         thresholds,
       );
       base.pricePaid = r.pricePaid ?? undefined;
+      base.pricePaidSuggested = r.pricePaidSuggested ?? undefined;
+      base.hasPricePaidSuggestion =
+        r.pricePaid == null && r.pricePaidSuggested != null && r.pricePaidSuggestionDismissedAt == null;
       base.valueReceivedTier = vr.tier;
       base.valueReceivedLens = vr.lens;
       base.completionRatio = vr.completionRatio;
@@ -1136,6 +1214,8 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
       pricePaid: userGames.pricePaid,
+      pricePaidSuggested: userGames.pricePaidSuggested,
+      pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
       notes: userGames.notes,
     })
     .from(games)
@@ -1244,6 +1324,9 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       thresholds,
     );
     game.pricePaid = row.pricePaid ?? undefined;
+    game.pricePaidSuggested = row.pricePaidSuggested ?? undefined;
+    game.hasPricePaidSuggestion =
+      row.pricePaid == null && row.pricePaidSuggested != null && row.pricePaidSuggestionDismissedAt == null;
     game.valueReceivedTier = vr.tier;
     game.valueReceivedLens = vr.lens;
     game.completionRatio = vr.completionRatio;
@@ -2212,6 +2295,8 @@ export function updateUserGame(
     isWishlisted: boolean;
     autoAlertDisabled: boolean;
     pricePaid: number | null;
+    /** Action flag (not a column): "Not now" on a price-paid suggestion → stamp dismissed. */
+    dismissPriceSuggestion: boolean;
   }>,
   userId: string
 ): boolean {
@@ -2227,7 +2312,7 @@ export function updateUserGame(
         : undefined;
 
   // Only spread known user_games columns to prevent unexpected fields leaking through
-  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled, pricePaid } = updates;
+  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled, pricePaid, dismissPriceSuggestion } = updates;
 
   const result = db
     .update(userGames)
@@ -2239,8 +2324,15 @@ export function updateUserGame(
       ...(priceThreshold !== undefined && { priceThreshold }),
       ...(isWishlisted !== undefined && { isWishlisted }),
       ...(autoAlertDisabled !== undefined && { autoAlertDisabled }),
-      // Stamp pricePaidAt when a price is recorded; clear it when the price is cleared (null)
-      ...(pricePaid !== undefined && { pricePaid, pricePaidAt: pricePaid === null ? null : now }),
+      // Stamp pricePaidAt when a price is recorded; clear it when the price is cleared (null).
+      // Confirming/entering a real price also consumes any pending suggestion.
+      ...(pricePaid !== undefined && {
+        pricePaid,
+        pricePaidAt: pricePaid === null ? null : now,
+        ...(pricePaid !== null && { pricePaidSuggested: null }),
+      }),
+      // "Not now" on a suggestion — stamp dismissal so it won't re-surface.
+      ...(dismissPriceSuggestion === true && { pricePaidSuggestionDismissedAt: now }),
       updatedAt: now,
       // Track when interest was explicitly rated
       ...(personalInterest !== undefined && { interestRatedAt: now }),
