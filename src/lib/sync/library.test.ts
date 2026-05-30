@@ -15,6 +15,12 @@ vi.mock('../db/queries', () => ({
   getExistingGamesByAppIds: vi.fn(),
   getPreOwnershipState: vi.fn(),
   cascadePurchaseCleanup: vi.fn(),
+  capturePricePaidSuggestions: vi.fn(),
+  getSetting: vi.fn(),
+}));
+
+vi.mock('../notifications/dispatch', () => ({
+  emitNotification: vi.fn(),
 }));
 
 import { syncLibrary } from './library';
@@ -28,7 +34,10 @@ import {
   getExistingGamesByAppIds,
   getPreOwnershipState,
   cascadePurchaseCleanup,
+  capturePricePaidSuggestions,
+  getSetting,
 } from '../db/queries';
+import { emitNotification } from '../notifications/dispatch';
 
 const mockGetSteamClient = vi.mocked(getSteamClient);
 const mockUpsertGame = vi.mocked(upsertGameFromSteam);
@@ -39,6 +48,9 @@ const mockGetFirstUserId = vi.mocked(getFirstUserId);
 const mockGetExisting = vi.mocked(getExistingGamesByAppIds);
 const mockGetPreOwnership = vi.mocked(getPreOwnershipState);
 const mockCascadePurchase = vi.mocked(cascadePurchaseCleanup);
+const mockCapture = vi.mocked(capturePricePaidSuggestions);
+const mockGetSetting = vi.mocked(getSetting);
+const mockEmit = vi.mocked(emitNotification);
 
 function makeSteamGame(appid: number, name: string, playtime = 0, recentPlaytime?: number, lastPlayed?: number) {
   return {
@@ -59,6 +71,9 @@ describe('syncLibrary', () => {
     mockUpsertGame.mockReturnValue(1);
     mockGetExisting.mockReturnValue(new Map());
     mockGetPreOwnership.mockReturnValue([]);
+    mockCapture.mockReturnValue([]);
+    mockGetSetting.mockReturnValue(null); // null → suggestions enabled (!== 'false')
+    mockEmit.mockResolvedValue({ inAppDelivered: false, discordDelivered: false });
   });
 
   it('syncs all games from Steam into the database', async () => {

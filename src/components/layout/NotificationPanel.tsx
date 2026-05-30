@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, PauseCircle, Sparkles, Trash2, Inbox, X, Tag, Rocket } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, PauseCircle, Sparkles, Trash2, Inbox, X, Tag, Rocket, DollarSign } from 'lucide-react';
 import type { NotificationRow, NotificationType } from '@/lib/notifications/types';
 
 interface NotificationPanelProps {
@@ -20,6 +20,7 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
   milestone: Sparkles,
   'deal-alert': Tag,
   release: Rocket,
+  'price-paid-suggestion': DollarSign,
   system: AlertTriangle,
 };
 
@@ -31,6 +32,7 @@ const TYPE_COLORS: Record<NotificationType, string> = {
   milestone: 'text-primary',
   'deal-alert': 'text-deal-great',
   release: 'text-blue-500',
+  'price-paid-suggestion': 'text-amber-400',
   system: 'text-amber-500',
 };
 

@@ -35,9 +35,14 @@ describe('isWithinQuietHours', () => {
 });
 
 describe('DEFAULT_PREFERENCES', () => {
-  it('enables both channels for every category by default', () => {
-    for (const routing of Object.values(DEFAULT_PREFERENCES.categories)) {
-      expect(routing).toEqual({ inApp: true, discord: true });
+  it('enables both channels by default, except price-paid suggestions (in-app only)', () => {
+    for (const [category, routing] of Object.entries(DEFAULT_PREFERENCES.categories)) {
+      if (category === 'price-paid-suggestion') {
+        // Transactional nudge — a Discord ping would be noise.
+        expect(routing).toEqual({ inApp: true, discord: false });
+      } else {
+        expect(routing).toEqual({ inApp: true, discord: true });
+      }
     }
   });
 

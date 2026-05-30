@@ -84,6 +84,8 @@ const SCHEMA_SQL = `
     notes TEXT,
     price_paid REAL,
     price_paid_at TEXT,
+    price_paid_suggested REAL,
+    price_paid_suggestion_dismissed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -274,6 +276,8 @@ export function seedUserGame(
       notes: overrides.notes,
       lastPlayed: overrides.lastPlayed,
       pricePaid: overrides.pricePaid,
+      pricePaidSuggested: overrides.pricePaidSuggested,
+      pricePaidSuggestionDismissedAt: overrides.pricePaidSuggestionDismissedAt,
     })
     .returning({ id: schema.userGames.id })
     .get();

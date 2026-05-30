@@ -2,27 +2,36 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Bell, Send, Loader2, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+import { Bell, Send, Loader2, CheckCircle, AlertCircle, Sparkles, DollarSign } from 'lucide-react';
 import { useApiMutation } from '@/hooks/useApiMutation';
 
 interface AlertConfigProps {
   activeAlertCount: number;
   initialAutoAtlDealAlerts: boolean;
   initialMinSnapshots: number;
+  initialPricePaidSuggestions: boolean;
 }
 
 export function AlertConfig({
   activeAlertCount,
   initialAutoAtlDealAlerts,
   initialMinSnapshots,
+  initialPricePaidSuggestions,
 }: AlertConfigProps) {
   const [autoAtlDealAlerts, setAutoAtlDealAlerts] = useState(initialAutoAtlDealAlerts);
   const [minSnapshots, setMinSnapshots] = useState(initialMinSnapshots.toString());
+  const [pricePaidSuggestions, setPricePaidSuggestions] = useState(initialPricePaidSuggestions);
 
   const {
     mutate: saveAutoAtl,
     isPending: savingAutoAtl,
     status: autoAtlStatus,
+  } = useApiMutation('/api/settings', { method: 'PUT' });
+
+  const {
+    mutate: savePricePaidSuggestions,
+    isPending: savingPricePaidSuggestions,
+    status: pricePaidSuggestionsStatus,
   } = useApiMutation('/api/settings', { method: 'PUT' });
 
   const {
@@ -157,6 +166,50 @@ export function AlertConfig({
           Automatically notify you when any wishlisted game hits a new all-time low
           with a &quot;Good&quot; deal score or better (55+). Only released games are included.
           You can opt out individual games from their detail page.
+        </p>
+      </div>
+
+      {/* Price-paid suggestions */}
+      <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+          <label className="text-sm font-medium">Suggest prices I paid</label>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              const newValue = !pricePaidSuggestions;
+              setPricePaidSuggestions(newValue);
+              savePricePaidSuggestions({ settings: { price_paid_suggestions_enabled: String(newValue) } });
+            }}
+            disabled={savingPricePaidSuggestions}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              pricePaidSuggestions ? 'bg-primary' : 'bg-muted'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                pricePaidSuggestions ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+          <span className="text-sm text-muted-foreground">
+            {pricePaidSuggestions ? 'Enabled' : 'Disabled'}
+          </span>
+          {pricePaidSuggestionsStatus === 'success' && (
+            <span className="flex items-center gap-1 text-xs text-deal-great">
+              <CheckCircle className="h-3 w-3" /> Saved
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          When a wishlisted game becomes owned, pre-fill a confirmable estimate of what you paid
+          (from its last tracked price) so you can unlock realized $/hr in one tap. Never auto-applied —
+          you always confirm. The bell nudge can be silenced separately in{' '}
+          <Link href="/settings/notifications" className="text-primary hover:underline">
+            Notification settings
+          </Link>
+          .
         </p>
       </div>
 

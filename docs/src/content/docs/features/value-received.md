@@ -34,6 +34,14 @@ For an Overwhelmingly Positive game the target is $4/hour, so a $24.99 game you'
 
 Prices are assumed to be in USD, matching the rest of Hoard's pricing.
 
+### Price-paid suggestions
+
+Recording a price is the one bit of friction in the money lens, so Hoard offers to pre-fill it. When a wishlisted game becomes owned — caught during the Steam library sync — Hoard estimates what you likely paid from the **last price it tracked** before the purchase (the cheapest store on the most recent snapshot) and surfaces a *suggestion* on the game's detail page: "Did you pay around $X?" Confirm it, correct it, or dismiss it with **Not now**.
+
+It is only ever a suggestion. The estimate never becomes your recorded price on its own — only an explicit Confirm or Update writes it, in keeping with Hoard's honesty-over-compulsion stance. A game Hoard can't estimate honestly — one that was never wishlisted, or that you owned before Hoard started tracking it — gets no suggestion and falls back to manual entry; Hoard won't fabricate a number from nothing.
+
+A pending suggestion shows in three places: the detail-page prompt, a subtle "Paid ~$X?" hint on the library card, and one in-app bell notification per purchase. Turn the whole feature off with **Suggest prices I paid** under Settings → Alerts, or silence just the bell via the *Price-paid suggestions* category under Settings → Notifications.
+
 ## Edge cases
 
 - **Never played** is always *unrealized*, regardless of price — a game you paid for and never opened has returned none of its value yet.
@@ -46,4 +54,4 @@ The same completion axis feeds the backlog's **Most Value Waiting** preset and `
 
 ## Where it lives
 
-The scoring is a pure function in `src/lib/scoring/valueReceived.ts`, tested alongside the deal-score engine. It's computed for owned games during enrichment in `getEnrichedGames` / `getEnrichedGameById`, so any page that lists or opens a game gets it for free. The badge is `ValueReceivedIndicator`; the detail card is `ValueReceivedBreakdown`; the price entry is `PricePaidEditor`.
+The scoring is a pure function in `src/lib/scoring/valueReceived.ts`, tested alongside the deal-score engine. It's computed for owned games during enrichment in `getEnrichedGames` / `getEnrichedGameById`, so any page that lists or opens a game gets it for free. The badge is `ValueReceivedIndicator`; the detail card is `ValueReceivedBreakdown`; the price entry is `PricePaidEditor`. The purchase-time estimate is captured by `capturePricePaidSuggestions` (called from the library sync) and surfaced by `PricePaidSuggestionPrompt`.

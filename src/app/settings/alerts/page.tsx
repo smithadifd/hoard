@@ -12,6 +12,7 @@ export default async function AlertsPage() {
   let alertStats = { activeCount: 0, recentlyTriggered: 0 };
   let autoAtlDealAlerts = true;
   let minSnapshots = 3;
+  let pricePaidSuggestions = true;
   try {
     alertStats = getAlertStats(session.user.id);
     const autoAtlSetting = getSetting('auto_atl_deal_alerts');
@@ -19,6 +20,7 @@ export default async function AlertsPage() {
     const minSnapshotsRaw = getSetting('min_snapshots_for_atl_alert');
     const parsed = Number(minSnapshotsRaw ?? '3');
     if (Number.isFinite(parsed) && parsed >= 1) minSnapshots = Math.floor(parsed);
+    pricePaidSuggestions = getSetting('price_paid_suggestions_enabled') !== 'false';
   } catch {
     // DB not initialized yet — render with defaults
   }
@@ -28,6 +30,7 @@ export default async function AlertsPage() {
       activeAlertCount={alertStats.activeCount}
       initialAutoAtlDealAlerts={autoAtlDealAlerts}
       initialMinSnapshots={minSnapshots}
+      initialPricePaidSuggestions={pricePaidSuggestions}
     />
   );
 }

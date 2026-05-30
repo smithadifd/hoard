@@ -12,6 +12,7 @@ export type NotificationType =
   | 'milestone'
   | 'deal-alert' // price alert: free / threshold / new ATL, and the still-at-ATL digest
   | 'release' // game launch + early-access graduation
+  | 'price-paid-suggestion' // owned-game: confirm what you paid
   | 'system'; // sync-health, backup failure, and other ops alerts
 
 export interface NotificationPayload {
