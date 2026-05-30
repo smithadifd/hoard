@@ -20,7 +20,8 @@ import { DEFAULT_THRESHOLDS } from './types';
 import { getMaxDollarsPerHour } from './engine';
 
 export type ValueReceivedTier = 'unrealized' | 'approaching' | 'realized' | 'exceeded';
-export type ValueReceivedLens = 'time' | 'money';
+// 'none' = no honest baseline to grade against (played, but no HLTB estimate and no price).
+export type ValueReceivedLens = 'time' | 'money' | 'none';
 
 export interface ValueReceivedInput {
   playtimeMinutes: number;       // user_games.playtimeMinutes (0 = never played)
@@ -44,14 +45,6 @@ export interface ValueReceivedScore {
 const TIME_EXCEEDED = 1.1;
 const TIME_REALIZED = 0.8;   // 80%+ of an estimate ≈ "beat it" (HLTB is an estimate, not gospel)
 const TIME_APPROACHING = 0.2;
-
-// HLTB-less absolute-hours fallback. Mirrors the backlog's cutoffs in
-// queries.ts (BACKLOG_FALLBACK_MINUTES = 15 → 0.25h "barely started";
-// PLAY_AGAIN_FALLBACK_HOURS = 10 "substantial") so both ends of the same
-// owned-game axis agree.
-const FALLBACK_BARELY_STARTED_HOURS = 0.25;
-const FALLBACK_SUBSTANTIAL_HOURS = 10;
-const FALLBACK_EXCEEDED_HOURS = 25;
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -114,9 +107,25 @@ export function calculateValueReceived(
     };
   }
 
-  // --- Time lens (default): never-played, free games, or no recorded price ---
-  const tier: ValueReceivedTier =
-    rawHours <= 0 ? 'unrealized' : hasHltb ? timeTier(rawRatio) : fallbackTier(rawHours);
+  // --- No baseline: played, but no HLTB estimate and no price to grade against ---
+  // Inventing a tier here ("Approaching" off 15 min, "Exceeded" off raw hours) was
+  // misleading, so report a neutral played-hours result instead. The UI branches on
+  // `lens === 'none'`, not the (inert) tier.
+  if (rawHours > 0 && !hasHltb) {
+    return {
+      tier: 'unrealized',
+      lens: 'none',
+      completionRatio,
+      hoursPlayed,
+      realizedDollarsPerHour: null,
+      hoursToBreakEven, // null here (no price), kept for shape parity
+      receivedExpectedValue: null,
+      summary: noBaselineSummary(hoursPlayed),
+    };
+  }
+
+  // --- Time lens (default): never-played, free games, or no recorded price (with HLTB) ---
+  const tier: ValueReceivedTier = rawHours <= 0 ? 'unrealized' : timeTier(rawRatio);
 
   return {
     tier,
@@ -126,7 +135,7 @@ export function calculateValueReceived(
     realizedDollarsPerHour: null,
     hoursToBreakEven, // may be non-null when a price is set but the game is unplayed
     receivedExpectedValue: null,
-    summary: timeSummary(tier, hasHltb, rawRatio, hoursPlayed),
+    summary: timeSummary(tier, rawRatio, hoursPlayed),
   };
 }
 
@@ -144,23 +153,12 @@ function timeTier(ratio: number): ValueReceivedTier {
   return 'unrealized';
 }
 
-function fallbackTier(hoursPlayed: number): ValueReceivedTier {
-  if (hoursPlayed >= FALLBACK_EXCEEDED_HOURS) return 'exceeded';
-  if (hoursPlayed >= FALLBACK_SUBSTANTIAL_HOURS) return 'realized';
-  if (hoursPlayed >= FALLBACK_BARELY_STARTED_HOURS) return 'approaching';
-  return 'unrealized';
+function timeSummary(tier: ValueReceivedTier, ratio: number, hoursPlayed: number): string {
+  if (hoursPlayed <= 0) return 'Never played — value unrealized';
+  return `${Math.round(ratio * 100)}% of main story — ${TIME_PHRASE[tier]}`;
 }
 
-function timeSummary(
-  tier: ValueReceivedTier,
-  hasHltb: boolean,
-  ratio: number,
-  hoursPlayed: number
-): string {
-  if (hoursPlayed <= 0) return 'Never played — value unrealized';
-  if (!hasHltb) {
-    const h = hoursPlayed === 1 ? '1 hour' : `${hoursPlayed} hours`;
-    return `${h} played — ${TIME_PHRASE[tier]}`;
-  }
-  return `${Math.round(ratio * 100)}% of main story — ${TIME_PHRASE[tier]}`;
+function noBaselineSummary(hoursPlayed: number): string {
+  const h = hoursPlayed === 1 ? '1 hour' : `${hoursPlayed} hours`;
+  return `${h} played — add a duration or price to grade value`;
 }

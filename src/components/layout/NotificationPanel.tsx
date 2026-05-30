@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, PauseCircle, Sparkles, Trash2, Inbox, X, Tag, Rocket, DollarSign } from 'lucide-react';
 import type { NotificationRow, NotificationType } from '@/lib/notifications/types';
+import { parseDigestGames, type DealDigestGame } from '@/components/notifications/DealDigestModal';
 
 interface NotificationPanelProps {
   notifications: NotificationRow[];
   loading: boolean;
   onDismiss: (id: number) => void;
   onDismissAll: () => void;
+  onOpenDigest: (games: DealDigestGame[]) => void;
   onClose: () => void;
 }
 
@@ -53,6 +55,7 @@ export function NotificationPanel({
   loading,
   onDismiss,
   onDismissAll,
+  onOpenDigest,
   onClose,
 }: NotificationPanelProps) {
   return (
@@ -100,6 +103,7 @@ export function NotificationPanel({
                 key={n.id}
                 notification={n}
                 onDismiss={onDismiss}
+                onOpenDigest={onOpenDigest}
                 onClose={onClose}
               />
             ))}
@@ -113,14 +117,20 @@ export function NotificationPanel({
 function NotificationItem({
   notification: n,
   onDismiss,
+  onOpenDigest,
   onClose,
 }: {
   notification: NotificationRow;
   onDismiss: (id: number) => void;
+  onOpenDigest: (games: DealDigestGame[]) => void;
   onClose: () => void;
 }) {
   const Icon = TYPE_ICONS[n.type] ?? Sparkles;
   const color = TYPE_COLORS[n.type] ?? 'text-primary';
+  // A deal digest carries a games list in metadata; surface the full list in a
+  // modal rather than dumping the user on the wishlist page.
+  const digestGames = parseDigestGames(n.metadata);
+  const isDigest = digestGames.length > 0;
 
   const body = (
     <div className="flex items-start gap-2.5 px-3 py-2.5">
@@ -151,7 +161,15 @@ function NotificationItem({
 
   return (
     <li className="border-b border-white/[0.04] last:border-b-0">
-      {n.link ? (
+      {isDigest ? (
+        <button
+          type="button"
+          onClick={() => onOpenDigest(digestGames)}
+          className="block w-full text-left hover:bg-accent/50 transition-colors"
+        >
+          {body}
+        </button>
+      ) : n.link ? (
         <Link href={n.link} onClick={onClose} className="block hover:bg-accent/50 transition-colors">
           {body}
         </Link>

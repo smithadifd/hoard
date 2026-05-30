@@ -7,6 +7,8 @@ The [deal score](/architecture/scoring-engine/) answers a forward-looking questi
 
 It shows up as a badge on owned-game cards (where the buy-oriented deal badge would otherwise be blank, since Hoard only price-syncs wishlisted and watchlisted games) and as a breakdown card on the game detail page. Wishlist games keep the deal score; owned games lead with value received.
 
+It also drives a set of **Library sorts** — *Value Received* (tier), *Realized $/hr*, *Completion %*, and *Price Paid* — and two dashboard cards: a **Value Received** donut breaking your owned library down by tier, and a **Spending & Value** tile rolling up total spent, hours played, blended $/hour, and how often you've reached expected value.
+
 ## The two lenses
 
 Every owned game gets a value-received score, even if you've never told Hoard what you paid. The score uses whichever of two lenses it has the data for.
@@ -46,7 +48,7 @@ A pending suggestion shows in three places: the detail-page prompt, a subtle "Pa
 
 - **Never played** is always *unrealized*, regardless of price — a game you paid for and never opened has returned none of its value yet.
 - **Free games** (price recorded as $0) stay on the time lens. Hoard won't report "$0.00/hour."
-- **No HowLongToBeat data** falls back to absolute hours on the time lens (under 15 minutes is unrealized, 10+ hours is realized, 25+ exceeded) — the same cutoffs the backlog uses for games it can't size. If you've recorded a price, the money lens is used instead, since it doesn't need a duration at all.
+- **No HowLongToBeat data and no recorded price** has no honest baseline to grade against — there's no main-story estimate to measure completion, and no price for $/hour. Rather than invent a tier from raw hours (which reads misleadingly as "Approaching" off 15 minutes, or "Exceeded" off a sandbox game you've sunk 100 hours into), the badge shows a neutral **Played Xh** chip with no value claim. Add a duration *or* a price and the game grades normally — the money lens needs no duration at all.
 
 ## In the backlog
 

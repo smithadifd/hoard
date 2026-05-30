@@ -1,14 +1,17 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents, getUserGameCount } from '@/lib/db/queries';
-import type { ActivityEvent } from '@/lib/db/queries';
+import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity, Wallet, Hourglass } from 'lucide-react';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents, getUserGameCount, getValueReceivedOverview, getEnrichedGames } from '@/lib/db/queries';
+import type { ActivityEvent, ValueReceivedOverview } from '@/lib/db/queries';
+import type { EnrichedGame } from '@/types';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
 import { getSession } from '@/lib/auth-helpers';
 import { getOnboardingState, updateOnboardingState, computeChecklist, computeTriageNudge } from '@/lib/onboarding/state';
 import { getDrainProgressForUser } from '@/lib/sync/drain';
 import GenreChart from '@/components/dashboard/GenreChart';
 import DealScoreChart from '@/components/dashboard/DealScoreChart';
+import ValueReceivedChart from '@/components/dashboard/ValueReceivedChart';
+import { ValueSummaryCard } from '@/components/dashboard/ValueSummaryCard';
 import RecentActivityFeed from '@/components/dashboard/RecentActivityFeed';
 import { OnboardingChecklist } from '@/components/dashboard/OnboardingChecklist';
 import { DrainStatusCard } from '@/components/dashboard/DrainStatusCard';
@@ -52,6 +55,8 @@ export default async function DashboardPage() {
   let dealScoreData: Array<{ bucket: string; count: number }> = [];
   let recentActivity: ActivityEvent[] = [];
   let recentAtls: ActivityEvent[] = [];
+  let valueOverview: ValueReceivedOverview | null = null;
+  let mostValueWaiting: EnrichedGame[] = [];
   let checklist: ChecklistResult | null = null;
   let drainProgress: DrainProgress | null = null;
   let triageNudge: TriageNudgeStatus | null = null;
@@ -65,6 +70,13 @@ export default async function DashboardPage() {
     dealScoreData = getDealScoreDistribution(session.user.id);
     recentActivity = getRecentActivity(session.user.id);
     recentAtls = getRecentAtlEvents(session.user.id);
+    valueOverview = getValueReceivedOverview(session.user.id);
+    mostValueWaiting = getEnrichedGames(
+      { playtimeStatus: 'backlog', sortBy: 'valueWaiting', sortOrder: 'desc' },
+      1,
+      5,
+      session.user.id,
+    ).games;
     checklist = computeChecklist(session.user.id);
     drainProgress = getDrainProgressForUser(session.user.id);
     triageNudge = computeTriageNudge(session.user.id);
@@ -154,11 +166,47 @@ export default async function DashboardPage() {
             </DashboardCard>
           </div>
 
+          {/* Value Received Row — owned-library "did I get my money's worth?" */}
+          {stats.libraryCount > 0 && valueOverview && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <DashboardCard icon={<Wallet className="h-4 w-4" />} title="Value Received">
+                <ValueReceivedChart data={valueOverview.distribution} />
+              </DashboardCard>
+              <DashboardCard icon={<DollarSign className="h-4 w-4" />} title="Spending & Value">
+                <ValueSummaryCard stats={valueOverview.stats} />
+              </DashboardCard>
+            </div>
+          )}
+
           {/* Activity + Upcoming Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DashboardCard icon={<Activity className="h-4 w-4" />} title="Recent Activity">
               <RecentActivityFeed played={recentActivity} newAtls={recentAtls} />
             </DashboardCard>
+
+            {mostValueWaiting.length > 0 && (
+              <DashboardCard
+                icon={<Hourglass className="h-4 w-4" />}
+                title="Most Value Waiting"
+                action={<Link href="/backlog?sortBy=valueWaiting&sortOrder=desc&minReview=70" className="text-xs text-primary hover:underline">View backlog</Link>}
+              >
+                <div className="space-y-2">
+                  {mostValueWaiting.map((game) => (
+                    <Link
+                      key={game.id}
+                      href={`/games/${game.id}`}
+                      className="flex items-center justify-between py-1.5 text-sm hover:text-primary transition-colors group"
+                    >
+                      <span className="truncate font-medium group-hover:text-primary">{game.title}</span>
+                      <span className="text-xs text-muted-foreground ml-2 shrink-0">
+                        {game.reviewScore ? `${game.reviewScore}%` : '—'}
+                        {game.hltbMain ? ` · ${game.hltbMain}h` : ''}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </DashboardCard>
+            )}
 
             {upcomingReleases.length > 0 && (
               <DashboardCard
