@@ -176,6 +176,26 @@ describe('gameUpdateSchema', () => {
     const result = gameUpdateSchema.safeParse({ priceThreshold: -1 });
     expect(result.success).toBe(false);
   });
+
+  it('accepts a numeric pricePaid', () => {
+    const result = gameUpdateSchema.safeParse({ pricePaid: 24.99 });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts null pricePaid (clears the value)', () => {
+    const result = gameUpdateSchema.safeParse({ pricePaid: null });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects negative pricePaid', () => {
+    const result = gameUpdateSchema.safeParse({ pricePaid: -5 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects absurdly large pricePaid', () => {
+    const result = gameUpdateSchema.safeParse({ pricePaid: 100001 });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('interestSchema', () => {

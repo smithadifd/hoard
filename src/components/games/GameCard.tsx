@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Clock, Star, DollarSign, Sparkles, TrendingDown } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
 import { DealIndicator } from '@/components/prices/DealIndicator';
+import { ValueReceivedIndicator } from '@/components/prices/ValueReceivedIndicator';
 import { GameImage } from './GameImage';
 
 /** Relative-time label for ATL badges. */
@@ -48,12 +49,22 @@ export function GameCard({ game }: GameCardProps) {
         {/* Bottom gradient overlay */}
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
 
-        {/* Deal Badge */}
-        {game.dealRating && (
+        {/* Value / Deal Badge — owned games surface Value Received; others the buy score */}
+        {game.isOwned && game.valueReceivedTier ? (
+          <div className="absolute top-2 right-2">
+            <ValueReceivedIndicator
+              tier={game.valueReceivedTier}
+              lens={game.valueReceivedLens ?? 'time'}
+              completionRatio={game.completionRatio}
+              realizedDollarsPerHour={game.realizedDollarsPerHour}
+              summary={game.valueReceivedSummary}
+            />
+          </div>
+        ) : game.dealRating ? (
           <div className="absolute top-2 right-2">
             <DealIndicator rating={game.dealRating} score={game.dealScore} lowConfidence={game.dataCompleteness === 'minimal'} />
           </div>
-        )}
+        ) : null}
 
         {/* Coming Soon Badge (non-owned unreleased games) */}
         {game.isReleased === false && !game.isOwned && (

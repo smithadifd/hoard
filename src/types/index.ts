@@ -4,6 +4,7 @@
 
 // Re-export database schema types for convenience
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import type { ValueReceivedTier, ValueReceivedLens } from '@/lib/scoring/valueReceived';
 
 /**
  * A game with all enriched data, ready for display.
@@ -60,6 +61,16 @@ export interface EnrichedGame {
   dealScore?: number;
   dealRating?: 'excellent' | 'great' | 'good' | 'okay' | 'poor';
   dealSummary?: string;
+
+  // Value received (owned games) — backward-looking "did I get my money's worth?"
+  pricePaid?: number;
+  valueReceivedTier?: ValueReceivedTier;
+  valueReceivedLens?: ValueReceivedLens;
+  completionRatio?: number;
+  realizedDollarsPerHour?: number;
+  hoursToBreakEven?: number;
+  receivedExpectedValue?: boolean;
+  valueReceivedSummary?: string;
 
   // Release status
   isReleased?: boolean;
