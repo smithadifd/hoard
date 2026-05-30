@@ -117,6 +117,14 @@ describe('gameFiltersSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts the valueWaiting sort (Most Value Waiting)', () => {
+    const result = gameFiltersSchema.safeParse({ sortBy: 'valueWaiting', sortOrder: 'desc' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sortBy).toBe('valueWaiting');
+    }
+  });
+
   it('rejects invalid view value', () => {
     const result = gameFiltersSchema.safeParse({ view: 'invalid' });
     expect(result.success).toBe(false);

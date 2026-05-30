@@ -822,6 +822,22 @@ export function getEnrichedGames(
           ORDER BY ps2.snapshot_date DESC LIMIT 1
         )
     )`,
+    // "Most Value Waiting" — surfaces owned games that are highly rated, of high
+    // personal interest, and have lots of unplayed main-story content left. The
+    // backward-looking mirror of dealScore for the backlog: review quality
+    // (NULL→50%) × interest factor (0.25–1.25) × remaining unplayed hours, where
+    // remaining = (1 − min(1, completion)) × hltbMain. Games without HLTB sizing
+    // contribute 0 remaining hours, so they sort last (honest: we can't claim
+    // unplayed value we can't measure). MAX/MIN are SQLite's 2-arg scalar forms.
+    valueWaiting: sql`(
+      COALESCE(${games.reviewScore}, 50) / 100.0
+      * (((COALESCE(${userGames.personalInterest}, 3) - 1) / 4.0) + 0.25)
+      * (CASE
+           WHEN ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0
+             THEN MAX(0.0, (1.0 - MIN(1.0, (CAST(${userGames.playtimeMinutes} AS REAL) / 60.0) / ${games.hltbMain})) * ${games.hltbMain})
+           ELSE 0.0
+         END)
+    )`,
   } as const;
   type SortKey = keyof typeof sortMap;
   const sortKey = (filters.sortBy && filters.sortBy in sortMap ? filters.sortBy : 'title') as SortKey;

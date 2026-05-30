@@ -126,7 +126,7 @@ export interface GameFilters {
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
   earlyAccess?: boolean;
-  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent';
+  sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent' | 'valueWaiting';
   sortOrder?: 'asc' | 'desc';
 }
 

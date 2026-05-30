@@ -40,6 +40,10 @@ Prices are assumed to be in USD, matching the rest of Hoard's pricing.
 - **Free games** (price recorded as $0) stay on the time lens. Hoard won't report "$0.00/hour."
 - **No HowLongToBeat data** falls back to absolute hours on the time lens (under 15 minutes is unrealized, 10+ hours is realized, 25+ exceeded) — the same cutoffs the backlog uses for games it can't size. If you've recorded a price, the money lens is used instead, since it doesn't need a duration at all.
 
+## In the backlog
+
+The same completion axis feeds the backlog's **Most Value Waiting** preset and `valueWaiting` sort. Where value received looks back at a single game ("have I gotten my money's worth?"), Most Value Waiting points the question at the whole backlog from the other side: *which* unplayed games hold the most value still waiting for you. It ranks by review quality × personal interest × remaining unplayed main-story hours, so a highly rated game you genuinely want with 40 hours still ahead outranks one you've already finished or one Hoard can't size. It's a sort, not a filter — see [Backlog](/features/backlog/#presets) for the full preset list.
+
 ## Where it lives
 
 The scoring is a pure function in `src/lib/scoring/valueReceived.ts`, tested alongside the deal-score engine. It's computed for owned games during enrichment in `getEnrichedGames` / `getEnrichedGameById`, so any page that lists or opens a game gets it for free. The badge is `ValueReceivedIndicator`; the detail card is `ValueReceivedBreakdown`; the price entry is `PricePaidEditor`.
