@@ -90,6 +90,9 @@ export const userGames = sqliteTable('user_games', {
   interestRatedAt: text('interest_rated_at'), // ISO date — NULL means never explicitly rated
   priceThreshold: real('price_threshold'), // Alert when price drops below
   notes: text('notes'),
+  // Value received (backward-looking) — what the user actually paid for an owned game
+  pricePaid: real('price_paid'), // USD, nullable — user-entered; NULL = use time/completion lens only
+  pricePaidAt: text('price_paid_at'), // ISO date the price was recorded
   // Timestamps
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),

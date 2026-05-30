@@ -121,6 +121,10 @@ A short human-readable summary string is also generated from the raw scores — 
 
 Weights (`priceWeight`, `reviewWeight`, `valueWeight`, `interestWeight`) and the per-tier $/hr thresholds are configurable through the Settings page. Changes persist in the `settings` table in SQLite as JSON-encoded values. The scoring engine reads these at runtime — no restart needed. For full details on the Settings fields and environment variable equivalents, see [Configuration](/self-hosting/configuration/).
 
+## Backward-looking: value received
+
+The deal score is forward-looking — it grades a *price you could pay*. Its mirror, the **value received** score, grades a game you already own: realized $/hour (what you paid ÷ hours played) against the same per-review-tier thresholds, or, when no price is recorded, playtime against the HowLongToBeat main story. It reuses `getMaxDollarsPerHour` and the same 0.5×/1×/2× bands as the value sub-score, so the two stay consistent — a good-value buy reads as "realized" once you've played it through. The logic lives in `src/lib/scoring/valueReceived.ts`; see [Value received](/features/value-received/).
+
 ## Implementation note
 
 The value score branching is a flat conditional chain, not a recursive tree. The Mermaid flowchart described in the plan would be misleading — there's no looping or backtracking. The path is: check if hours are known → compute $/hr → look up the review-tier threshold → compare against the five stepped bands → return the score.
