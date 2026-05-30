@@ -223,7 +223,7 @@ summarizes:
 
 - [Architecture & data flow](docs/src/content/docs/architecture/index.md)
 - [Scoring engine](docs/src/content/docs/architecture/scoring-engine.md)
-- [Design decisions](docs/src/content/docs/design-decisions.md)
+- [Product philosophy](docs/src/content/docs/product-philosophy.md) · [Design decisions](docs/src/content/docs/design-decisions.md)
 - [Data sources](docs/src/content/docs/data-sources.md)
 - [Features: backlog](docs/src/content/docs/features/backlog.md) · [alerts](docs/src/content/docs/features/alerts.md)
 - [Self-hosting](docs/src/content/docs/self-hosting/index.md) · [configuration](docs/src/content/docs/self-hosting/configuration.md) · [backups](docs/src/content/docs/self-hosting/backups.md) · [upgrading](docs/src/content/docs/self-hosting/upgrading.md)

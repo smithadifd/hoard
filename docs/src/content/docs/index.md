@@ -60,4 +60,5 @@ The value scoring engine lives in `src/lib/scoring/`. Weights are user-configura
 - [Architecture](/architecture/) — data flow, service layer, scoring engine, cron design
 - [Features](/features/) — a tour of every page: Dashboard, Library, Wishlist, Releases, Backlog, Watchlist
 - [Data sources](/data-sources/) — Steam, ITAD, HLTB, Discord — what each provides and the quirks to know
+- [Product philosophy](/product-philosophy/) — what Hoard is for and what it refuses to become
 - [Design decisions](/design-decisions/) — why SQLite, in-process cron, cache-first reads, and other tradeoffs
