@@ -84,6 +84,8 @@ export const gameUpdateSchema = z.object({
   autoAlertDisabled: z.boolean().optional(),
   isWishlisted: z.boolean().optional(),
   priceThreshold: z.number().min(0).max(10000).optional(),
+  // What the user paid for an owned game (USD); null clears → reverts to time lens
+  pricePaid: z.number().min(0).max(100000).nullable().optional(),
   // Manual HLTB data entry (null to clear)
   hltbMain: z.number().min(0).max(10000).nullable().optional(),
   hltbMainExtra: z.number().min(0).max(10000).nullable().optional(),

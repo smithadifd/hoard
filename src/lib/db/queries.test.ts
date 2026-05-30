@@ -331,6 +331,28 @@ describe('updateUserGame', () => {
     expect(alert).not.toBeNull();
     expect(alert?.targetPrice).toBe(9.99);
   });
+
+  it('persists pricePaid and stamps pricePaidAt', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, playtimeMinutes: 600 });
+
+    updateUserGame(gameId, { pricePaid: 19.99 }, 'default');
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.pricePaid).toBe(19.99);
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidAt).not.toBeNull();
+  });
+
+  it('clears pricePaid and pricePaidAt when set to null', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true });
+
+    updateUserGame(gameId, { pricePaid: 30 }, 'default');
+    updateUserGame(gameId, { pricePaid: null }, 'default');
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBeNull();
+    expect(row?.pricePaidAt).toBeNull();
+  });
 });
 
 // ============================================
@@ -411,6 +433,50 @@ describe('getEnrichedGames', () => {
   it('sorts by review score', () => {
     const result = getEnrichedGames({ sortBy: 'review', sortOrder: 'desc' }, undefined, undefined, 'default');
     expect(result.games[0].reviewScore).toBe(90);
+  });
+});
+
+describe('value received (owned games)', () => {
+  it('populates the time-lens tier for an owned game with no recorded price', () => {
+    const gameId = seedGame(testDb, { steamAppId: 700, title: 'Hades', reviewScore: 96, hltbMain: 22 });
+    seedUserGame(testDb, gameId, { isOwned: true, playtimeMinutes: 2640 }); // 44h / 22h = 2.0
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.valueReceivedTier).toBe('exceeded');
+    expect(game?.valueReceivedLens).toBe('time');
+    expect(game?.completionRatio).toBe(2);
+    expect(game?.realizedDollarsPerHour).toBeUndefined();
+  });
+
+  it('switches to the money lens once a price is recorded', () => {
+    const gameId = seedGame(testDb, { steamAppId: 701, title: 'Celeste', reviewScore: 96, hltbMain: 8 });
+    seedUserGame(testDb, gameId, { isOwned: true, playtimeMinutes: 2460, pricePaid: 24.99 }); // 41h
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.valueReceivedLens).toBe('money');
+    expect(game?.pricePaid).toBe(24.99);
+    expect(game?.realizedDollarsPerHour).toBe(0.61);
+    expect(game?.valueReceivedTier).toBe('exceeded');
+    expect(game?.receivedExpectedValue).toBe(true);
+  });
+
+  it('does not compute value received for non-owned (wishlist) games', () => {
+    const gameId = seedGame(testDb, { steamAppId: 702, title: 'Hollow Knight', reviewScore: 95, hltbMain: 27 });
+    seedUserGame(testDb, gameId, { isOwned: false, isWishlisted: true, playtimeMinutes: 0 });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.valueReceivedTier).toBeUndefined();
+    expect(game?.valueReceivedLens).toBeUndefined();
+  });
+
+  it('surfaces value received through the list query as well', () => {
+    const gameId = seedGame(testDb, { steamAppId: 703, title: 'Stardew Valley', reviewScore: 98, hltbMain: 52 });
+    seedUserGame(testDb, gameId, { isOwned: true, playtimeMinutes: 312 }); // 5.2h / 52h = 0.1 → unrealized
+
+    const result = getEnrichedGames({ view: 'library' }, undefined, undefined, 'default');
+    const sv = result.games.find((g) => g.title === 'Stardew Valley');
+    expect(sv?.valueReceivedTier).toBe('unrealized');
+    expect(sv?.valueReceivedLens).toBe('time');
   });
 });
 

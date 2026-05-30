@@ -19,7 +19,7 @@ A footer bar shows when data was last synced and provides quick links to Library
 
 Your owned Steam games. The page defaults to alphabetical order and loads 24 games at a time, adding more as you scroll via `InfiniteGameGrid`. `GameListFilters` sits above the grid and lets you filter by search, genre, tags, review score, duration, co-op support, and playtime status.
 
-Every game card links to its detail page at `/games/[id]`, where you can see the full price history chart, review breakdown, HowLongToBeat estimates, and deal score.
+Every game card links to its detail page at `/games/[id]`, where you can see the full price history chart, review breakdown, HowLongToBeat estimates, and deal score. Because these are games you own, each card and detail page leads with a [value received](/features/value-received/) badge — whether you've gotten your money's worth — instead of a buy-oriented deal score.
 
 ## Wishlist (`/wishlist`)
 

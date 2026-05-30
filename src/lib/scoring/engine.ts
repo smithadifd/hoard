@@ -114,7 +114,7 @@ function calculateInterestScore(interest: number): number {
   return Math.round(((interest - 1) / 4) * 100);
 }
 
-function getMaxDollarsPerHour(reviewPercent: number | null, thresholds: ScoringThresholds): number {
+export function getMaxDollarsPerHour(reviewPercent: number | null, thresholds: ScoringThresholds): number {
   if (reviewPercent === null) return thresholds.maxDollarsPerHour.positive;
   if (reviewPercent >= 95) return thresholds.maxDollarsPerHour.overwhelminglyPositive;
   if (reviewPercent >= 80) return thresholds.maxDollarsPerHour.veryPositive;

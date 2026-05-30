@@ -82,6 +82,8 @@ const SCHEMA_SQL = `
     interest_rated_at TEXT,
     price_threshold REAL,
     notes TEXT,
+    price_paid REAL,
+    price_paid_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -270,6 +272,8 @@ export function seedUserGame(
       personalInterest: overrides.personalInterest ?? 3,
       priceThreshold: overrides.priceThreshold,
       notes: overrides.notes,
+      lastPlayed: overrides.lastPlayed,
+      pricePaid: overrides.pricePaid,
     })
     .returning({ id: schema.userGames.id })
     .get();

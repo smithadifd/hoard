@@ -21,6 +21,7 @@ import {
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore } from '@/lib/scoring/engine';
+import { calculateValueReceived } from '@/lib/scoring/valueReceived';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 import type { NotificationPreferences, ChannelRouting, NotificationCategory } from '@/lib/notifications/preferences';
@@ -860,6 +861,7 @@ export function getEnrichedGames(
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
+      pricePaid: userGames.pricePaid,
       atlHitDate:
         filters.view === 'recent-deals'
           ? sql<string | null>`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`
@@ -1034,6 +1036,27 @@ export function getEnrichedGames(
       }
     }
 
+    if (r.isOwned) {
+      const { thresholds } = getScoringConfig();
+      const vr = calculateValueReceived(
+        {
+          playtimeMinutes: r.playtimeMinutes ?? 0,
+          hltbMainHours: r.hltbMain,
+          reviewPercent: r.reviewScore,
+          pricePaid: r.pricePaid,
+        },
+        thresholds,
+      );
+      base.pricePaid = r.pricePaid ?? undefined;
+      base.valueReceivedTier = vr.tier;
+      base.valueReceivedLens = vr.lens;
+      base.completionRatio = vr.completionRatio;
+      base.realizedDollarsPerHour = vr.realizedDollarsPerHour ?? undefined;
+      base.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
+      base.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
+      base.valueReceivedSummary = vr.summary;
+    }
+
     return base;
   });
 
@@ -1096,6 +1119,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
       lastPlayed: userGames.lastPlayed,
+      pricePaid: userGames.pricePaid,
       notes: userGames.notes,
     })
     .from(games)
@@ -1190,6 +1214,27 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       game.dealSummary = score.summary;
       game.dollarsPerHour = score.dollarsPerHour ?? undefined;
     }
+  }
+
+  if (row.isOwned) {
+    const { thresholds } = getScoringConfig();
+    const vr = calculateValueReceived(
+      {
+        playtimeMinutes: row.playtimeMinutes ?? 0,
+        hltbMainHours: row.hltbMain,
+        reviewPercent: row.reviewScore,
+        pricePaid: row.pricePaid,
+      },
+      thresholds,
+    );
+    game.pricePaid = row.pricePaid ?? undefined;
+    game.valueReceivedTier = vr.tier;
+    game.valueReceivedLens = vr.lens;
+    game.completionRatio = vr.completionRatio;
+    game.realizedDollarsPerHour = vr.realizedDollarsPerHour ?? undefined;
+    game.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
+    game.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
+    game.valueReceivedSummary = vr.summary;
   }
 
   return game;
@@ -2150,6 +2195,7 @@ export function updateUserGame(
     priceThreshold: number;
     isWishlisted: boolean;
     autoAlertDisabled: boolean;
+    pricePaid: number | null;
   }>,
   userId: string
 ): boolean {
@@ -2165,7 +2211,7 @@ export function updateUserGame(
         : undefined;
 
   // Only spread known user_games columns to prevent unexpected fields leaking through
-  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled } = updates;
+  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled, pricePaid } = updates;
 
   const result = db
     .update(userGames)
@@ -2177,6 +2223,8 @@ export function updateUserGame(
       ...(priceThreshold !== undefined && { priceThreshold }),
       ...(isWishlisted !== undefined && { isWishlisted }),
       ...(autoAlertDisabled !== undefined && { autoAlertDisabled }),
+      // Stamp pricePaidAt when a price is recorded; clear it when the price is cleared (null)
+      ...(pricePaid !== undefined && { pricePaid, pricePaidAt: pricePaid === null ? null : now }),
       updatedAt: now,
       // Track when interest was explicitly rated
       ...(personalInterest !== undefined && { interestRatedAt: now }),

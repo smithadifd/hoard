@@ -9,9 +9,11 @@ import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
+import { ValueReceivedBreakdown } from '@/components/prices/ValueReceivedBreakdown';
 import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
 import { DataStatus } from '@/components/games/DataStatus';
 import { HltbEditor } from '@/components/games/HltbEditor';
+import { PricePaidEditor } from '@/components/games/PricePaidEditor';
 import { LookupModeBanner } from '@/components/games/LookupModeBanner';
 import { ITADOverviewCard } from '@/components/games/ITADOverviewCard';
 import { AddToWishlistCTA } from '@/components/games/AddToWishlistCTA';
@@ -230,14 +232,18 @@ export default async function GameDetailPage({
             )
           )}
 
-          {/* Score Breakdown */}
-          {fullDealScore && (
-            <ScoreBreakdown
-              dealScore={fullDealScore}
-              weights={scoringConfig.weights}
-              hasReviewData={game.reviewScore !== undefined}
-              hasHltbData={game.hltbMain !== undefined && game.hltbMain > 0}
-            />
+          {/* Score Breakdown — owned games lead with Value Received; others show the buy score */}
+          {game.isOwned && game.valueReceivedTier ? (
+            <ValueReceivedBreakdown game={game} />
+          ) : (
+            fullDealScore && (
+              <ScoreBreakdown
+                dealScore={fullDealScore}
+                weights={scoringConfig.weights}
+                hasReviewData={game.reviewScore !== undefined}
+                hasHltbData={game.hltbMain !== undefined && game.hltbMain > 0}
+              />
+            )
           )}
 
           {/* Description */}
@@ -348,6 +354,11 @@ export default async function GameDetailPage({
               hltbManual={game.hltbManual}
               hltbMissCount={game.hltbMissCount}
             />
+          )}
+
+          {/* Price Paid Editor — owned games only (unlocks the realized $/hr lens) */}
+          {!isLookupMode && game.isOwned && (
+            <PricePaidEditor gameId={game.id} pricePaid={game.pricePaid} />
           )}
 
           {/* External Links */}
