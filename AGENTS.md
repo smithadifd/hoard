@@ -31,15 +31,18 @@ user's decision**. Every legitimate feature is a new way to surface honest value
 decision: buy, skip, wait, or play.
 
 **The test for any new feature:** *Does it surface honest value that informs a decision?* If yes, the
-genre is irrelevant (card, notification, recap, even gamification). If it manufactures engagement that
-doesn't inform a decision, or shows value that isn't true, it's out. The thesis says what to build;
-the non-goals say what to refuse even when tempting. Both halves are load-bearing.
+genre is irrelevant — a card, notification, recap, or even gamification can all pass. (That list is
+illustrative, not a menu to go build: the test decides, not the format.) If it manufactures engagement
+that doesn't inform a decision, or shows value that isn't true, it's out. The thesis says what to
+build; the non-goals say what to refuse even when tempting. Both halves are load-bearing.
 
 **Non-goals (and why):**
 
 - **No engagement machinery.** No XP, streaks, leaderboards, or daily-login carrots. These exist to
-  juice retention in multi-user products with a growth metric; Hoard is single-user and has no such
-  metric for them to grab. *Revisit if Hoard becomes genuinely multi-user/social.*
+  juice retention in products with a growth metric; Hoard has no such metric for them to grab — even
+  with a few people on one install (roommates, a Steam Family Share household), there's no audience to
+  out-rank and no DAU to lift. *Revisit if Hoard grows a genuine growth metric or social/competitive
+  dynamics.*
 - **Anti-transactional.** The app disciplines buying decisions; it never nudges *more* buying. Never
   reward acquisition for its own sake. *Revisit signal: none expected — this is core.*
 - **Honesty over compulsion.** Surface only true data; no fabricated dopamine. A metric we can't back
@@ -49,8 +52,9 @@ the non-goals say what to refuse even when tempting. Both halves are load-bearin
   surface area and a decision pushed onto the user. Don't duplicate a surface that already exists
   (e.g. a homepage card that mirrors the bell or the activity feed). *Revisit per-feature when a
   default genuinely can't serve two real, conflicting needs.*
-- **Generic by default.** Build for any user's library, not the maintainer's specific one — even
-  though it's single-user today. *Revisit signal: none expected — this keeps the app honest.*
+- **Generic by default.** Build for any user's library, not the maintainer's specific one — and for
+  any reasonable household using one install (roommates, a family on a shared account), not a single
+  assumed user. *Revisit signal: none expected — this keeps the app honest.*
 
 Note the symmetry with the test: gamification is a *non-goal as engagement machinery*, but **not**
 banned if a feature passes the test honestly (a truthful "12 of 40 backlog hours played" informs a
