@@ -36,31 +36,33 @@ illustrative, not a menu to go build: the test decides, not the format.) If it m
 that doesn't inform a decision, or shows value that isn't true, it's out. The thesis says what to
 build; the non-goals say what to refuse even when tempting. Both halves are load-bearing.
 
-**Non-goals (and why):**
+**Non-goals (and why).** Listed in priority order — when two collide on a real feature, the earlier
+one wins. The shape: 1–3 are *don't manipulate the user* (moral core), 4–5 are *who it serves*
+(accessibility), 6 is *how to decide* (a tactical tie-breaker that yields to all the rest).
 
-- **No engagement machinery.** No XP, streaks, leaderboards, or daily-login carrots. These exist to
-  juice retention in products with a growth metric; Hoard has no such metric for them to grab — even
-  with a few people on one install (roommates, a Steam Family Share household), there's no audience to
-  out-rank and no DAU to lift. *Revisit if Hoard grows a genuine growth metric or social/competitive
-  dynamics.*
-- **Anti-transactional.** The app disciplines buying decisions; it never nudges *more* buying. Never
-  reward acquisition for its own sake. *Revisit signal: none expected — this is core.*
-- **Honesty over compulsion.** Surface only true data; no fabricated dopamine. A metric we can't back
-  with real data (e.g. "money you saved" without purchase price) doesn't ship dressed as fact. Be a
-  mirror, not a slot machine. *Revisit if the backing data genuinely becomes available.*
-- **Restraint over configurability.** Default-sensible beats toggle-everything; every option is
-  surface area and a decision pushed onto the user. Don't duplicate a surface that already exists
-  (e.g. a homepage card that mirrors the bell or the activity feed). *Revisit per-feature when a
-  default genuinely can't serve two real, conflicting needs.*
-- **Generic by default.** Build for any user's library, not the maintainer's specific one — and for
-  any reasonable household using one install (roommates, a family on a shared account), not a single
-  assumed user. *Revisit signal: none expected — this keeps the app honest.*
-- **Free, low-friction core.** Hoard's core value runs on services that cost nothing — Steam, ITAD,
-  and HowLongToBeat are all free — so a working install never requires a paid subscription. Features
-  that add cost (e.g. a paid AI service) or friction (e.g. hand-entering each game's purchase price)
-  are welcome, but only as opt-in depth that never gates or degrades the base experience for those who
-  skip them. *Revisit if a core dependency (Steam, ITAD, or HLTB) moves its required API behind a
-  mandatory paid tier — a fundamental shift that would force the question, not a casual one.*
+1. **Honesty over compulsion.** Surface only true data; no fabricated dopamine. A metric we can't back
+   with real data (e.g. "money you saved" without purchase price) doesn't ship dressed as fact. Be a
+   mirror, not a slot machine. *Revisit if the backing data genuinely becomes available.*
+2. **Anti-transactional.** The app disciplines buying decisions; it never nudges *more* buying. Never
+   reward acquisition for its own sake. *Revisit signal: none expected — this is core.*
+3. **No engagement machinery.** No XP, streaks, leaderboards, or daily-login carrots. These exist to
+   juice retention in products with a growth metric; Hoard has no such metric for them to grab — even
+   with a few people on one install (roommates, a Steam Family Share household), there's no audience to
+   out-rank and no DAU to lift. *Revisit if Hoard grows a genuine growth metric or social/competitive
+   dynamics.*
+4. **Generic by default.** Build for any user's library, not the maintainer's specific one — and for
+   any reasonable household using one install (roommates, a family on a shared account), not a single
+   assumed user. *Revisit signal: none expected — this keeps the app honest.*
+5. **Free, low-friction core.** Hoard's core value runs on services that cost nothing — Steam, ITAD,
+   and HowLongToBeat are all free — so a working install never requires a paid subscription. Features
+   that add cost (e.g. a paid AI service) or friction (e.g. hand-entering each game's purchase price)
+   are welcome, but only as opt-in depth that never gates or degrades the base experience for those who
+   skip them. *Revisit if a core dependency (Steam, ITAD, or HLTB) moves its required API behind a
+   mandatory paid tier — a fundamental shift that would force the question, not a casual one.*
+6. **Restraint over configurability.** Default-sensible beats toggle-everything; every option is
+   surface area and a decision pushed onto the user. Don't duplicate a surface that already exists
+   (e.g. a homepage card that mirrors the bell or the activity feed). *Revisit per-feature when a
+   default genuinely can't serve two real, conflicting needs.*
 
 Note the symmetry with the test: gamification is a *non-goal as engagement machinery*, but **not**
 banned if a feature passes the test honestly (a truthful "12 of 40 backlog hours played" informs a

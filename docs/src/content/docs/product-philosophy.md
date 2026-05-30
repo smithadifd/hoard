@@ -23,4 +23,4 @@ This isn't a novel invention — it borrows a few well-worn conventions, noted h
 
 ## Where the operative list lives
 
-The tenets themselves — the thesis, the test, and the five non-goals with their revisit signals — live in [`AGENTS.md`](https://github.com/smithadifd/hoard/blob/main/AGENTS.md) at the repo root, not on this page. That's deliberate: they sit in front of every contributor and AI agent at the point of work, and keeping a single source avoids two copies drifting apart. This page exists to tell a human reader the philosophy *exists* and why; `AGENTS.md` is where you go to apply it.
+The tenets themselves — the thesis, the test, and the priority-ordered non-goals with their revisit signals — live in [`AGENTS.md`](https://github.com/smithadifd/hoard/blob/main/AGENTS.md) at the repo root, not on this page. That's deliberate: they sit in front of every contributor and AI agent at the point of work, and keeping a single source avoids two copies drifting apart. This page exists to tell a human reader the philosophy *exists* and why; `AGENTS.md` is where you go to apply it.
