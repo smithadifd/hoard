@@ -44,6 +44,7 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
+            { label: 'Product philosophy', link: '/product-philosophy/' },
             { label: 'Design decisions', link: '/design-decisions/' },
             { label: 'Data sources', link: '/data-sources/' },
             { label: 'Demo mode', link: '/demo/' },
