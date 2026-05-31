@@ -122,7 +122,11 @@ export function getBackupStatus(): {
   };
 }
 
-function cleanupOldBackups(backupDir: string, retentionDays: number): number {
+/**
+ * Delete `hoard_*.db` backups older than `retentionDays`. Exported for testing;
+ * a retention bug here could delete the only good backup.
+ */
+export function cleanupOldBackups(backupDir: string, retentionDays: number): number {
   if (retentionDays <= 0) return 0;
 
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
