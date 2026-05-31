@@ -1118,6 +1118,21 @@ describe('countGames', () => {
 // ============================================
 
 describe('settings-backed thresholds', () => {
+  // The backlog/play-again thresholds share a 60s in-memory cache keyed on
+  // Date.now() — advance past the TTL between tests so each seeded setting is
+  // re-read (mirrors the getScoringConfig test pattern).
+  let timeOffset = 0;
+  const realDateNow = Date.now;
+
+  beforeEach(() => {
+    timeOffset += 61_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => realDateNow() + timeOffset);
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('getBacklogThreshold', () => {
     it('returns default when no setting exists', () => {
       expect(getBacklogThreshold()).toBe(10);
