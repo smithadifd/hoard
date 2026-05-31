@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { formatZodError } from '@/lib/validations';
 import { setSetting } from '@/lib/db/queries';
 import { updateOnboardingState } from '@/lib/onboarding/state';
 
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return apiValidationError(parsed.error.issues[0]?.message ?? 'Invalid input');
+    return apiValidationError(formatZodError(parsed.error));
   }
 
   const probe = await probeSteam(parsed.data.steamApiKey, parsed.data.steamUserId);

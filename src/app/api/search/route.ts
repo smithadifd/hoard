@@ -4,10 +4,9 @@ import { getDb } from '@/lib/db/index';
 import { games, userGames } from '@/lib/db/schema';
 import { getSteamClient } from '@/lib/steam/client';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiUnauthorized } from '@/lib/utils/api';
+import { apiSuccess, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
 import type { SteamSearchResult } from '@/lib/steam/types';
 import { searchParamsToObject, formatZodError } from '@/lib/validations';
-import { NextResponse } from 'next/server';
 
 const searchQuerySchema = z.object({
   q: z.string().min(2).max(100),
@@ -42,7 +41,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const parsed = searchQuerySchema.safeParse(searchParamsToObject(url.searchParams));
   if (!parsed.success) {
-    return NextResponse.json({ error: formatZodError(parsed.error) }, { status: 400 });
+    return apiValidationError(formatZodError(parsed.error));
   }
 
   const { q, limit } = parsed.data;

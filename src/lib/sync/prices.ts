@@ -88,6 +88,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
     const attempted = itadToGame.size;
     let succeeded = 0;
     let skipped = 0;
+    let failed = 0;
     for (const overview of overviews) {
       if (signal?.aborted) {
         console.log(`[PriceSync] Cancelled after ${succeeded} games`);
@@ -147,21 +148,29 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
         // Score computation failed — store without score
       }
 
-      insertPriceSnapshot({
-        gameId: game.id,
-        store: storeName ?? 'Best Price',
-        priceCurrent: currentPrice,
-        priceRegular: regularPrice,
-        discountPercent: cut,
-        currency,
-        url: current?.url ?? overview.urls?.game,
-        isHistoricalLow: isAtATL,
-        historicalLowPrice,
-        dealScore: dealScoreValue,
-      });
+      // Isolate the DB write per item: a single failing snapshot insert should
+      // skip that game and keep going, not abort the loop and lose every
+      // remaining game's price data at the outer catch.
+      try {
+        insertPriceSnapshot({
+          gameId: game.id,
+          store: storeName ?? 'Best Price',
+          priceCurrent: currentPrice,
+          priceRegular: regularPrice,
+          discountPercent: cut,
+          currency,
+          url: current?.url ?? overview.urls?.game,
+          isHistoricalLow: isAtATL,
+          historicalLowPrice,
+          dealScore: dealScoreValue,
+        });
 
-      succeeded++;
-      onProgress?.(succeeded, attempted, { gameName: game.title });
+        succeeded++;
+        onProgress?.(succeeded, attempted, { gameName: game.title });
+      } catch (error) {
+        console.error(`[PriceSync] Failed to store snapshot for "${game.title}" (game ${game.id}):`, error);
+        failed++;
+      }
     }
 
     const successRate = attempted > 0 ? succeeded / attempted : 1;
@@ -185,7 +194,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       console.error('[PriceSync] Release check failed:', releaseError);
     }
 
-    return { stats: { attempted, succeeded, failed: 0, skipped }, syncLogId };
+    return { stats: { attempted, succeeded, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetItadApiCalls());

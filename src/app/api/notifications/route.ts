@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { formatZodError } from '@/lib/validations';
 import { dismissAll, listNotifications, markAllRead } from '@/lib/notifications/queries';
 
 /** GET /api/notifications — most recent 20 notifications for the user. */
@@ -12,8 +13,13 @@ export async function GET(request: NextRequest) {
   } catch {
     return apiUnauthorized();
   }
-  const notifications = listNotifications(userId);
-  return apiSuccess({ notifications });
+  try {
+    const notifications = listNotifications(userId);
+    return apiSuccess({ notifications });
+  } catch (error) {
+    console.error('[GET /api/notifications]', error);
+    return apiError('Failed to load notifications');
+  }
 }
 
 const actionSchema = z.object({
@@ -41,11 +47,16 @@ export async function POST(request: NextRequest) {
 
   const parsed = actionSchema.safeParse(body);
   if (!parsed.success) {
-    return apiValidationError(parsed.error.issues[0]?.message ?? 'Invalid action');
+    return apiValidationError(formatZodError(parsed.error));
   }
 
-  const updated = markAllRead(userId);
-  return apiSuccess({ updated });
+  try {
+    const updated = markAllRead(userId);
+    return apiSuccess({ updated });
+  } catch (error) {
+    console.error('[POST /api/notifications]', error);
+    return apiError('Failed to mark notifications read');
+  }
 }
 
 /** DELETE /api/notifications — dismiss everything still visible. */
@@ -56,6 +67,11 @@ export async function DELETE(request: NextRequest) {
   } catch {
     return apiUnauthorized();
   }
-  const dismissed = dismissAll(userId);
-  return apiSuccess({ dismissed });
+  try {
+    const dismissed = dismissAll(userId);
+    return apiSuccess({ dismissed });
+  } catch (error) {
+    console.error('[DELETE /api/notifications]', error);
+    return apiError('Failed to dismiss notifications');
+  }
 }
