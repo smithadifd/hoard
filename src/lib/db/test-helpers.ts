@@ -280,6 +280,12 @@ export function seedUserGame(
       pricePaid: overrides.pricePaid,
       pricePaidSuggested: overrides.pricePaidSuggested,
       pricePaidSuggestionDismissedAt: overrides.pricePaidSuggestionDismissedAt,
+      wishlistRemovedAt: overrides.wishlistRemovedAt,
+      autoAlertDisabled: overrides.autoAlertDisabled,
+      lastAutoAlertAt: overrides.lastAutoAlertAt,
+      interestRatedAt: overrides.interestRatedAt,
+      enjoymentRating: overrides.enjoymentRating,
+      enjoymentRatedAt: overrides.enjoymentRatedAt,
     })
     .returning({ id: schema.userGames.id })
     .get();
