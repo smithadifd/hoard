@@ -17,6 +17,57 @@ informed purchasing decisions from price history, review scores, and play-time e
 user, runs in Docker (typically a Synology NAS behind a Caddy reverse proxy). Status: all phases
 shipped; active work is incremental.
 
+## Product identity
+
+Architecture has its "why" in [`docs/.../design-decisions.md`](docs/src/content/docs/design-decisions.md).
+This section is the *product* "why" — what Hoard is for, so a new feature can be judged against intent
+rather than vibe. These are observed tenets (reverse-engineered from decisions actually made), not
+aspirations. Each carries a **revisit signal**: the condition under which it should be reopened. Argue
+with them — a tenet that can't be challenged is dogma, not a principle.
+
+**The thesis.** Hoard helps you *collect games at a good price and extract/surface the value of the
+games you own* — quantifying a product (price-to-ATL, review %, $/hour, interest) to **inform the
+user's decision**. Every legitimate feature is a new way to surface honest value that informs a
+decision: buy, skip, wait, or play.
+
+**The test for any new feature:** *Does it surface honest value that informs a decision?* If yes, the
+genre is irrelevant — a card, notification, recap, or even gamification can all pass. (That list is
+illustrative, not a menu to go build: the test decides, not the format.) If it manufactures engagement
+that doesn't inform a decision, or shows value that isn't true, it's out. The thesis says what to
+build; the non-goals say what to refuse even when tempting. Both halves are load-bearing.
+
+**Non-goals (and why).** Listed in priority order — when two collide on a real feature, the earlier
+one wins. The shape: 1–3 are *don't manipulate the user* (moral core), 4–5 are *who it serves*
+(accessibility), 6 is *how to decide* (a tactical tie-breaker that yields to all the rest).
+
+1. **Honesty over compulsion.** Surface only true data; no fabricated dopamine. A metric we can't back
+   with real data (e.g. "money you saved" without purchase price) doesn't ship dressed as fact. Be a
+   mirror, not a slot machine. *Revisit if the backing data genuinely becomes available.*
+2. **Anti-transactional.** The app disciplines buying decisions; it never nudges *more* buying. Never
+   reward acquisition for its own sake. *Revisit signal: none expected — this is core.*
+3. **No engagement machinery.** No XP, streaks, leaderboards, or daily-login carrots. These exist to
+   juice retention in products with a growth metric; Hoard has no such metric for them to grab — even
+   with a few people on one install (roommates, a Steam Family Share household), there's no audience to
+   out-rank and no DAU to lift. *Revisit if Hoard grows a genuine growth metric or social/competitive
+   dynamics.*
+4. **Generic by default.** Build for any user's library, not the maintainer's specific one — and for
+   any reasonable household using one install (roommates, a family on a shared account), not a single
+   assumed user. *Revisit signal: none expected — this keeps the app honest.*
+5. **Free, low-friction core.** Hoard's core value runs on services that cost nothing — Steam, ITAD,
+   and HowLongToBeat are all free — so a working install never requires a paid subscription. Features
+   that add cost (e.g. a paid AI service) or friction (e.g. hand-entering each game's purchase price)
+   are welcome, but only as opt-in depth that never gates or degrades the base experience for those who
+   skip them. *Revisit if a core dependency (Steam, ITAD, or HLTB) moves its required API behind a
+   mandatory paid tier — a fundamental shift that would force the question, not a casual one.*
+6. **Restraint over configurability.** Default-sensible beats toggle-everything; every option is
+   surface area and a decision pushed onto the user. Don't duplicate a surface that already exists
+   (e.g. a homepage card that mirrors the bell or the activity feed). *Revisit per-feature when a
+   default genuinely can't serve two real, conflicting needs.*
+
+Note the symmetry with the test: gamification is a *non-goal as engagement machinery*, but **not**
+banned if a feature passes the test honestly (a truthful "12 of 40 backlog hours played" informs a
+decision and is fair game). The line is honesty + informs-a-decision, never the genre label.
+
 ## Tech stack
 
 | Layer | Technology |
@@ -180,7 +231,7 @@ summarizes:
 
 - [Architecture & data flow](docs/src/content/docs/architecture/index.md)
 - [Scoring engine](docs/src/content/docs/architecture/scoring-engine.md)
-- [Design decisions](docs/src/content/docs/design-decisions.md)
+- [Product philosophy](docs/src/content/docs/product-philosophy.md) · [Design decisions](docs/src/content/docs/design-decisions.md)
 - [Data sources](docs/src/content/docs/data-sources.md)
 - [Features: backlog](docs/src/content/docs/features/backlog.md) · [alerts](docs/src/content/docs/features/alerts.md)
 - [Self-hosting](docs/src/content/docs/self-hosting/index.md) · [configuration](docs/src/content/docs/self-hosting/configuration.md) · [backups](docs/src/content/docs/self-hosting/backups.md) · [upgrading](docs/src/content/docs/self-hosting/upgrading.md)
