@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { formatZodError } from '@/lib/validations';
 import {
   getOnboardingState,
   updateOnboardingState,
@@ -34,10 +35,15 @@ export async function GET(request: NextRequest) {
     return apiUnauthorized();
   }
 
-  return apiSuccess({
-    state: getOnboardingState(userId),
-    checklist: computeChecklist(userId),
-  });
+  try {
+    return apiSuccess({
+      state: getOnboardingState(userId),
+      checklist: computeChecklist(userId),
+    });
+  } catch (error) {
+    console.error('[GET /api/onboarding/state]', error);
+    return apiError('Failed to load onboarding state');
+  }
 }
 
 /**
@@ -62,9 +68,14 @@ export async function PATCH(request: NextRequest) {
 
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return apiValidationError(parsed.error.issues[0]?.message ?? 'Invalid patch payload');
+    return apiValidationError(formatZodError(parsed.error));
   }
 
-  const next = updateOnboardingState(userId, parsed.data);
-  return apiSuccess({ state: next, checklist: computeChecklist(userId) });
+  try {
+    const next = updateOnboardingState(userId, parsed.data);
+    return apiSuccess({ state: next, checklist: computeChecklist(userId) });
+  } catch (error) {
+    console.error('[PATCH /api/onboarding/state]', error);
+    return apiError('Failed to update onboarding state');
+  }
 }

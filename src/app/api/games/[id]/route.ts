@@ -60,7 +60,10 @@ export async function PATCH(
       return apiValidationError('Invalid game ID');
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (body === null) {
+      return apiValidationError('Invalid JSON');
+    }
     const parsed = gameUpdateSchema.safeParse(body);
     if (!parsed.success) {
       return apiValidationError(formatZodError(parsed.error));

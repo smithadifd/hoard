@@ -5,6 +5,7 @@ import { user, userGames, priceAlerts } from '@/lib/db/schema';
 import { sql, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { apiSuccess, apiError, apiValidationError } from '@/lib/utils/api';
+import { formatZodError } from '@/lib/validations';
 
 const setupSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -22,11 +23,13 @@ export async function POST(request: NextRequest) {
       return apiError('Setup already completed. Please sign in.', 403);
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (body === null) {
+      return apiValidationError('Invalid JSON');
+    }
     const parsed = setupSchema.safeParse(body);
     if (!parsed.success) {
-      const firstError = parsed.error.issues[0]?.message || 'Invalid input';
-      return apiValidationError(firstError);
+      return apiValidationError(formatZodError(parsed.error));
     }
 
     // Create user via Better Auth API

@@ -3,9 +3,11 @@ import { z } from 'zod';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import {
   apiSuccess,
+  apiError,
   apiUnauthorized,
   apiValidationError,
 } from '@/lib/utils/api';
+import { formatZodError } from '@/lib/validations';
 import { dismissNotification, markRead } from '@/lib/notifications/queries';
 
 // Only `true` is meaningful — there's no undo path, and the endpoint is meant
@@ -47,26 +49,27 @@ export async function PATCH(
 
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return apiValidationError(parsed.error.issues[0]?.message ?? 'Invalid input');
+    return apiValidationError(formatZodError(parsed.error));
   }
 
-  let touched = false;
-  if (parsed.data.read === true) {
-    touched = markRead(id, userId) || touched;
-  }
-  if (parsed.data.dismissed === true) {
-    touched = dismissNotification(id, userId) || touched;
-  }
-
-  if (!touched && parsed.data.read === undefined && parsed.data.dismissed === undefined) {
+  if (parsed.data.read === undefined && parsed.data.dismissed === undefined) {
     return apiValidationError('Provide read or dismissed in the body');
   }
 
-  if (!touched) {
-    // The notification either doesn't exist for this user or was already in the
-    // requested state. Both are safe to treat as a no-op success.
-    return apiSuccess({ touched: false });
-  }
+  try {
+    let touched = false;
+    if (parsed.data.read === true) {
+      touched = markRead(id, userId) || touched;
+    }
+    if (parsed.data.dismissed === true) {
+      touched = dismissNotification(id, userId) || touched;
+    }
 
-  return apiSuccess({ touched: true });
+    // When !touched the notification either doesn't exist for this user or was
+    // already in the requested state. Both are safe to treat as a no-op success.
+    return apiSuccess({ touched });
+  } catch (error) {
+    console.error('[PATCH /api/notifications/:id]', error);
+    return apiError('Failed to update notification');
+  }
 }
