@@ -129,6 +129,32 @@ describe('calculateValueReceived', () => {
     });
   });
 
+  describe('divide-by-zero safety', () => {
+    it('hoursToBreakEven is finite when a valid threshold is used', () => {
+      // Any positive threshold — even at the floor — must not produce Infinity
+      const minThresholds = {
+        maxDollarsPerHour: {
+          overwhelminglyPositive: 0.01,
+          veryPositive: 0.01,
+          positive: 0.01,
+          mixed: 0.01,
+          negative: 0.01,
+        },
+      };
+      const r = calculateValueReceived(
+        makeInput({ pricePaid: 30, playtimeMinutes: 0, reviewPercent: 85 }),
+        minThresholds
+      );
+      expect(Number.isFinite(r.hoursToBreakEven!)).toBe(true);
+      expect(r.hoursToBreakEven).toBeGreaterThan(0);
+    });
+
+    it('hoursToBreakEven is null when there is no price — never Infinity', () => {
+      const r = calculateValueReceived(makeInput({ pricePaid: null }));
+      expect(r.hoursToBreakEven).toBeNull();
+    });
+  });
+
   describe('edge cases', () => {
     it('free game (price 0) falls back to the time lens, never $0/hr', () => {
       const r = calculateValueReceived(makeInput({ pricePaid: 0, playtimeMinutes: 1200, hltbMainHours: 10 }));

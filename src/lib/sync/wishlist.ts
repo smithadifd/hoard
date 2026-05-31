@@ -83,6 +83,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
     }
 
     // New games: fetch name from Steam Store API (rate-limited)
+    let failed = 0;
     for (const appId of needDetails) {
       if (signal?.aborted) {
         console.log(`[WishlistSync] Cancelled after ${processed} games`);
@@ -95,38 +96,43 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
         continue;
       }
 
-      const details = await client.getAppDetails(appId);
-      const title = details?.name ?? `App ${appId}`;
+      try {
+        const details = await client.getAppDetails(appId);
+        const title = details?.name ?? `App ${appId}`;
 
-      const gameId = upsertGameFromSteam({
-        steamAppId: appId,
-        title,
-        headerImageUrl: details?.header_image,
-        description: details?.short_description,
-        releaseDate: details?.release_date?.date,
-        developer: details?.developers?.[0],
-        publisher: details?.publishers?.[0],
-        isReleased: details?.release_date?.coming_soon === true ? false : details?.release_date ? true : undefined,
-      });
-
-      upsertUserGame(gameId, { isWishlisted: true }, effectiveUserId);
-
-      // Enrich with review data
-      const reviews = await client.getReviewSummary(appId);
-      if (reviews) {
-        upsertGameFromSteam({
+        const gameId = upsertGameFromSteam({
           steamAppId: appId,
           title,
-          reviewScore: Math.round(
-            (reviews.total_positive / Math.max(reviews.total_reviews, 1)) * 100
-          ),
-          reviewCount: reviews.total_reviews,
-          reviewDescription: reviews.review_score_desc,
+          headerImageUrl: details?.header_image,
+          description: details?.short_description,
+          releaseDate: details?.release_date?.date,
+          developer: details?.developers?.[0],
+          publisher: details?.publishers?.[0],
+          isReleased: details?.release_date?.coming_soon === true ? false : details?.release_date ? true : undefined,
         });
-      }
 
-      processed++;
-      onProgress?.(processed, total, { gameName: title });
+        upsertUserGame(gameId, { isWishlisted: true }, effectiveUserId);
+
+        // Enrich with review data
+        const reviews = await client.getReviewSummary(appId);
+        if (reviews) {
+          upsertGameFromSteam({
+            steamAppId: appId,
+            title,
+            reviewScore: Math.round(
+              (reviews.total_positive / Math.max(reviews.total_reviews, 1)) * 100
+            ),
+            reviewCount: reviews.total_reviews,
+            reviewDescription: reviews.review_score_desc,
+          });
+        }
+
+        processed++;
+        onProgress?.(processed, total, { gameName: title });
+      } catch (error) {
+        console.error(`[WishlistSync] Failed to process app ${appId}:`, error);
+        failed++;
+      }
 
       // Rate limit: Steam Store API allows ~200 requests / 5 min.
       // We make 2 calls per game (appdetails + reviews), so 3s per game.
@@ -163,7 +169,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
     }
 
     completeSyncLog(syncLogId, 'success', processed, undefined, total, skipped, getAndResetSteamApiCalls());
-    return { stats: { attempted: total, succeeded: processed, failed: 0, skipped }, syncLogId };
+    return { stats: { attempted: total, succeeded: processed, failed, skipped }, syncLogId };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetSteamApiCalls());

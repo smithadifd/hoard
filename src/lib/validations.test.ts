@@ -342,6 +342,89 @@ describe('settingsUpdateSchema', () => {
     const result = settingsUpdateSchema.safeParse({ settings: { price_paid_suggestions_enabled: 'false' } });
     expect(result.success).toBe(true);
   });
+
+  it('rejects scoring_thresholds with a zero maxDollarsPerHour (divide-by-zero guard)', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_thresholds: JSON.stringify({ maxDollarsPerHour: { positive: 0 } }) },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects scoring_thresholds with a negative maxDollarsPerHour', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_thresholds: JSON.stringify({ maxDollarsPerHour: { veryPositive: -1 } }) },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects scoring_thresholds with a non-finite maxDollarsPerHour', () => {
+    // JSON.stringify(Infinity) → "null", so we test with a string that parses oddly
+    // A raw NaN/Infinity in the JSON is not valid JSON, but test a very large number.
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_thresholds: JSON.stringify({ maxDollarsPerHour: { positive: 1e10 } }) },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts scoring_thresholds with valid positive maxDollarsPerHour values', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: {
+        scoring_thresholds: JSON.stringify({
+          maxDollarsPerHour: {
+            overwhelminglyPositive: 4,
+            veryPositive: 3,
+            positive: 2,
+            mixed: 1,
+            negative: 0.5,
+          },
+        }),
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts partial scoring_thresholds (only some tiers specified)', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_thresholds: JSON.stringify({ maxDollarsPerHour: { positive: 2.5 } }) },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an empty scoring_thresholds object', () => {
+    // An empty blob is valid — getScoringConfig deep-merges over DEFAULT_THRESHOLDS
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_thresholds: '{}' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects scoring_thresholds with invalid JSON', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_thresholds: '{not valid json' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects scoring_weights with out-of-range weight values', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_weights: JSON.stringify({ priceWeight: 1.5 }) },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects scoring_weights with negative weight values', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_weights: JSON.stringify({ reviewWeight: -0.1 }) },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts valid partial scoring_weights', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { scoring_weights: JSON.stringify({ priceWeight: 0.3, reviewWeight: 0.25 }) },
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('syncTriggerSchema', () => {
