@@ -113,6 +113,7 @@ export function GameFilters({
           <input
             ref={searchInputRef}
             type="text"
+            aria-label="Search games"
             placeholder="Search games..."
             defaultValue={filters.search || ''}
             onChange={(e) => updateFilter('search', e.target.value)}
@@ -120,6 +121,7 @@ export function GameFilters({
           />
           {filters.search && (
             <button
+              aria-label="Clear search"
               onClick={() => {
                 if (searchInputRef.current) searchInputRef.current.value = '';
                 updateFilter('search', '');
@@ -132,6 +134,8 @@ export function GameFilters({
         </div>
 
         <button
+          aria-label="Advanced filters"
+          aria-expanded={showAdvanced}
           onClick={() => setShowAdvanced(!showAdvanced)}
           className={`relative px-3 py-2 rounded-md border text-sm font-medium transition-colors min-h-[44px] flex items-center justify-center ${
             showAdvanced
@@ -163,8 +167,9 @@ export function GameFilters({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-xl bg-card">
           {/* Duration */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Max Duration</label>
+            <label htmlFor="filter-max-hours" className="text-xs font-medium text-muted-foreground">Max Duration</label>
             <select
+              id="filter-max-hours"
               value={filters.maxHours || ''}
               onChange={(e) => updateFilter('maxHours', e.target.value ? Number(e.target.value) : undefined)}
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -182,8 +187,9 @@ export function GameFilters({
 
           {/* Co-op */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Co-op</label>
+            <label htmlFor="filter-coop" className="text-xs font-medium text-muted-foreground">Co-op</label>
             <select
+              id="filter-coop"
               value={filters.coop === undefined ? '' : filters.coop ? 'yes' : 'no'}
               onChange={(e) => updateFilter('coop', e.target.value === '' ? undefined : e.target.value === 'yes')}
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -196,8 +202,9 @@ export function GameFilters({
 
           {/* Playtime Status */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Play Status</label>
+            <label htmlFor="filter-play-status" className="text-xs font-medium text-muted-foreground">Play Status</label>
             <select
+              id="filter-play-status"
               value={filters.playtimeStatus || ''}
               onChange={(e) => updateFilter('playtimeStatus', e.target.value ? e.target.value as GameFiltersType['playtimeStatus'] : undefined)}
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -211,8 +218,9 @@ export function GameFilters({
 
           {/* Min Review */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Min Review</label>
+            <label htmlFor="filter-min-review" className="text-xs font-medium text-muted-foreground">Min Review</label>
             <select
+              id="filter-min-review"
               value={filters.minReview || ''}
               onChange={(e) => updateFilter('minReview', e.target.value ? Number(e.target.value) : undefined)}
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -228,8 +236,9 @@ export function GameFilters({
           {/* Pricing */}
           {!hidePricing && (
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Pricing</label>
+              <label htmlFor="filter-pricing" className="text-xs font-medium text-muted-foreground">Pricing</label>
               <select
+                id="filter-pricing"
                 value={
                   filters.maxPrice !== undefined
                     ? `max:${filters.maxPrice}`
@@ -261,8 +270,9 @@ export function GameFilters({
 
           {/* Min Interest */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Min Interest</label>
+            <label htmlFor="filter-min-interest" className="text-xs font-medium text-muted-foreground">Min Interest</label>
             <select
+              id="filter-min-interest"
               value={filters.minInterest || ''}
               onChange={(e) => updateFilter('minInterest', e.target.value ? Number(e.target.value) : undefined)}
               className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -277,8 +287,9 @@ export function GameFilters({
           {/* Data Completeness */}
           {filters.requireCompleteData !== undefined && (
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Data Quality</label>
+              <label htmlFor="filter-data-quality" className="text-xs font-medium text-muted-foreground">Data Quality</label>
               <select
+                id="filter-data-quality"
                 value={filters.requireCompleteData ? 'complete' : 'all'}
                 onChange={(e) => updateFilter('requireCompleteData', e.target.value === 'complete')}
                 className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -292,8 +303,9 @@ export function GameFilters({
           {/* Unreleased */}
           {filters.hideUnreleased !== undefined && (
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Release Status</label>
+              <label htmlFor="filter-release-status" className="text-xs font-medium text-muted-foreground">Release Status</label>
               <select
+                id="filter-release-status"
                 value={filters.hideUnreleased ? 'released' : 'all'}
                 onChange={(e) => updateFilter('hideUnreleased', e.target.value === 'released')}
                 className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -306,8 +318,9 @@ export function GameFilters({
 
           {/* Early Access */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Early Access</label>
+            <label htmlFor="filter-early-access" className="text-xs font-medium text-muted-foreground">Early Access</label>
             <select
+              id="filter-early-access"
               value={filters.earlyAccess === undefined ? '' : filters.earlyAccess ? 'only' : 'exclude'}
               onChange={(e) => {
                 const val = e.target.value;
@@ -371,9 +384,10 @@ export function GameFilters({
 
           {/* Sort */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Sort By</label>
+            <label htmlFor="filter-sort-by" className="text-xs font-medium text-muted-foreground">Sort By</label>
             <div className="flex gap-1">
               <select
+                id="filter-sort-by"
                 value={filters.sortBy || 'title'}
                 onChange={(e) => updateFilter('sortBy', e.target.value as GameFiltersType['sortBy'])}
                 className="min-w-0 flex-1 px-2 py-2.5 rounded-md bg-background border border-input text-sm"
@@ -384,6 +398,7 @@ export function GameFilters({
               </select>
               <button
                 onClick={() => updateFilter('sortOrder', filters.sortOrder === 'desc' ? 'asc' : 'desc')}
+                aria-label={filters.sortOrder === 'desc' ? 'Sort descending' : 'Sort ascending'}
                 className="shrink-0 px-3 py-2.5 rounded-md border border-input bg-background text-muted-foreground hover:text-foreground transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
                 title={filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'}
               >
@@ -440,6 +455,7 @@ export function GameFilters({
             >
               {genre}
               <button
+                aria-label={`Remove ${genre} filter`}
                 onClick={() => toggleGenre(genre)}
                 className="text-muted-foreground hover:text-foreground"
               >
