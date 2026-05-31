@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiUnauthorized } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiUnauthorized } from '@/lib/utils/api';
 import { getUnreadCount } from '@/lib/notifications/queries';
 
 /**
@@ -14,5 +14,10 @@ export async function GET(request: NextRequest) {
   } catch {
     return apiUnauthorized();
   }
-  return apiSuccess({ count: getUnreadCount(userId) });
+  try {
+    return apiSuccess({ count: getUnreadCount(userId) });
+  } catch (error) {
+    console.error('[GET /api/notifications/unread-count]', error);
+    return apiError('Failed to load unread count');
+  }
 }
