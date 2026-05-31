@@ -141,6 +141,7 @@ export function GameUserControls({
           {[1, 2, 3, 4, 5].map((value) => (
             <button
               key={value}
+              aria-label={`Set interest to ${value} of 5`}
               onClick={() => handleInterestChange(value)}
               className={`p-2 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center ${
                 value <= interest ? 'text-yellow-500' : 'text-muted-foreground/30'
@@ -246,13 +247,14 @@ export function GameUserControls({
 
           {/* Price Threshold */}
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">
+            <label htmlFor="price-threshold" className="text-xs text-muted-foreground">
               Notify when price drops below
             </label>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <div className="flex items-center gap-2 flex-1">
                 <span className="text-sm text-muted-foreground">$</span>
                 <input
+                  id="price-threshold"
                   ref={thresholdRef}
                   type="number"
                   step="0.01"

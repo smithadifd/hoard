@@ -84,6 +84,7 @@ export function PricePaidEditor({ gameId, pricePaid }: PricePaidEditorProps) {
           <span className="text-sm font-medium">What you paid</span>
         </div>
         <button
+          aria-label="Cancel"
           onClick={() => setIsEditing(false)}
           className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -99,6 +100,7 @@ export function PricePaidEditor({ gameId, pricePaid }: PricePaidEditorProps) {
           step="0.01"
           min="0"
           max="100000"
+          aria-label="Price paid in dollars"
           defaultValue={hasPrice ? pricePaid : ''}
           placeholder="0.00"
           className="flex-1 px-2 py-1.5 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"

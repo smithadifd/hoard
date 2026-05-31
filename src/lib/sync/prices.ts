@@ -104,7 +104,13 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
       const currentPrice = current?.price?.amount;
       const regularPrice = current?.regular?.amount;
       const cut = current?.cut ?? 0;
-      const historicalLowPrice = lowest?.price?.amount;
+      // Guard the historical-low with the same BASE_CURRENCY check applied to
+      // current — ITAD's `lowest` shop can differ from `current` and may carry
+      // a foreign-currency amount (e.g. GamesPlanet UK in GBP). Storing a raw
+      // foreign-currency amount as the USD historical-low would cause a phantom
+      // sub-ATL comparison identical to the one fixed for current prices.
+      const historicalLowPrice =
+        lowest?.price?.currency === BASE_CURRENCY ? lowest.price.amount : undefined;
       const currency = current?.price?.currency ?? BASE_CURRENCY;
       const storeName = current?.shop?.name;
 
@@ -121,6 +127,7 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
         continue;
       }
 
+      // isAtATL is false when historicalLowPrice is undefined (never coerce to 0).
       const isAtATL = historicalLowPrice !== undefined && currentPrice <= historicalLowPrice;
 
       // Compute deal score for SQL-level sorting using real game data

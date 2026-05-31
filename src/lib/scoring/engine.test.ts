@@ -49,6 +49,13 @@ describe('calculateDealScore', () => {
       expect(result.priceScore).toBe(100);
     });
 
+    it('clamps priceScore to 0 (not negative) when currentPrice > regularPrice', () => {
+      // Stale data: current inflated above regular — position is negative without the clamp
+      const result = calculateDealScore(makeInput({ currentPrice: 50, regularPrice: 40, historicalLow: 10 }));
+      expect(result.priceScore).toBeGreaterThanOrEqual(0);
+      expect(result.priceScore).toBeLessThanOrEqual(100);
+    });
+
     it('scores proportionally between regular and historical low', () => {
       // Regular=40, ATL=10, range=30. Current=25, position=(40-25)/30=0.5 → 50
       const result = calculateDealScore(makeInput({ currentPrice: 25, regularPrice: 40, historicalLow: 10 }));
@@ -222,6 +229,27 @@ describe('calculateDealScore', () => {
       }));
       expect(result.overall).toBeGreaterThanOrEqual(0);
       expect(result.overall).toBeLessThanOrEqual(100);
+    });
+
+    it('rating is derived from the clamped overall (not a raw pre-clamp value)', () => {
+      // When overall would be negative raw (e.g. stale price data, bad reviews, no HLTB)
+      // the clamped overall is 0 → should be 'poor', not something inconsistent with the
+      // displayed overall.
+      const result = calculateDealScore(makeInput({
+        currentPrice: 60, regularPrice: 40, historicalLow: 10,  // priceScore clamped to 0
+        reviewPercent: 0,    // reviewScore 0
+        hltbMainHours: null, // valueScore 50 (neutral)
+        personalInterest: 1, // interestScore 0
+      }));
+      // overall clamped to [0, 100]; rating must be consistent with the displayed overall
+      expect(result.overall).toBeGreaterThanOrEqual(0);
+      expect(result.overall).toBeLessThanOrEqual(100);
+      const expectedRating = result.overall >= 85 ? 'excellent'
+        : result.overall >= 70 ? 'great'
+        : result.overall >= 55 ? 'good'
+        : result.overall >= 40 ? 'okay'
+        : 'poor';
+      expect(result.rating).toBe(expectedRating);
     });
   });
 

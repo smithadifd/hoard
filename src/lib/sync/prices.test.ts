@@ -297,6 +297,68 @@ describe('syncPrices', () => {
     expect(result.stats.succeeded).toBe(0);
   });
 
+  it('does not mark isAtATL when the lowest shop is in a foreign currency (phantom ATL bug)', async () => {
+    const games = [makeGame(1, 440, 'TF2', 'tf2')];
+    mockGetGamesForPriceSync.mockReturnValue(games);
+
+    // current is USD (valid), lowest is GBP (should be ignored).
+    // The GBP amount (31.99) happens to be numerically lower than currentPrice (9.99
+    // vs 31.99) — but it should NOT trigger an ATL because currencies differ.
+    const mockClient = makeMockITADClient({
+      getOverview: vi.fn().mockResolvedValue([{
+        id: 'tf2',
+        current: {
+          price: { amount: 9.99, currency: 'USD' },
+          regular: { amount: 19.99, currency: 'USD' },
+          cut: 50,
+          shop: { name: 'Steam' },
+        },
+        // Foreign-currency lowest — must NOT be used for ATL comparison
+        lowest: { price: { amount: 7.99, currency: 'GBP' } },
+        urls: { game: 'https://itad.com/game/tf2' },
+      }]),
+    });
+    mockGetITADClient.mockReturnValue(mockClient);
+
+    await syncPrices();
+
+    expect(mockInsertPriceSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isHistoricalLow: false,
+        historicalLowPrice: undefined,
+      })
+    );
+  });
+
+  it('still marks isAtATL when the lowest shop is in USD and currentPrice <= lowest', async () => {
+    const games = [makeGame(1, 440, 'TF2', 'tf2')];
+    mockGetGamesForPriceSync.mockReturnValue(games);
+
+    const mockClient = makeMockITADClient({
+      getOverview: vi.fn().mockResolvedValue([{
+        id: 'tf2',
+        current: {
+          price: { amount: 4.99, currency: 'USD' },
+          regular: { amount: 19.99, currency: 'USD' },
+          cut: 75,
+          shop: { name: 'Steam' },
+        },
+        lowest: { price: { amount: 4.99, currency: 'USD' } },
+        urls: { game: 'https://itad.com/game/tf2' },
+      }]),
+    });
+    mockGetITADClient.mockReturnValue(mockClient);
+
+    await syncPrices();
+
+    expect(mockInsertPriceSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isHistoricalLow: true,
+        historicalLowPrice: 4.99,
+      })
+    );
+  });
+
   it('returns early when all games fail ITAD ID resolution', async () => {
     const games = [makeGame(1, 440, 'TF2')]; // no itadGameId
     mockGetGamesForPriceSync.mockReturnValue(games);

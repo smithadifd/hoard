@@ -343,6 +343,7 @@ export function Sidebar() {
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
               <h3 className="text-sm font-semibold text-foreground">More</h3>
               <button
+                aria-label="Close"
                 onClick={() => setMoreOpen(false)}
                 className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
               >

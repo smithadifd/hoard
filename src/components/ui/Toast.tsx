@@ -40,7 +40,12 @@ export function Toast({ toast, onDismiss }: ToastProps) {
   if (!toast) return null;
 
   return (
-    <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200"
+    >
       <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-card border border-white/[0.08] shadow-lg">
         <span className="text-sm">{toast.message}</span>
         {toast.undoAction && (

@@ -44,12 +44,13 @@ export function calculateDealScore(
   const interestScore = calculateInterestScore(input.personalInterest);
 
   // Weighted composite
-  const overall = Math.round(
+  const rawOverall = Math.round(
     priceScore * weights.priceWeight +
     reviewScore * weights.reviewWeight +
     valueScore * weights.valueWeight +
     interestScore * weights.interestWeight
   );
+  const overall = Math.min(100, Math.max(0, rawOverall));
 
   const dollarsPerHour = input.hltbMainHours && input.hltbMainHours > 0
     ? input.currentPrice / input.hltbMainHours
@@ -58,7 +59,7 @@ export function calculateDealScore(
   const isAtHistoricalLow = input.currentPrice <= input.historicalLow;
 
   return {
-    overall: Math.min(100, Math.max(0, overall)),
+    overall,
     priceScore,
     reviewScore,
     valueScore,
@@ -77,12 +78,14 @@ function calculatePriceScore(current: number, historicalLow: number, regular: nu
   if (regular <= 0) return 50;
   if (current <= historicalLow) return 100;
 
-  // Score based on how close to historical low vs regular price
+  // Score based on how close to historical low vs regular price.
+  // When current > regular (stale data), position is negative — clamp to [0, 100]
+  // so the individual priceScore field is never negative.
   const range = regular - historicalLow;
   if (range <= 0) return 50;
 
   const position = (regular - current) / range;
-  return Math.round(position * 100);
+  return Math.min(100, Math.max(0, Math.round(position * 100)));
 }
 
 function calculateReviewScore(reviewPercent: number | null): number {
