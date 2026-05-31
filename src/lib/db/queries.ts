@@ -218,7 +218,13 @@ const DEFAULT_BACKLOG_THRESHOLD_PERCENT = 10;
 // Absolute fallback for games without HLTB data (minutes)
 const BACKLOG_FALLBACK_MINUTES = 15;
 
-export function getBacklogThreshold(): number {
+// Play Again defaults
+const DEFAULT_PLAY_AGAIN_COMPLETION_PCT = 50;
+const DEFAULT_PLAY_AGAIN_DORMANT_MONTHS = 24;
+// Absolute hours fallback when HLTB is unavailable
+const PLAY_AGAIN_FALLBACK_HOURS = 10;
+
+function readBacklogThreshold(): number {
   try {
     const val = getSetting('backlog_threshold_percent');
     if (val) {
@@ -231,13 +237,7 @@ export function getBacklogThreshold(): number {
   return DEFAULT_BACKLOG_THRESHOLD_PERCENT;
 }
 
-// Play Again defaults
-const DEFAULT_PLAY_AGAIN_COMPLETION_PCT = 50;
-const DEFAULT_PLAY_AGAIN_DORMANT_MONTHS = 24;
-// Absolute hours fallback when HLTB is unavailable
-const PLAY_AGAIN_FALLBACK_HOURS = 10;
-
-export function getPlayAgainCompletionPct(): number {
+function readPlayAgainCompletionPct(): number {
   try {
     const val = getSetting('play_again_completion_pct');
     if (val) {
@@ -250,7 +250,7 @@ export function getPlayAgainCompletionPct(): number {
   return DEFAULT_PLAY_AGAIN_COMPLETION_PCT;
 }
 
-export function getPlayAgainDormantMonths(): number {
+function readPlayAgainDormantMonths(): number {
   try {
     const val = getSetting('play_again_dormant_months');
     if (val) {
@@ -261,6 +261,45 @@ export function getPlayAgainDormantMonths(): number {
     // Use default
   }
   return DEFAULT_PLAY_AGAIN_DORMANT_MONTHS;
+}
+
+// The backlog/play-again thresholds are read on every backlog render — the main
+// getEnrichedGames query plus 6 preset countGames calls each rebuild filter
+// conditions, re-reading these settings ~7×. Cache the resolved values for a
+// short window, mirroring the getScoringConfig cache (TTL-only, no write
+// invalidation — edits take effect within the TTL).
+const THRESHOLD_CACHE_TTL_MS = 60_000; // 1 minute
+let thresholdCache: {
+  backlog: number;
+  playAgainCompletionPct: number;
+  playAgainDormantMonths: number;
+  loadedAt: number;
+} | null = null;
+
+function getThresholds() {
+  const now = Date.now();
+  if (thresholdCache && now - thresholdCache.loadedAt < THRESHOLD_CACHE_TTL_MS) {
+    return thresholdCache;
+  }
+  thresholdCache = {
+    backlog: readBacklogThreshold(),
+    playAgainCompletionPct: readPlayAgainCompletionPct(),
+    playAgainDormantMonths: readPlayAgainDormantMonths(),
+    loadedAt: now,
+  };
+  return thresholdCache;
+}
+
+export function getBacklogThreshold(): number {
+  return getThresholds().backlog;
+}
+
+export function getPlayAgainCompletionPct(): number {
+  return getThresholds().playAgainCompletionPct;
+}
+
+export function getPlayAgainDormantMonths(): number {
+  return getThresholds().playAgainDormantMonths;
 }
 
 // ============================================
@@ -833,6 +872,198 @@ function buildGameFilterConditions(filters: GameFilters, userId: string): SQL[] 
   return conditions;
 }
 
+// ============================================
+// EnrichedGame enrichment helpers
+// Shared by getEnrichedGames, getEnrichedGameById, and getUnreleasedWishlistGames
+// so new EnrichedGame fields / scoring changes are edited in one place.
+// ============================================
+
+interface TagBucket {
+  tags: string[];
+  genres: string[];
+}
+
+/** Fold a single game's tag rows into { tags, genres }. */
+function groupTags(tagRows: { name: string; type: string }[]): TagBucket {
+  const bucket: TagBucket = { tags: [], genres: [] };
+  for (const t of tagRows) {
+    if (t.type === 'genre') bucket.genres.push(t.name);
+    else bucket.tags.push(t.name);
+  }
+  return bucket;
+}
+
+/** Fold multi-game tag rows into a per-gameId { tags, genres } map. */
+function groupTagsByGame(
+  tagRows: { gameId: number; name: string; type: string }[],
+): Map<number, TagBucket> {
+  const byGame = new Map<number, TagBucket>();
+  for (const t of tagRows) {
+    let bucket = byGame.get(t.gameId);
+    if (!bucket) {
+      bucket = { tags: [], genres: [] };
+      byGame.set(t.gameId, bucket);
+    }
+    if (t.type === 'genre') bucket.genres.push(t.name);
+    else bucket.tags.push(t.name);
+  }
+  return byGame;
+}
+
+const EMPTY_TAG_BUCKET: TagBucket = { tags: [], genres: [] };
+
+/** The games+userGames columns common to every EnrichedGame query. */
+interface BaseEnrichedRow {
+  id: number;
+  steamAppId: number;
+  title: string;
+  source: string | null;
+  headerImageUrl: string | null;
+  releaseDate: string | null;
+  developer: string | null;
+  publisher: string | null;
+  reviewScore: number | null;
+  reviewCount: number | null;
+  reviewDescription: string | null;
+  hltbMain: number | null;
+  hltbMainExtra: number | null;
+  hltbCompletionist: number | null;
+  isOwned: boolean | null;
+  isWishlisted: boolean | null;
+  isWatchlisted: boolean | null;
+  isIgnored: boolean | null;
+  autoAlertDisabled: boolean | null;
+  playtimeMinutes: number | null;
+  personalInterest: number | null;
+  lastPlayed: string | null;
+  isCoop: boolean | null;
+  isMultiplayer: boolean | null;
+  isReleased: boolean | null;
+  isEarlyAccess: boolean | null;
+  reviewLastUpdated: string | null;
+  hltbLastUpdated: string | null;
+  metadataLastUpdated: string | null;
+}
+
+/** Map the shared base columns to an EnrichedGame. Callers layer on the
+ *  view-specific fields (atlHitDate/dealBadge, description, snapshot, value-received). */
+function mapBaseEnrichedGame(r: BaseEnrichedRow, bucket: TagBucket): EnrichedGame {
+  return {
+    id: r.id,
+    steamAppId: r.steamAppId,
+    title: r.title,
+    source: r.source === 'lookup' ? 'lookup' : 'sync',
+    headerImageUrl: r.headerImageUrl ?? undefined,
+    releaseDate: r.releaseDate ?? undefined,
+    developer: r.developer ?? undefined,
+    publisher: r.publisher ?? undefined,
+    reviewScore: r.reviewScore ?? undefined,
+    reviewCount: r.reviewCount ?? undefined,
+    reviewDescription: r.reviewDescription ?? undefined,
+    hltbMain: r.hltbMain ?? undefined,
+    hltbMainExtra: r.hltbMainExtra ?? undefined,
+    hltbCompletionist: r.hltbCompletionist ?? undefined,
+    isOwned: r.isOwned ?? false,
+    isWishlisted: r.isWishlisted ?? false,
+    isWatchlisted: r.isWatchlisted ?? false,
+    isIgnored: r.isIgnored ?? false,
+    autoAlertDisabled: r.autoAlertDisabled ?? false,
+    playtimeMinutes: r.playtimeMinutes ?? 0,
+    personalInterest: r.personalInterest ?? 3,
+    lastPlayed: r.lastPlayed ?? undefined,
+    tags: bucket.tags,
+    genres: bucket.genres,
+    isCoop: r.isCoop ?? false,
+    isMultiplayer: r.isMultiplayer ?? false,
+    isReleased: r.isReleased ?? undefined,
+    isEarlyAccess: r.isEarlyAccess ?? undefined,
+    dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
+    reviewLastUpdated: r.reviewLastUpdated ?? undefined,
+    hltbLastUpdated: r.hltbLastUpdated ?? undefined,
+    metadataLastUpdated: r.metadataLastUpdated ?? undefined,
+  };
+}
+
+/** Apply the latest price snapshot's fields + a LIVE-recomputed deal score to a
+ *  game (recompute, not the cached snapshot.dealScore, so list/detail badges stay
+ *  consistent after weight changes). Mutates `game` in place. */
+function applySnapshotToGame(
+  game: EnrichedGame,
+  snapshot: PriceSnapshotRow,
+  scoreInputs: { reviewScore: number | null; hltbMain: number | null; personalInterest: number | null },
+): void {
+  game.currentPrice = snapshot.priceCurrent;
+  game.regularPrice = snapshot.priceRegular;
+  game.discountPercent = snapshot.discountPercent;
+  game.historicalLow = snapshot.historicalLowPrice ?? undefined;
+  game.isAtHistoricalLow = snapshot.isHistoricalLow;
+  game.bestStore = snapshot.store;
+  game.storeUrl = snapshot.url ?? undefined;
+  game.priceLastUpdated = snapshot.snapshotDate;
+
+  if (snapshot.priceCurrent > 0) {
+    const { weights, thresholds } = getScoringConfig();
+    const score = calculateDealScore({
+      currentPrice: snapshot.priceCurrent,
+      regularPrice: snapshot.priceRegular,
+      historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
+      reviewPercent: scoreInputs.reviewScore,
+      hltbMainHours: scoreInputs.hltbMain,
+      personalInterest: scoreInputs.personalInterest ?? 3,
+    }, weights, thresholds);
+    game.dealScore = score.overall;
+    game.dealRating = score.rating;
+    game.dealSummary = score.summary;
+    game.dollarsPerHour = score.dollarsPerHour ?? undefined;
+  }
+}
+
+/** Apply the owned-game value-received enrichment (the "did I get my money's
+ *  worth?" fields) to a game. Mutates `game` in place. */
+function applyValueReceivedToGame(
+  game: EnrichedGame,
+  r: {
+    playtimeMinutes: number | null;
+    hltbMain: number | null;
+    reviewScore: number | null;
+    pricePaid: number | null;
+    enjoymentRating: number | null;
+    personalInterest: number | null;
+    interestRatedAt: string | null;
+    pricePaidSuggested: number | null;
+    pricePaidSuggestionDismissedAt: string | null;
+  },
+): void {
+  const { thresholds } = getScoringConfig();
+  const vr = calculateValueReceived(
+    {
+      playtimeMinutes: r.playtimeMinutes ?? 0,
+      hltbMainHours: r.hltbMain,
+      reviewPercent: r.reviewScore,
+      pricePaid: r.pricePaid,
+      enjoymentRating: r.enjoymentRating,
+      personalInterest: r.personalInterest,
+      interestRatedAt: r.interestRatedAt,
+    },
+    thresholds,
+  );
+  game.pricePaid = r.pricePaid ?? undefined;
+  game.pricePaidSuggested = r.pricePaidSuggested ?? undefined;
+  game.hasPricePaidSuggestion =
+    r.pricePaid == null && r.pricePaidSuggested != null && r.pricePaidSuggestionDismissedAt == null;
+  game.valueReceivedTier = vr.tier;
+  game.valueReceivedLens = vr.lens;
+  game.completionRatio = vr.completionRatio;
+  game.realizedDollarsPerHour = vr.realizedDollarsPerHour ?? undefined;
+  game.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
+  game.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
+  game.valueReceivedSummary = vr.summary;
+  game.enjoymentRating = vr.enjoymentRating ?? undefined;
+  game.valueReceivedHeadline = vr.verdict?.headline;
+  game.valueReceivedQualifier = vr.verdict?.qualifier ?? undefined;
+  game.betPayoff = vr.betPayoff ?? undefined;
+}
+
 export function getEnrichedGames(
   filters: GameFilters,
   page: number = 1,
@@ -1100,125 +1331,37 @@ export function getEnrichedGames(
       : [];
 
   // Group tags by gameId
-  const tagsByGame = new Map<number, { tags: string[]; genres: string[] }>();
-  for (const t of tagRows) {
-    if (!tagsByGame.has(t.gameId)) {
-      tagsByGame.set(t.gameId, { tags: [], genres: [] });
-    }
-    const bucket = tagsByGame.get(t.gameId)!;
-    if (t.type === 'genre') bucket.genres.push(t.name);
-    else bucket.tags.push(t.name);
-  }
+  const tagsByGame = groupTagsByGame(tagRows);
 
   // Batch-fetch latest price snapshots
   const pricesByGame = getLatestPriceSnapshots(gameIds);
 
   // Map to EnrichedGame
   const enriched: EnrichedGame[] = results.map((r) => {
+    const base = mapBaseEnrichedGame(r, tagsByGame.get(r.id) ?? EMPTY_TAG_BUCKET);
+    // List-view-specific fields not carried by the base mapper.
+    base.atlHitDate = r.atlHitDate ?? undefined;
+    base.belowAvgPercent = r.belowAvgPercent ?? undefined;
+    base.dealBadge =
+      filters.view === 'new-atls'
+        ? ('new-atl' as const)
+        : filters.view === 'deepest-discounts'
+          ? ('discount' as const)
+          : filters.view === 'heating-up'
+            ? ('below-avg' as const)
+            : undefined;
+
     const snapshot = pricesByGame.get(r.id);
-    const base: EnrichedGame = {
-      id: r.id,
-      steamAppId: r.steamAppId,
-      title: r.title,
-      source: r.source === 'lookup' ? 'lookup' : 'sync',
-      headerImageUrl: r.headerImageUrl ?? undefined,
-      releaseDate: r.releaseDate ?? undefined,
-      developer: r.developer ?? undefined,
-      publisher: r.publisher ?? undefined,
-      reviewScore: r.reviewScore ?? undefined,
-      reviewCount: r.reviewCount ?? undefined,
-      reviewDescription: r.reviewDescription ?? undefined,
-      hltbMain: r.hltbMain ?? undefined,
-      hltbMainExtra: r.hltbMainExtra ?? undefined,
-      hltbCompletionist: r.hltbCompletionist ?? undefined,
-      isOwned: r.isOwned ?? false,
-      isWishlisted: r.isWishlisted ?? false,
-      isWatchlisted: r.isWatchlisted ?? false,
-      isIgnored: r.isIgnored ?? false,
-      autoAlertDisabled: r.autoAlertDisabled ?? false,
-      playtimeMinutes: r.playtimeMinutes ?? 0,
-      personalInterest: r.personalInterest ?? 3,
-      lastPlayed: r.lastPlayed ?? undefined,
-      tags: tagsByGame.get(r.id)?.tags ?? [],
-      genres: tagsByGame.get(r.id)?.genres ?? [],
-      isCoop: r.isCoop ?? false,
-      isMultiplayer: r.isMultiplayer ?? false,
-      isReleased: r.isReleased ?? undefined,
-      isEarlyAccess: r.isEarlyAccess ?? undefined,
-      dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
-      reviewLastUpdated: r.reviewLastUpdated ?? undefined,
-      hltbLastUpdated: r.hltbLastUpdated ?? undefined,
-      metadataLastUpdated: r.metadataLastUpdated ?? undefined,
-      atlHitDate: r.atlHitDate ?? undefined,
-      belowAvgPercent: r.belowAvgPercent ?? undefined,
-      dealBadge:
-        filters.view === 'new-atls'
-          ? ('new-atl' as const)
-          : filters.view === 'deepest-discounts'
-            ? ('discount' as const)
-            : filters.view === 'heating-up'
-              ? ('below-avg' as const)
-              : undefined,
-    };
-
     if (snapshot) {
-      base.currentPrice = snapshot.priceCurrent;
-      base.regularPrice = snapshot.priceRegular;
-      base.discountPercent = snapshot.discountPercent;
-      base.historicalLow = snapshot.historicalLowPrice ?? undefined;
-      base.isAtHistoricalLow = snapshot.isHistoricalLow;
-      base.bestStore = snapshot.store;
-      base.storeUrl = snapshot.url ?? undefined;
-      base.priceLastUpdated = snapshot.snapshotDate;
-
-      // Always recompute deal score from current weights (not cached snapshot.dealScore)
-      // so list badges stay consistent with the detail page after weight changes
-      if (snapshot.priceCurrent > 0) {
-        const { weights, thresholds } = getScoringConfig();
-        const score = calculateDealScore({
-          currentPrice: snapshot.priceCurrent,
-          regularPrice: snapshot.priceRegular,
-          historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
-          reviewPercent: r.reviewScore,
-          hltbMainHours: r.hltbMain,
-          personalInterest: r.personalInterest ?? 3,
-        }, weights, thresholds);
-        base.dealScore = score.overall;
-        base.dealRating = score.rating;
-        base.dealSummary = score.summary;
-        base.dollarsPerHour = score.dollarsPerHour ?? undefined;
-      }
+      applySnapshotToGame(base, snapshot, {
+        reviewScore: r.reviewScore,
+        hltbMain: r.hltbMain,
+        personalInterest: r.personalInterest,
+      });
     }
 
     if (r.isOwned) {
-      const { thresholds } = getScoringConfig();
-      const vr = calculateValueReceived(
-        {
-          playtimeMinutes: r.playtimeMinutes ?? 0,
-          hltbMainHours: r.hltbMain,
-          reviewPercent: r.reviewScore,
-          pricePaid: r.pricePaid,
-          enjoymentRating: r.enjoymentRating,
-          personalInterest: r.personalInterest,
-          interestRatedAt: r.interestRatedAt,
-        },
-        thresholds,
-      );
-      base.pricePaid = r.pricePaid ?? undefined;
-      base.pricePaidSuggested = r.pricePaidSuggested ?? undefined;
-      base.hasPricePaidSuggestion =
-        r.pricePaid == null && r.pricePaidSuggested != null && r.pricePaidSuggestionDismissedAt == null;
-      base.valueReceivedTier = vr.tier;
-      base.valueReceivedLens = vr.lens;
-      base.completionRatio = vr.completionRatio;
-      base.realizedDollarsPerHour = vr.realizedDollarsPerHour ?? undefined;
-      base.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
-      base.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
-      base.valueReceivedSummary = vr.summary;
-      base.enjoymentRating = vr.enjoymentRating ?? undefined;
-      base.valueReceivedHeadline = vr.verdict?.headline;
-      base.valueReceivedQualifier = vr.verdict?.qualifier ?? undefined;
-      base.betPayoff = vr.betPayoff ?? undefined;
+      applyValueReceivedToGame(base, r);
     }
 
     return base;
@@ -1308,111 +1451,28 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     .where(eq(gameTags.gameId, gameId))
     .all();
 
-  const gameGenres: string[] = [];
-  const gameTags_: string[] = [];
-  for (const t of tagRows) {
-    if (t.type === 'genre') gameGenres.push(t.name);
-    else gameTags_.push(t.name);
-  }
+  const bucket = groupTags(tagRows);
 
   // Fetch latest price snapshot
   const pricesByGame = getLatestPriceSnapshots([gameId]);
   const snapshot = pricesByGame.get(gameId);
 
-  const game: EnrichedGame = {
-    id: row.id,
-    steamAppId: row.steamAppId,
-    title: row.title,
-    source: row.source === 'lookup' ? 'lookup' : 'sync',
-    description: row.description ?? undefined,
-    headerImageUrl: row.headerImageUrl ?? undefined,
-    releaseDate: row.releaseDate ?? undefined,
-    developer: row.developer ?? undefined,
-    publisher: row.publisher ?? undefined,
-    reviewScore: row.reviewScore ?? undefined,
-    reviewCount: row.reviewCount ?? undefined,
-    reviewDescription: row.reviewDescription ?? undefined,
-    hltbMain: row.hltbMain ?? undefined,
-    hltbMainExtra: row.hltbMainExtra ?? undefined,
-    hltbCompletionist: row.hltbCompletionist ?? undefined,
-    hltbManual: row.hltbManual ?? undefined,
-    hltbMissCount: row.hltbMissCount ?? undefined,
-    isOwned: row.isOwned ?? false,
-    isWishlisted: row.isWishlisted ?? false,
-    isWatchlisted: row.isWatchlisted ?? false,
-    isIgnored: row.isIgnored ?? false,
-    autoAlertDisabled: row.autoAlertDisabled ?? false,
-    playtimeMinutes: row.playtimeMinutes ?? 0,
-    personalInterest: row.personalInterest ?? 3,
-    lastPlayed: row.lastPlayed ?? undefined,
-    tags: gameTags_,
-    genres: gameGenres,
-    isCoop: row.isCoop ?? false,
-    isMultiplayer: row.isMultiplayer ?? false,
-    isReleased: row.isReleased ?? undefined,
-    isEarlyAccess: row.isEarlyAccess ?? undefined,
-    dataCompleteness: computeDataCompleteness(row.reviewScore, row.hltbMain),
-    reviewLastUpdated: row.reviewLastUpdated ?? undefined,
-    hltbLastUpdated: row.hltbLastUpdated ?? undefined,
-    metadataLastUpdated: row.metadataLastUpdated ?? undefined,
-  };
+  const game = mapBaseEnrichedGame(row, bucket);
+  // Detail-view-specific fields not carried by the base mapper.
+  game.description = row.description ?? undefined;
+  game.hltbManual = row.hltbManual ?? undefined;
+  game.hltbMissCount = row.hltbMissCount ?? undefined;
 
   if (snapshot) {
-    game.currentPrice = snapshot.priceCurrent;
-    game.regularPrice = snapshot.priceRegular;
-    game.discountPercent = snapshot.discountPercent;
-    game.historicalLow = snapshot.historicalLowPrice ?? undefined;
-    game.isAtHistoricalLow = snapshot.isHistoricalLow;
-    game.bestStore = snapshot.store;
-    game.storeUrl = snapshot.url ?? undefined;
-    game.priceLastUpdated = snapshot.snapshotDate;
-
-    if (snapshot.priceCurrent > 0) {
-      const { weights, thresholds } = getScoringConfig();
-      const score = calculateDealScore({
-        currentPrice: snapshot.priceCurrent,
-        regularPrice: snapshot.priceRegular,
-        historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
-        reviewPercent: row.reviewScore,
-        hltbMainHours: row.hltbMain,
-        personalInterest: row.personalInterest ?? 3,
-      }, weights, thresholds);
-      game.dealScore = score.overall;
-      game.dealRating = score.rating;
-      game.dealSummary = score.summary;
-      game.dollarsPerHour = score.dollarsPerHour ?? undefined;
-    }
+    applySnapshotToGame(game, snapshot, {
+      reviewScore: row.reviewScore,
+      hltbMain: row.hltbMain,
+      personalInterest: row.personalInterest,
+    });
   }
 
   if (row.isOwned) {
-    const { thresholds } = getScoringConfig();
-    const vr = calculateValueReceived(
-      {
-        playtimeMinutes: row.playtimeMinutes ?? 0,
-        hltbMainHours: row.hltbMain,
-        reviewPercent: row.reviewScore,
-        pricePaid: row.pricePaid,
-        enjoymentRating: row.enjoymentRating,
-        personalInterest: row.personalInterest,
-        interestRatedAt: row.interestRatedAt,
-      },
-      thresholds,
-    );
-    game.pricePaid = row.pricePaid ?? undefined;
-    game.pricePaidSuggested = row.pricePaidSuggested ?? undefined;
-    game.hasPricePaidSuggestion =
-      row.pricePaid == null && row.pricePaidSuggested != null && row.pricePaidSuggestionDismissedAt == null;
-    game.valueReceivedTier = vr.tier;
-    game.valueReceivedLens = vr.lens;
-    game.completionRatio = vr.completionRatio;
-    game.realizedDollarsPerHour = vr.realizedDollarsPerHour ?? undefined;
-    game.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
-    game.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
-    game.valueReceivedSummary = vr.summary;
-    game.enjoymentRating = vr.enjoymentRating ?? undefined;
-    game.valueReceivedHeadline = vr.verdict?.headline;
-    game.valueReceivedQualifier = vr.verdict?.qualifier ?? undefined;
-    game.betPayoff = vr.betPayoff ?? undefined;
+    applyValueReceivedToGame(game, row);
   }
 
   return game;
@@ -2055,75 +2115,6 @@ export function incrementPriceHistoryMissCount(gameId: number): void {
   `);
 }
 
-export function getPriceHistoryBackfillCoverage(userId?: string): { backfilled: number; eligible: number } {
-  const db = getDb();
-  const baseConditions = [
-    sql`${games.itadGameId} IS NOT NULL`,
-    or(
-      eq(userGames.isOwned, true),
-      eq(userGames.isWishlisted, true),
-      eq(userGames.isWatchlisted, true),
-    ),
-    ...(userId !== undefined ? [eq(userGames.userId, userId)] : []),
-  ];
-
-  const eligibleRow = db
-    .select({ count: sql<number>`count(DISTINCT ${games.id})` })
-    .from(games)
-    .innerJoin(userGames, eq(games.id, userGames.gameId))
-    .where(and(...baseConditions))
-    .get();
-  const backfilledRow = db
-    .select({ count: sql<number>`count(DISTINCT ${games.id})` })
-    .from(games)
-    .innerJoin(userGames, eq(games.id, userGames.gameId))
-    .where(
-      and(
-        sql`${games.priceHistoryBackfilledAt} IS NOT NULL`,
-        ...baseConditions,
-      ),
-    )
-    .get();
-  return {
-    backfilled: backfilledRow?.count ?? 0,
-    eligible: eligibleRow?.count ?? 0,
-  };
-}
-
-export function getHltbCoverage(): { withHltb: number; total: number } {
-  const db = getDb();
-  const totalRow = db
-    .select({ count: sql<number>`count(*)` })
-    .from(games)
-    .get();
-  const hltbRow = db
-    .select({ count: sql<number>`count(*)` })
-    .from(games)
-    .where(sql`${games.hltbMain} > 0`)
-    .get();
-  return {
-    withHltb: hltbRow?.count ?? 0,
-    total: totalRow?.count ?? 0,
-  };
-}
-
-export function getReviewCoverage(): { withReviews: number; total: number } {
-  const db = getDb();
-  const totalRow = db
-    .select({ count: sql<number>`count(*)` })
-    .from(games)
-    .get();
-  const reviewRow = db
-    .select({ count: sql<number>`count(*)` })
-    .from(games)
-    .where(sql`${games.reviewScore} IS NOT NULL`)
-    .get();
-  return {
-    withReviews: reviewRow?.count ?? 0,
-    total: totalRow?.count ?? 0,
-  };
-}
-
 export function insertPriceSnapshot(data: {
   gameId: number;
   store: string;
@@ -2602,49 +2593,42 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
           .all()
       : [];
 
-  const tagsByGame = new Map<number, { tags: string[]; genres: string[] }>();
-  for (const t of tagRows) {
-    if (!tagsByGame.has(t.gameId)) tagsByGame.set(t.gameId, { tags: [], genres: [] });
-    const bucket = tagsByGame.get(t.gameId)!;
-    if (t.type === 'genre') bucket.genres.push(t.name);
-    else bucket.tags.push(t.name);
-  }
+  const tagsByGame = groupTagsByGame(tagRows);
 
-  return results.map((r) => ({
-    id: r.id,
-    steamAppId: r.steamAppId,
-    title: r.title,
-    source: (r.source === 'lookup' ? 'lookup' : 'sync') as 'sync' | 'lookup',
-    headerImageUrl: r.headerImageUrl ?? undefined,
-    releaseDate: r.releaseDate ?? undefined,
-    developer: r.developer ?? undefined,
-    publisher: r.publisher ?? undefined,
-    reviewScore: r.reviewScore ?? undefined,
-    reviewCount: r.reviewCount ?? undefined,
-    reviewDescription: r.reviewDescription ?? undefined,
-    hltbMain: r.hltbMain ?? undefined,
-    hltbMainExtra: r.hltbMainExtra ?? undefined,
-    hltbCompletionist: r.hltbCompletionist ?? undefined,
-    hltbManual: r.hltbManual ?? undefined,
-    isOwned: r.isOwned ?? false,
-    isWishlisted: r.isWishlisted ?? false,
-    isWatchlisted: r.isWatchlisted ?? false,
-    isIgnored: r.isIgnored ?? false,
-    autoAlertDisabled: r.autoAlertDisabled ?? false,
-    playtimeMinutes: r.playtimeMinutes ?? 0,
-    personalInterest: r.personalInterest ?? 3,
-    lastPlayed: r.lastPlayed ?? undefined,
-    tags: tagsByGame.get(r.id)?.tags ?? [],
-    genres: tagsByGame.get(r.id)?.genres ?? [],
-    isCoop: r.isCoop ?? false,
-    isMultiplayer: r.isMultiplayer ?? false,
-    isReleased: r.isReleased ?? undefined,
-    isEarlyAccess: r.isEarlyAccess ?? undefined,
-    dataCompleteness: computeDataCompleteness(r.reviewScore, r.hltbMain),
-    reviewLastUpdated: r.reviewLastUpdated ?? undefined,
-    hltbLastUpdated: r.hltbLastUpdated ?? undefined,
-    metadataLastUpdated: r.metadataLastUpdated ?? undefined,
-  }));
+  return results.map((r) => {
+    const game = mapBaseEnrichedGame(r, tagsByGame.get(r.id) ?? EMPTY_TAG_BUCKET);
+    game.hltbManual = r.hltbManual ?? undefined;
+    return game;
+  });
+}
+
+/**
+ * Lightweight variant of getUnreleasedWishlistGames for callers (e.g. the
+ * dashboard's "upcoming releases" card) that only need id/title/releaseDate.
+ * Skips the tag join and full EnrichedGame enrichment.
+ */
+export function getUnreleasedWishlistTitles(
+  userId: string,
+): { id: number; title: string; releaseDate: string | undefined }[] {
+  const db = getDb();
+  const rows = db
+    .select({
+      id: games.id,
+      title: games.title,
+      releaseDate: games.releaseDate,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isWishlisted, true),
+        or(eq(games.isReleased, false), isNull(games.isReleased)),
+      )
+    )
+    .orderBy(asc(games.title))
+    .all();
+  return rows.map((r) => ({ id: r.id, title: r.title, releaseDate: r.releaseDate ?? undefined }));
 }
 
 /**

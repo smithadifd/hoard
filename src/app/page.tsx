@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity, Wallet, Hourglass } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistGames, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents, getUserGameCount, getValueReceivedOverview, getEnrichedGames } from '@/lib/db/queries';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistTitles, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents, getUserGameCount, getValueReceivedOverview, getEnrichedGames } from '@/lib/db/queries';
 import type { ActivityEvent, ValueReceivedOverview } from '@/lib/db/queries';
 import type { EnrichedGame } from '@/types';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
     triageNudge = computeTriageNudge(session.user.id);
 
     // Get upcoming releases for the dashboard card
-    const unreleasedGames = getUnreleasedWishlistGames(session.user.id);
+    const unreleasedGames = getUnreleasedWishlistTitles(session.user.id);
     const now = new Date();
     upcomingReleases = unreleasedGames
       .map((g) => {
