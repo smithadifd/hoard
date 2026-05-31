@@ -221,6 +221,11 @@ export const settingsUpdateSchema = z.object({
     }
   }
 
+  // Each JSON-blob key validates independently: a parse failure for one key
+  // adds its own issue but must NOT short-circuit validation of the others, so a
+  // multi-error payload surfaces every problem in one response. `parsed` stays
+  // `undefined` on parse failure, which skips that key's range-check below
+  // (JSON.parse never legitimately yields `undefined`).
   const thresholdsRaw = data.settings['scoring_thresholds'];
   if (thresholdsRaw) {
     let parsed: unknown;
@@ -228,9 +233,8 @@ export const settingsUpdateSchema = z.object({
       parsed = JSON.parse(thresholdsRaw);
     } catch {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'scoring_thresholds'], message: 'Invalid JSON' });
-      return;
     }
-    if (!scoringThresholdsSchema.safeParse(parsed).success) {
+    if (parsed !== undefined && !scoringThresholdsSchema.safeParse(parsed).success) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['settings', 'scoring_thresholds'],
@@ -246,9 +250,8 @@ export const settingsUpdateSchema = z.object({
       parsed = JSON.parse(weightsRaw);
     } catch {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'scoring_weights'], message: 'Invalid JSON' });
-      return;
     }
-    if (!scoringWeightsSchema.safeParse(parsed).success) {
+    if (parsed !== undefined && !scoringWeightsSchema.safeParse(parsed).success) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['settings', 'scoring_weights'],
@@ -264,9 +267,8 @@ export const settingsUpdateSchema = z.object({
       parsed = JSON.parse(prefsRaw);
     } catch {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'notification_preferences'], message: 'Invalid JSON' });
-      return;
     }
-    if (!notificationPreferencesSchema.safeParse(parsed).success) {
+    if (parsed !== undefined && !notificationPreferencesSchema.safeParse(parsed).success) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['settings', 'notification_preferences'],

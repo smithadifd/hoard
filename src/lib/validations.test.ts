@@ -425,6 +425,25 @@ describe('settingsUpdateSchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('surfaces every blob error in one pass — a bad scoring_thresholds does not mask other errors', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: {
+        scoring_thresholds: '{not valid json',                      // invalid JSON
+        scoring_weights: JSON.stringify({ priceWeight: 1.5 }),       // out of range
+        notification_preferences: JSON.stringify({ frequency: { throttleHours: 999 } }), // out of range
+        discord_webhook_url: 'https://evil.example.com/x',           // wrong host
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const flagged = result.error.issues.map((i) => i.path.join('.'));
+      expect(flagged).toContain('settings.scoring_thresholds');
+      expect(flagged).toContain('settings.scoring_weights');
+      expect(flagged).toContain('settings.notification_preferences');
+      expect(flagged).toContain('settings.discord_webhook_url');
+    }
+  });
 });
 
 describe('syncTriggerSchema', () => {
