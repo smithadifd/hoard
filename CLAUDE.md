@@ -19,10 +19,29 @@ the Claude-Code-specific bits. Personal/secret config lives in the gitignored `C
 | `db-assistant` | Schema changes, queries, migrations |
 | `pre-commit-check` | Type-check, lint, build verification |
 | `code-reviewer` | Code-quality review before merging |
-| `plan-generator` | Audits the codebase and writes structured plans into `plans/` |
-| `audit-orchestrator` | Post-feature audit — detects changes, scans categories, writes plans |
+| `plan-generator` | Audits **one focus area** and writes a single structured plan into `plans/` |
+| `audit-orchestrator` | **Deprecated** — redirects to the `audit-sweep` workflow (see below) |
 
 Invoke with `/agent <name>`. Each agent reads `AGENTS.md` for project context.
+
+## Full-codebase audit — `audit-sweep` (default)
+
+The default, preferred way to audit Hoard is the **multi-agent `audit-sweep`
+workflow**, not the old single-agent `audit-orchestrator`. It fans out one
+read-only sub-agent per concern (security, testing, maintainability, performance,
+dependencies, error-handling, accessibility, consistency, correctness, docs),
+then writes one `plans/NN-*.md` per concern and updates `plans/README.md` +
+`memory/audit-state.md`.
+
+- **Run it:** the `/audit-sweep` skill, or
+  `Workflow({ scriptPath: ".claude/workflows/audit-sweep.js" })` (Hoard-tuned
+  wrapper — injects Hoard lens hints + the memory audit-state path).
+- **Source of truth:** the generic script lives in the toolkit
+  (`~/claude-toolkit/workflows/audit-sweep.js`, symlinked to
+  `~/.claude/workflows/`); the Hoard wrapper only adds project hints.
+- **After it runs:** spot-check a few findings against cited `file:line`, confirm
+  numbering continues cleanly, and report the roll-up. Plans are gitignored.
+- Use `plan-generator` instead for a quick single-area pass.
 
 ---
 
