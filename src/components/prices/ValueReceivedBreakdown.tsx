@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react';
+import { Check, X, Star, ArrowRight } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
 import { valueReceivedTierLabel } from '@/lib/scoring/valueReceived';
 import type { ValueReceivedTier } from '@/lib/scoring/valueReceived';
@@ -6,6 +6,10 @@ import type { ValueReceivedTier } from '@/lib/scoring/valueReceived';
 /**
  * ValueReceivedBreakdown - Detail-page card explaining the Value Received score
  * for an owned game. The backward-looking mirror of ScoreBreakdown.
+ *
+ * Once the user has rated the game, the rating LEADS the verdict (the warm
+ * headline) and the efficiency lens ($/hr, completion) is demoted to supporting
+ * context below. Unrated games render exactly as before.
  */
 const tierTextColor: Record<ValueReceivedTier, string> = {
   exceeded: 'text-deal-great',
@@ -21,6 +25,19 @@ const tierBarColor: Record<ValueReceivedTier, string> = {
   unrealized: 'bg-muted-foreground/40',
 };
 
+function StarRow({ value }: { value: number }) {
+  return (
+    <span className="inline-flex items-center gap-0.5" aria-label={`${value} of 5`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star
+          key={n}
+          className={`h-3.5 w-3.5 ${n <= value ? 'fill-yellow-500 text-yellow-500' : 'text-muted-foreground/30'}`}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
   const tier = game.valueReceivedTier;
   if (!tier) return null;
@@ -28,24 +45,66 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
   const lens = game.valueReceivedLens ?? 'time';
   const hoursPlayed = Math.round((game.playtimeMinutes / 60) * 10) / 10;
 
-  // No honest baseline: played, but no HLTB estimate and no recorded price. Don't
-  // claim a value tier — explain what's missing and how to unlock the grade.
+  const rated = game.enjoymentRating !== undefined && game.enjoymentRating > 0;
+  const headline = game.valueReceivedHeadline;
+  const qualifier = game.valueReceivedQualifier;
+  const betPayoff = game.betPayoff;
+
+  // Verdict header — rating-led when rated, else the efficiency tier label
+  // (or "No estimate" when there's no honest baseline to grade against).
+  const header = (
+    <div className="flex items-center justify-between">
+      <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">
+        Value Received
+      </h3>
+      {rated && headline ? (
+        <span className="text-sm font-bold text-foreground text-right">
+          {headline}
+          {qualifier ? <span className="text-muted-foreground font-medium"> · {qualifier}</span> : ''}
+        </span>
+      ) : lens === 'none' ? (
+        <span className="text-sm font-bold text-muted-foreground">No estimate</span>
+      ) : (
+        <span className={`text-sm font-bold ${tierTextColor[tier]}`}>{valueReceivedTierLabel(tier)}</span>
+      )}
+    </div>
+  );
+
+  // Your rating + "did the bet pay off?" — shown only when rated.
+  const ratingBlock = rated && (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">Your rating</span>
+        <StarRow value={game.enjoymentRating!} />
+      </div>
+      {betPayoff && (
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">The bet</span>
+          <span className="inline-flex items-center gap-1 font-label font-medium">
+            <span className="tabular-nums">wanted {betPayoff.interest}</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/60" />
+            <span className="tabular-nums">got {betPayoff.enjoyment}</span>
+            <span className="text-muted-foreground/70"> ({betPayoff.label})</span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  // No honest baseline: played, but no HLTB estimate and no recorded price.
   if (lens === 'none') {
     return (
       <div className="rounded-xl bg-card p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">
-            Value Received
-          </h3>
-          <span className="text-sm font-bold text-muted-foreground">No estimate</span>
-        </div>
+        {header}
+        {ratingBlock}
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Playtime</span>
           <span className="font-label font-medium tabular-nums">{hoursPlayed}h</span>
         </div>
         <p className="text-[10px] text-muted-foreground/60 pt-1">
-          No HowLongToBeat main-story estimate and no recorded price, so there&apos;s no honest
-          baseline to grade value against. Add a duration or what you paid to score this game.
+          {rated
+            ? 'Your rating is the verdict. Add a duration or what you paid for $/hr context.'
+            : 'No HowLongToBeat main-story estimate and no recorded price, so there’s no honest baseline to grade value against. Rate it, or add a duration or what you paid.'}
         </p>
       </div>
     );
@@ -59,12 +118,8 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
 
   return (
     <div className="rounded-xl bg-card p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">
-          Value Received
-        </h3>
-        <span className={`text-sm font-bold ${tierTextColor[tier]}`}>{valueReceivedTierLabel(tier)}</span>
-      </div>
+      {header}
+      {ratingBlock}
 
       {/* Playtime vs HLTB main story */}
       {hasHltb ? (
@@ -119,9 +174,11 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
       )}
 
       <p className="text-[10px] text-muted-foreground/60 pt-1">
-        {isMoney
-          ? 'Realized $/hr graded against your per-review-tier target. Price paid is what you entered (assumed USD).'
-          : 'Based on playtime vs HowLongToBeat main story. Add what you paid to grade realized $/hr.'}
+        {rated
+          ? 'Your rating leads the verdict; the figures above are supporting context (the $/hr lens can’t fairly grade a short game you loved).'
+          : isMoney
+            ? 'Realized $/hr graded against your per-review-tier target. Price paid is what you entered (assumed USD).'
+            : 'Based on playtime vs HowLongToBeat main story. Add what you paid to grade realized $/hr, or rate it.'}
       </p>
     </div>
   );

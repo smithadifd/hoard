@@ -939,8 +939,13 @@ export function getEnrichedGames(
         THEN ${userGames.pricePaid} / ${hoursPlayedExpr}
       ELSE NULL END)`,
     // Discrete tier ordinal (exceeded 4 → unrealized 1), mirroring moneyTier/timeTier.
-    // No baseline (played, but no HLTB and no price) → NULL → sorts last.
+    // A rated game sorts by the user's own verdict (enjoymentRating 1-5) mapped onto
+    // the SAME value scale as the efficiency tiers (1-4) — so a 5★ tops everything, a
+    // 1★ "regret" sits at the bottom with unrealized, and ratings interleave with
+    // unrated games by value (intentional: a regretted game received low value and
+    // should sort low). No baseline (played, no HLTB, no price) → NULL → sorts last.
     valueReceived: sql`(CASE
+      WHEN ${userGames.enjoymentRating} IS NOT NULL THEN ${userGames.enjoymentRating}
       WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
         CASE
           WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 0.5 THEN 4
@@ -993,6 +998,8 @@ export function getEnrichedGames(
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
+      interestRatedAt: userGames.interestRatedAt,
+      enjoymentRating: userGames.enjoymentRating,
       lastPlayed: userGames.lastPlayed,
       pricePaid: userGames.pricePaid,
       pricePaidSuggested: userGames.pricePaidSuggested,
@@ -1179,6 +1186,9 @@ export function getEnrichedGames(
           hltbMainHours: r.hltbMain,
           reviewPercent: r.reviewScore,
           pricePaid: r.pricePaid,
+          enjoymentRating: r.enjoymentRating,
+          personalInterest: r.personalInterest,
+          interestRatedAt: r.interestRatedAt,
         },
         thresholds,
       );
@@ -1193,6 +1203,10 @@ export function getEnrichedGames(
       base.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
       base.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
       base.valueReceivedSummary = vr.summary;
+      base.enjoymentRating = vr.enjoymentRating ?? undefined;
+      base.valueReceivedHeadline = vr.verdict?.headline;
+      base.valueReceivedQualifier = vr.verdict?.qualifier ?? undefined;
+      base.betPayoff = vr.betPayoff ?? undefined;
     }
 
     return base;
@@ -1256,6 +1270,8 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
+      interestRatedAt: userGames.interestRatedAt,
+      enjoymentRating: userGames.enjoymentRating,
       lastPlayed: userGames.lastPlayed,
       pricePaid: userGames.pricePaid,
       pricePaidSuggested: userGames.pricePaidSuggested,
@@ -1364,6 +1380,9 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
         hltbMainHours: row.hltbMain,
         reviewPercent: row.reviewScore,
         pricePaid: row.pricePaid,
+        enjoymentRating: row.enjoymentRating,
+        personalInterest: row.personalInterest,
+        interestRatedAt: row.interestRatedAt,
       },
       thresholds,
     );
@@ -1378,6 +1397,10 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     game.hoursToBreakEven = vr.hoursToBreakEven ?? undefined;
     game.receivedExpectedValue = vr.receivedExpectedValue ?? undefined;
     game.valueReceivedSummary = vr.summary;
+    game.enjoymentRating = vr.enjoymentRating ?? undefined;
+    game.valueReceivedHeadline = vr.verdict?.headline;
+    game.valueReceivedQualifier = vr.verdict?.qualifier ?? undefined;
+    game.betPayoff = vr.betPayoff ?? undefined;
   }
 
   return game;
@@ -2339,6 +2362,7 @@ export function updateUserGame(
     isWishlisted: boolean;
     autoAlertDisabled: boolean;
     pricePaid: number | null;
+    enjoymentRating: number | null;
     /** Action flag (not a column): "Not now" on a price-paid suggestion → stamp dismissed. */
     dismissPriceSuggestion: boolean;
   }>,
@@ -2356,7 +2380,7 @@ export function updateUserGame(
         : undefined;
 
   // Only spread known user_games columns to prevent unexpected fields leaking through
-  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled, pricePaid, dismissPriceSuggestion } = updates;
+  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled, pricePaid, enjoymentRating, dismissPriceSuggestion } = updates;
 
   const result = db
     .update(userGames)
@@ -2374,6 +2398,11 @@ export function updateUserGame(
         pricePaid,
         pricePaidAt: pricePaid === null ? null : now,
         ...(pricePaid !== null && { pricePaidSuggested: null }),
+      }),
+      // Stamp enjoymentRatedAt when a rating is recorded; clear it when the rating is cleared (null).
+      ...(enjoymentRating !== undefined && {
+        enjoymentRating,
+        enjoymentRatedAt: enjoymentRating === null ? null : now,
       }),
       // "Not now" on a suggestion — stamp dismissal so it won't re-surface.
       ...(dismissPriceSuggestion === true && { pricePaidSuggestionDismissedAt: now }),
@@ -2793,9 +2822,11 @@ export interface TriageGame {
   currentPrice: number | null;
   personalInterest: number;
   interestRatedAt: string | null;
+  enjoymentRating: number | null;
+  enjoymentRatedAt: string | null;
 }
 
-export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' | undefined, userId: string): TriageGame[] {
+export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' | 'value' | undefined, userId: string): TriageGame[] {
   const db = getDb();
 
   interface RawRow {
@@ -2809,16 +2840,22 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
     hltbMain: number | null;
     personalInterest: number;
     interestRatedAt: string | null;
+    enjoymentRating: number | null;
+    enjoymentRatedAt: string | null;
     currentPrice: number | null;
   }
 
+  // 'value' = owned + actually played + not yet rated — the opt-in backfill pool
+  // for "was it worth it?". Settled (rated) games are intentionally excluded.
   const viewFilter = view === 'library'
     ? sql`AND ug.is_owned = 1`
     : view === 'wishlist'
       ? sql`AND ug.is_wishlisted = 1`
       : view === 'missing-hltb'
         ? sql`AND g.hltb_main IS NULL`
-        : sql``;
+        : view === 'value'
+          ? sql`AND ug.is_owned = 1 AND ug.playtime_minutes > 0 AND ug.enjoyment_rating IS NULL`
+          : sql``;
 
   const rows = db.all(sql`
     SELECT
@@ -2832,6 +2869,8 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
       g.hltb_main as hltbMain,
       ug.personal_interest as personalInterest,
       ug.interest_rated_at as interestRatedAt,
+      ug.enjoyment_rating as enjoymentRating,
+      ug.enjoyment_rated_at as enjoymentRatedAt,
       (SELECT ps.price_current FROM price_snapshots ps
        WHERE ps.game_id = g.id
        ORDER BY ps.snapshot_date DESC LIMIT 1) as currentPrice
@@ -2841,7 +2880,7 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
       AND (ug.is_ignored IS NULL OR ug.is_ignored = 0)
       ${viewFilter}
     ORDER BY
-      CASE WHEN ug.interest_rated_at IS NULL THEN 0 ELSE 1 END,
+      CASE WHEN ${view === 'value' ? sql`ug.enjoyment_rated_at` : sql`ug.interest_rated_at`} IS NULL THEN 0 ELSE 1 END,
       g.title ASC
   `) as RawRow[];
 
@@ -2857,6 +2896,8 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
     currentPrice: r.currentPrice,
     personalInterest: r.personalInterest ?? 3,
     interestRatedAt: r.interestRatedAt,
+    enjoymentRating: r.enjoymentRating,
+    enjoymentRatedAt: r.enjoymentRatedAt,
   }));
 }
 

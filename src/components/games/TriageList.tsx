@@ -13,23 +13,30 @@ import type { TriageGame } from '@/app/triage/types';
 
 interface TriageListProps {
   initialGames: TriageGame[];
-  currentView?: 'library' | 'wishlist' | 'missing-hltb';
-  mode: 'rating' | 'interest';
+  currentView?: 'library' | 'wishlist' | 'missing-hltb' | 'value';
+  mode: 'rating' | 'interest' | 'value';
   missingHltbCount?: number;
 }
 
 const starLabels = {
   rating: ['', 'Disliked', 'Meh', 'Decent', 'Great', 'Loved it'],
   interest: ['', 'Not interested', 'Slightly curious', 'Interested', 'Very interested', 'Must buy'],
+  value: ['', 'Regret it', 'Not for me', 'On the fence', 'Worth it', 'Glad I played it'],
 };
+
+// In 'value' mode the list reads/writes the post-play enjoyment rating; otherwise
+// the pre-purchase interest rating. These accessors keep the rest of the list generic.
+const ratedAtOf = (g: TriageGame, isValue: boolean) => (isValue ? g.enjoymentRatedAt : g.interestRatedAt);
+const ratingOf = (g: TriageGame, isValue: boolean) => (isValue ? g.enjoymentRating ?? 0 : g.personalInterest);
 
 const FEEDBACK_DELAY_MS = 600;
 
 export function TriageList({ initialGames, currentView, mode, missingHltbCount }: TriageListProps) {
   const router = useRouter();
+  const isValue = mode === 'value';
   const [games, setGames] = useState(initialGames);
   const [ratedCount, setRatedCount] = useState(
-    initialGames.filter((g) => g.interestRatedAt !== null).length
+    initialGames.filter((g) => ratedAtOf(g, isValue) !== null).length
   );
   const [focusIndex, setFocusIndex] = useState(0);
   const [ratingFeedback, setRatingFeedback] = useState<{ gameId: number; interest: number } | null>(null);
@@ -40,8 +47,39 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
   const skipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const unratedGames = games.filter((g) => g.interestRatedAt === null);
-  const ratedGames = games.filter((g) => g.interestRatedAt !== null);
+  const unratedGames = games.filter((g) => ratedAtOf(g, isValue) === null);
+  const ratedGames = games.filter((g) => ratedAtOf(g, isValue) !== null);
+
+  // Persist a rating to the right field/endpoint for the current mode.
+  const persistRating = useCallback((gameId: number, rating: number) => {
+    if (isValue) {
+      fetch(`/api/games/${gameId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enjoymentRating: rating }),
+      }).catch(() => {});
+    } else {
+      fetch('/api/games/interest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameId, interest: rating }),
+      }).catch(() => {});
+    }
+  }, [isValue]);
+
+  // Optimistically stamp the rating on the right field for the current mode.
+  const applyRating = useCallback((gameId: number, rating: number) => {
+    const now = new Date().toISOString();
+    setGames((prev) =>
+      prev.map((g) =>
+        g.id === gameId
+          ? isValue
+            ? { ...g, enjoymentRating: rating, enjoymentRatedAt: now }
+            : { ...g, personalInterest: rating, interestRatedAt: now }
+          : g
+      )
+    );
+  }, [isValue]);
 
   const handleRate = useCallback((gameId: number, interest: number) => {
     // Prevent double-rating during feedback
@@ -60,41 +98,21 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
 
       // Use requestAnimationFrame to ensure feedback is cleared before card swap
       requestAnimationFrame(() => {
-        setGames((prev) =>
-          prev.map((g) =>
-            g.id === gameId
-              ? { ...g, personalInterest: interest, interestRatedAt: new Date().toISOString() }
-              : g
-          )
-        );
+        applyRating(gameId, interest);
         setRatedCount((c) => c + 1);
         setFocusIndex((prev) => Math.min(prev, Math.max(0, unratedGames.length - 2)));
       });
 
       // Fire-and-forget API call
-      fetch('/api/games/interest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameId, interest }),
-      }).catch(() => {});
+      persistRating(gameId, interest);
     }, FEEDBACK_DELAY_MS);
-  }, [ratingFeedback, unratedGames.length]);
+  }, [ratingFeedback, unratedGames.length, applyRating, persistRating]);
 
   // Re-rate for already rated games (no feedback delay needed)
   const handleReRate = useCallback((gameId: number, interest: number) => {
-    setGames((prev) =>
-      prev.map((g) =>
-        g.id === gameId
-          ? { ...g, personalInterest: interest, interestRatedAt: new Date().toISOString() }
-          : g
-      )
-    );
-    fetch('/api/games/interest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameId, interest }),
-    }).catch(() => {});
-  }, []);
+    applyRating(gameId, interest);
+    persistRating(gameId, interest);
+  }, [applyRating, persistRating]);
 
   const handleSkip = useCallback(() => {
     if (ratingFeedback) return;
@@ -135,8 +153,8 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
           const restored = [...prev, ignoredGame];
           // Re-sort: unrated first, then alphabetically
           return restored.sort((a, b) => {
-            const aRated = a.interestRatedAt ? 1 : 0;
-            const bRated = b.interestRatedAt ? 1 : 0;
+            const aRated = ratedAtOf(a, isValue) ? 1 : 0;
+            const bRated = ratedAtOf(b, isValue) ? 1 : 0;
             if (aRated !== bRated) return aRated - bRated;
             return a.title.localeCompare(b.title);
           });
@@ -150,7 +168,7 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
       },
       duration: 3000,
     });
-  }, [games, unratedGames.length]);
+  }, [games, unratedGames.length, isValue]);
 
   const handleHltbSaved = useCallback((gameId: number) => {
     // Remove from list (HLTB data was added, no longer "missing")
@@ -217,6 +235,12 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
           onClick={() => router.push('/triage?view=library')}
         />
         <ViewButton
+          label="Worth it?"
+          icon={<Star className="h-3.5 w-3.5" />}
+          active={currentView === 'value'}
+          onClick={() => router.push('/triage?view=value')}
+        />
+        <ViewButton
           label="Wishlist"
           icon={<Heart className="h-3.5 w-3.5" />}
           active={currentView === 'wishlist'}
@@ -281,6 +305,7 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
             <TriageRow
               key={game.id}
               game={game}
+              isValue={isValue}
               isFocused={index === focusIndex}
               isSkipFeedback={skipFeedbackId === game.id}
               onRate={(interest) => handleRate(game.id, interest)}
@@ -324,6 +349,7 @@ export function TriageList({ initialGames, currentView, mode, missingHltbCount }
               <TriageRow
                 key={game.id}
                 game={game}
+                isValue={isValue}
                 isFocused={false}
                 onRate={(interest) => handleReRate(game.id, interest)}
                 starLabels={labels}
@@ -377,6 +403,7 @@ function ViewButton({
 
 function TriageRow({
   game,
+  isValue,
   isFocused,
   isSkipFeedback,
   onRate,
@@ -388,6 +415,7 @@ function TriageRow({
   onHltbSaved,
 }: {
   game: TriageGame;
+  isValue: boolean;
   isFocused: boolean;
   isSkipFeedback?: boolean;
   onRate: (interest: number) => void;
@@ -509,7 +537,7 @@ function TriageRow({
             {[1, 2, 3, 4, 5].map((n) => {
               const isActive = isFeedbackActive
                 ? n <= feedbackInterest
-                : n <= game.personalInterest && game.interestRatedAt;
+                : n <= ratingOf(game, isValue) && ratedAtOf(game, isValue);
               return (
                 <button
                   key={n}

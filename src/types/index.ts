@@ -4,7 +4,7 @@
 
 // Re-export database schema types for convenience
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
-import type { ValueReceivedTier, ValueReceivedLens } from '@/lib/scoring/valueReceived';
+import type { ValueReceivedTier, ValueReceivedLens, BetPayoff } from '@/lib/scoring/valueReceived';
 
 /**
  * A game with all enriched data, ready for display.
@@ -75,6 +75,14 @@ export interface EnrichedGame {
   hoursToBreakEven?: number;
   receivedExpectedValue?: boolean;
   valueReceivedSummary?: string;
+  /** Post-play enjoyment rating (1-5); undefined = unrated → efficiency/time lens leads. */
+  enjoymentRating?: number;
+  /** Rating-led verdict headline ("Glad I played it"); set only when rated. */
+  valueReceivedHeadline?: string;
+  /** Efficiency qualifier ("paid a premium"); set only when it would otherwise be misread. */
+  valueReceivedQualifier?: string;
+  /** "Did the bet pay off?" — interest→enjoyment delta; set only when both were explicit. */
+  betPayoff?: BetPayoff;
 
   // Release status
   isReleased?: boolean;

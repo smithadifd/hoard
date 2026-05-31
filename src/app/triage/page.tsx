@@ -5,7 +5,7 @@ import { TriageList } from '@/components/games/TriageList';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_VIEWS = ['library', 'wishlist', 'missing-hltb'] as const;
+const VALID_VIEWS = ['library', 'wishlist', 'missing-hltb', 'value'] as const;
 type TriageView = (typeof VALID_VIEWS)[number];
 
 export default async function TriagePage({
@@ -24,12 +24,13 @@ export default async function TriagePage({
   const games = getGamesForTriage(view, session.user.id);
   const missingHltbCount = getMissingHltbCount(session.user.id);
 
-  const mode = view === 'library' ? 'rating' as const : 'interest' as const;
+  const mode = view === 'value' ? 'value' as const : view === 'library' ? 'rating' as const : 'interest' as const;
 
   const descriptions: Record<string, string> = {
     library: 'Rate how much you enjoy each owned game. Ratings influence deal scores and recommendations.',
     wishlist: 'Rate your interest in each wishlisted game. Higher interest = better deal scores.',
     'missing-hltb': 'Games missing duration data. Search HLTB or enter hours manually for each game.',
+    value: 'Was it worth it? Rate games you’ve played but not yet graded — your rating leads the value verdict.',
   };
 
   return (

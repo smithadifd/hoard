@@ -44,11 +44,30 @@ It is only ever a suggestion. The estimate never becomes your recorded price on 
 
 A pending suggestion shows in three places: the detail-page prompt, a subtle "Paid ~$X?" hint on the library card, and one in-app bell notification per purchase. Turn the whole feature off with **Suggest prices I paid** under Settings → Alerts, or silence just the bell via the *Price-paid suggestions* category under Settings → Notifications.
 
+## Was it worth it? Your rating leads
+
+The two lenses above are honest, but both are *proxies*. Review % is the crowd's opinion, not yours; $/hour is an efficiency measure that's structurally unfair to short games — a two-hour game you adored can never "break even" on $/hour no matter the threshold. For a game you've actually played, the most honest measure of value received is your own verdict.
+
+So on a game's detail page, the **Was it worth it?** card lets you record a 1–5 **enjoyment rating**. Once you do, your rating *leads* the verdict and the $/hour and completion figures become supporting context — not deleted, just demoted from the headline. The verdict reads in plain language:
+
+| Rating | Verdict |
+| ------ | ------------------- |
+| 4–5 | **Glad I played it** |
+| 3 | **On the fence** |
+| 2 | **Not for me** |
+| 1 | **Regret it** |
+
+When your rating and the efficiency lens disagree, the verdict carries a short qualifier so it can't be misread — a game you loved but overpaid for reads *"Glad I played it · paid a premium"*, and one you bounced off but barely paid for reads *"Not for me · at least it was cheap."* When they agree, the verdict stands on its own. A rating also grades a game that otherwise had no baseline at all (no duration, no price) — your verdict is enough.
+
+This is deliberately additive and never pushy: rating is optional, an unrated game scores exactly as before, and there's no toggle to make the verdict more flattering. If you want to catch up on games you've played but not yet graded, the opt-in **Worth it?** view under [Rate your games](/features/triage/) lists them for quick backfill — but Hoard never nags you to.
+
+If you'd rated your pre-purchase **interest** (the "bet") before buying, the detail card also shows whether the bet paid off — *wanted it 3 → got 5 (exceeded expectations)* — comparing what you hoped for against what you got. That gap is its own signal for future buys.
+
 ## Edge cases
 
-- **Never played** is always *unrealized*, regardless of price — a game you paid for and never opened has returned none of its value yet.
+- **Never played** is always *unrealized*, regardless of price — a game you paid for and never opened has returned none of its value yet. (Rating it is moot until you've played it.)
 - **Free games** (price recorded as $0) stay on the time lens. Hoard won't report "$0.00/hour."
-- **No HowLongToBeat data and no recorded price** has no honest baseline to grade against — there's no main-story estimate to measure completion, and no price for $/hour. Rather than invent a tier from raw hours (which reads misleadingly as "Approaching" off 15 minutes, or "Exceeded" off a sandbox game you've sunk 100 hours into), the badge shows a neutral **Played Xh** chip with no value claim. Add a duration *or* a price and the game grades normally — the money lens needs no duration at all.
+- **No HowLongToBeat data and no recorded price** has no honest baseline to grade against — there's no main-story estimate to measure completion, and no price for $/hour. Rather than invent a tier from raw hours (which reads misleadingly as "Approaching" off 15 minutes, or "Exceeded" off a sandbox game you've sunk 100 hours into), the badge shows a neutral **Played Xh** chip with no value claim. Add a duration *or* a price and the game grades normally — the money lens needs no duration at all. A post-play **rating** also resolves it: your verdict needs no baseline.
 
 ## In the backlog
 
