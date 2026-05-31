@@ -162,7 +162,7 @@ export class ITADClient {
    * Response from ITAD is: { prices: [...], bundles: [...] }
    * We unwrap and return just the prices array.
    */
-  async getOverview(gameIds: string[]): Promise<ITADOverviewPrice[]> {
+  async getOverview(gameIds: string[], country: string = 'US'): Promise<ITADOverviewPrice[]> {
     if (gameIds.length === 0) return [];
 
     const allResults: ITADOverviewPrice[] = [];
@@ -173,7 +173,8 @@ export class ITADClient {
       try {
         const data = await this.postRequest<ITADOverviewResponse>(
           '/games/overview/v2',
-          batch
+          batch,
+          { country }
         );
         if (data?.prices && Array.isArray(data.prices)) {
           allResults.push(...data.prices);

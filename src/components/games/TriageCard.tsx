@@ -173,6 +173,7 @@ export function TriageCard({
                 return (
                   <button
                     key={n}
+                    aria-label={starLabels[n] ?? `Rate ${n} of 5`}
                     onClick={() => onRate(n)}
                     onPointerEnter={() => setHoverStar(n)}
                     onPointerLeave={() => setHoverStar(0)}
@@ -206,6 +207,7 @@ export function TriageCard({
             {/* Navigation & Actions */}
             <div className="flex items-center gap-2">
               <button
+                aria-label="Previous game"
                 onClick={onPrev}
                 disabled={index === 0 || isFeedbackActive}
                 className="p-3 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors disabled:opacity-30 min-h-[44px]"
@@ -222,7 +224,8 @@ export function TriageCard({
               </button>
 
               <button
-                onClick={onPrev}
+                aria-hidden="true"
+                tabIndex={-1}
                 disabled={isFeedbackActive}
                 className="p-3 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors disabled:opacity-30 min-h-[44px]"
                 style={{ visibility: 'hidden' }}
@@ -261,6 +264,7 @@ export function TriageCard({
         {hltbMode && (
           <div className="flex items-center gap-2">
             <button
+              aria-label="Previous game"
               onClick={onPrev}
               disabled={index === 0}
               className="p-3 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors disabled:opacity-30 min-h-[44px]"
@@ -274,6 +278,8 @@ export function TriageCard({
               Skip
             </button>
             <button
+              aria-hidden="true"
+              tabIndex={-1}
               disabled
               className="p-3 rounded-md bg-secondary text-secondary-foreground min-h-[44px]"
               style={{ visibility: 'hidden' }}

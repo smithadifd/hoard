@@ -63,6 +63,10 @@ In-app notifications got more useful: clicking a deal alert now opens the game's
 
 The dashboard gained a Value Received donut (owned games by tier) and a Spending & Value tile (total spent, hours played, blended $/hour, and how often you reached expected value), plus a Most Value Waiting card. The Library added four value sorts — Value Received tier, Realized $/hour, Completion %, and Price Paid — and the Backlog now defaults to its Most Value Waiting sort and offers it directly in the sort menu.
 
-## What's next
+## Onboarding wizard
 
-Two features are planned but not yet built: a post-purchase enjoyment rating (a two-field model tracking expected versus actual enjoyment, feeding into expected value metrics) and an onboarding wizard that walks through initial setup with background sync running in parallel.
+The onboarding wizard at `/onboarding` walks a new self-hoster through initial setup — Steam API key, Steam user ID, ITAD key, and Discord webhook — with live validation at each step. Behind the scenes, a drain orchestrator runs Steam library, HLTB, and price-history backfill in the background so the library is populated before the wizard closes. A dashboard progress checklist surfaces remaining setup steps after the wizard completes, and sync-status banners appear when the drain is still running.
+
+## Enjoyment rating and verdict
+
+The "Was it worth it?" verdict on owned-game detail pages now leads with an explicit enjoyment rating (1–5 stars) rather than deriving intent from playtime alone. When a rating is recorded, the value-received breakdown shows a warm summary line based on the gap between expected enjoyment (predicted from review tier) and the actual rating — "Paid off exactly as expected," "Pleasant surprise," or "Didn't land as hoped" with a one-line explanation. The $/hr calculation stays visible as supporting context. Unrated games fall back to the time/money lens described in the Value Received section. A `/triage?view=value` view lets you backfill ratings across your library.

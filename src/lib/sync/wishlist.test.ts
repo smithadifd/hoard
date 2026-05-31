@@ -301,4 +301,33 @@ describe('syncWishlist', () => {
     await expect(syncWishlist()).rejects.toThrow('Steam API down');
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Steam API down', undefined, undefined, 0);
   });
+
+  it('isolates per-item failures — one bad appId does not abort the batch or auto-remove reconciliation', async () => {
+    const entries = [makeWishlistEntry(100), makeWishlistEntry(200), makeWishlistEntry(300)];
+    // Games 100 and 300 succeed; game 200 throws a transient network error.
+    const mockClient = makeMockClient({
+      getWishlist: vi.fn().mockResolvedValue(entries),
+      getAppDetails: vi.fn().mockImplementation(async (appId: number) => {
+        if (appId === 200) throw new Error('Steam 503');
+        return { name: `Game ${appId}` };
+      }),
+      getReviewSummary: vi.fn().mockResolvedValue(null),
+    });
+    mockGetSteamClient.mockReturnValue(mockClient);
+    mockGetExisting.mockReturnValue(new Map());
+    mockUpsertGame.mockReturnValue(99);
+
+    const promise = syncWishlist();
+    // Advance past 3 × 3s rate-limit delays
+    await vi.advanceTimersByTimeAsync(10000);
+    const result = await promise;
+
+    // 2 of 3 should succeed, 1 should be counted as failed
+    expect(result.stats.succeeded).toBe(2);
+    expect(result.stats.failed).toBe(1);
+
+    // Auto-remove reconciliation (mockDbAll) must have been called — it runs
+    // AFTER the loop, and should not have been skipped due to the mid-loop throw.
+    expect(mockDbAll).toHaveBeenCalled();
+  });
 });

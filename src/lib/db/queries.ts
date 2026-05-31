@@ -103,9 +103,21 @@ export function getScoringConfig(): { weights: ScoringWeights; thresholds: Scori
     const thresholdsJson = getSetting('scoring_thresholds');
     if (thresholdsJson) {
       const parsed = JSON.parse(thresholdsJson);
-      thresholds = {
-        maxDollarsPerHour: { ...DEFAULT_THRESHOLDS.maxDollarsPerHour, ...parsed.maxDollarsPerHour },
+      const merged: typeof DEFAULT_THRESHOLDS.maxDollarsPerHour = {
+        ...DEFAULT_THRESHOLDS.maxDollarsPerHour,
+        ...parsed.maxDollarsPerHour,
       };
+      // Belt-and-suspenders: clamp any persisted zero/negative/non-finite
+      // threshold to a safe floor so the value-received engine never divides by
+      // zero even for rows written before validation existed.
+      const DPH_FLOOR = 0.01;
+      for (const key of Object.keys(merged) as Array<keyof typeof merged>) {
+        const v = merged[key];
+        if (!isFinite(v) || v <= 0) {
+          merged[key] = DPH_FLOOR;
+        }
+      }
+      thresholds = { maxDollarsPerHour: merged };
     }
   } catch {
     // Malformed JSON — use defaults

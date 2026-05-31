@@ -159,6 +159,34 @@ const settingsKeyEnum = z.enum([
   'notification_preferences',
 ]);
 
+// Acceptable range for maxDollarsPerHour threshold values.
+// A zero or negative threshold causes divide-by-zero in the value-received
+// scoring engine (pricePaid / 0 = Infinity), so we enforce a tight positive floor.
+const DPH_MIN = 0.01;
+const DPH_MAX = 100;
+
+// Shape of the scoring_thresholds JSON blob — each per-tier $/hr value must be a
+// finite positive number within DPH_MIN..DPH_MAX.  Partial blobs are fine; they
+// are deep-merged over DEFAULT_THRESHOLDS when read back.
+const scoringThresholdsSchema = z.object({
+  maxDollarsPerHour: z.object({
+    overwhelminglyPositive: z.number().finite().min(DPH_MIN).max(DPH_MAX),
+    veryPositive: z.number().finite().min(DPH_MIN).max(DPH_MAX),
+    positive: z.number().finite().min(DPH_MIN).max(DPH_MAX),
+    mixed: z.number().finite().min(DPH_MIN).max(DPH_MAX),
+    negative: z.number().finite().min(DPH_MIN).max(DPH_MAX),
+  }).partial().optional(),
+}).optional();
+
+// Shape of the scoring_weights JSON blob — each weight must be a finite number
+// in [0, 1]. Partial blobs are merged over DEFAULT_WEIGHTS.
+const scoringWeightsSchema = z.object({
+  priceWeight: z.number().finite().min(0).max(1).optional(),
+  reviewWeight: z.number().finite().min(0).max(1).optional(),
+  valueWeight: z.number().finite().min(0).max(1).optional(),
+  interestWeight: z.number().finite().min(0).max(1).optional(),
+}).optional();
+
 // Shape of the notification_preferences JSON blob. Sections are optional (the
 // getter deep-merges over defaults), but any present value is range-checked.
 const notificationPreferencesSchema = z.object({
@@ -193,6 +221,45 @@ export const settingsUpdateSchema = z.object({
     }
   }
 
+  // Each JSON-blob key validates independently: a parse failure for one key
+  // adds its own issue but must NOT short-circuit validation of the others, so a
+  // multi-error payload surfaces every problem in one response. `parsed` stays
+  // `undefined` on parse failure, which skips that key's range-check below
+  // (JSON.parse never legitimately yields `undefined`).
+  const thresholdsRaw = data.settings['scoring_thresholds'];
+  if (thresholdsRaw) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(thresholdsRaw);
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'scoring_thresholds'], message: 'Invalid JSON' });
+    }
+    if (parsed !== undefined && !scoringThresholdsSchema.safeParse(parsed).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['settings', 'scoring_thresholds'],
+        message: `maxDollarsPerHour values must be finite numbers between ${DPH_MIN} and ${DPH_MAX}`,
+      });
+    }
+  }
+
+  const weightsRaw = data.settings['scoring_weights'];
+  if (weightsRaw) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(weightsRaw);
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'scoring_weights'], message: 'Invalid JSON' });
+    }
+    if (parsed !== undefined && !scoringWeightsSchema.safeParse(parsed).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['settings', 'scoring_weights'],
+        message: 'Weight values must be finite numbers between 0 and 1',
+      });
+    }
+  }
+
   const prefsRaw = data.settings['notification_preferences'];
   if (prefsRaw) {
     let parsed: unknown;
@@ -200,9 +267,8 @@ export const settingsUpdateSchema = z.object({
       parsed = JSON.parse(prefsRaw);
     } catch {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'notification_preferences'], message: 'Invalid JSON' });
-      return;
     }
-    if (!notificationPreferencesSchema.safeParse(parsed).success) {
+    if (parsed !== undefined && !notificationPreferencesSchema.safeParse(parsed).success) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['settings', 'notification_preferences'],

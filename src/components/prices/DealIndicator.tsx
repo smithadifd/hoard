@@ -30,6 +30,8 @@ export function DealIndicator({ rating, score, compact = false, lowConfidence = 
   if (compact) {
     return (
       <span
+        role="img"
+        aria-label={`${config.label}${score !== undefined ? ` (${score})` : ''}${confidenceNote}`}
         className={`inline-block w-2.5 h-2.5 rounded-full ${config.bg}${lowConfidence ? ' border border-dashed border-white/40' : ''}`}
         title={`${config.label}${score !== undefined ? ` (${score})` : ''}${confidenceNote}`}
       />

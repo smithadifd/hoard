@@ -228,6 +228,7 @@ export function HltbEditor({
           </span>
         </div>
         <button
+          aria-label="Cancel"
           onClick={() => {
             setIsEditing(false);
             clearResults();
@@ -300,8 +301,9 @@ export function HltbEditor({
           Step 2: Review or adjust the hours, then save.
         </p>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground w-24 shrink-0">Main story</label>
+          <label htmlFor="hltb-main" className="text-xs text-muted-foreground w-24 shrink-0">Main story</label>
           <input
+            id="hltb-main"
             ref={mainRef}
             type="number"
             step="0.5"
@@ -313,8 +315,9 @@ export function HltbEditor({
           />
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground w-24 shrink-0">Main + extras</label>
+          <label htmlFor="hltb-main-extra" className="text-xs text-muted-foreground w-24 shrink-0">Main + extras</label>
           <input
+            id="hltb-main-extra"
             ref={mainExtraRef}
             type="number"
             step="0.5"
@@ -326,8 +329,9 @@ export function HltbEditor({
           />
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground w-24 shrink-0">Completionist</label>
+          <label htmlFor="hltb-completionist" className="text-xs text-muted-foreground w-24 shrink-0">Completionist</label>
           <input
+            id="hltb-completionist"
             ref={completionistRef}
             type="number"
             step="0.5"
