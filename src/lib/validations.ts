@@ -86,6 +86,8 @@ export const gameUpdateSchema = z.object({
   priceThreshold: z.number().min(0).max(10000).optional(),
   // What the user paid for an owned game (USD); null clears → reverts to time lens
   pricePaid: z.number().min(0).max(100000).nullable().optional(),
+  // Post-play enjoyment rating (1-5); null clears → reverts to efficiency/time lens
+  enjoymentRating: z.number().int().min(1).max(5).nullable().optional(),
   // Action flag: "Not now" on a price-paid suggestion → server stamps pricePaidSuggestionDismissedAt
   dismissPriceSuggestion: z.boolean().optional(),
   // Manual HLTB data entry (null to clear)

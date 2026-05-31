@@ -86,8 +86,12 @@ export const userGames = sqliteTable('user_games', {
   playtimeRecentMinutes: integer('playtime_recent_minutes').default(0), // last 2 weeks
   lastPlayed: text('last_played'), // ISO date
   // Personal scoring
-  personalInterest: integer('personal_interest').default(3), // 1-5 scale
+  personalInterest: integer('personal_interest').default(3), // 1-5 scale — pre-purchase enthusiasm ("the bet")
   interestRatedAt: text('interest_rated_at'), // ISO date — NULL means never explicitly rated
+  // Post-play enjoyment ("the payoff") — drives the rating-led Value Received verdict.
+  // NULL = unrated → falls back to the efficiency/time lens, exactly like today.
+  enjoymentRating: integer('enjoyment_rating'), // 1-5 scale, nullable
+  enjoymentRatedAt: text('enjoyment_rated_at'), // ISO date — NULL means never rated
   priceThreshold: real('price_threshold'), // Alert when price drops below
   notes: text('notes'),
   // Value received (backward-looking) — what the user actually paid for an owned game

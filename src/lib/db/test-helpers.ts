@@ -80,6 +80,8 @@ const SCHEMA_SQL = `
     last_played TEXT,
     personal_interest INTEGER DEFAULT 3,
     interest_rated_at TEXT,
+    enjoyment_rating INTEGER,
+    enjoyment_rated_at TEXT,
     price_threshold REAL,
     notes TEXT,
     price_paid REAL,

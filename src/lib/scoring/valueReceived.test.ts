@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { calculateValueReceived, valueReceivedTierLabel } from './valueReceived';
+import {
+  calculateValueReceived,
+  valueReceivedTierLabel,
+  formatVerdict,
+  verdictText,
+  computeBetPayoff,
+} from './valueReceived';
 
 // Base input: 10h played, 10h HLTB main (ratio 1.0 → realized), 85% reviews (VP → $3/hr), no price.
 function makeInput(overrides: Partial<Parameters<typeof calculateValueReceived>[0]> = {}) {
@@ -184,6 +190,131 @@ describe('calculateValueReceived', () => {
       expect(valueReceivedTierLabel('realized')).toBe('Value Realized');
       expect(valueReceivedTierLabel('approaching')).toBe('Approaching');
       expect(valueReceivedTierLabel('unrealized')).toBe('Unrealized');
+    });
+  });
+});
+
+describe('rating-led verdict', () => {
+  describe('formatVerdict headlines', () => {
+    it('maps each rating bucket to its warm headline', () => {
+      expect(formatVerdict(5, null).headline).toBe('Glad I played it');
+      expect(formatVerdict(4, null).headline).toBe('Glad I played it');
+      expect(formatVerdict(3, null).headline).toBe('On the fence');
+      expect(formatVerdict(2, null).headline).toBe('Not for me');
+      expect(formatVerdict(1, null).headline).toBe('Regret it');
+    });
+  });
+
+  describe('qualifier suppression rule (shown only when it would be misread)', () => {
+    it('loved + overpaid flags the premium (the Amanda 3 case)', () => {
+      expect(formatVerdict(5, 'unrealized').qualifier).toBe('paid a premium');
+      expect(formatVerdict(4, 'approaching').qualifier).toBe('paid up for it');
+    });
+
+    it('loved + efficient is a clean verdict (no qualifier)', () => {
+      expect(formatVerdict(5, 'exceeded').qualifier).toBeNull();
+      expect(formatVerdict(5, 'realized').qualifier).toBeNull();
+    });
+
+    it('disliked + a steal softens the regret', () => {
+      expect(formatVerdict(2, 'exceeded').qualifier).toBe('at least it was cheap');
+      expect(formatVerdict(1, 'exceeded').qualifier).toBe('at least it was cheap');
+    });
+
+    it('disliked + overpaid is a clean negative (no qualifier)', () => {
+      expect(formatVerdict(1, 'unrealized').qualifier).toBeNull();
+      expect(formatVerdict(2, 'approaching').qualifier).toBeNull();
+    });
+
+    it('neutral (3) always shows the efficiency, except a fair price', () => {
+      expect(formatVerdict(3, 'exceeded').qualifier).toBe('but cheap');
+      expect(formatVerdict(3, 'realized').qualifier).toBeNull();
+      expect(formatVerdict(3, 'approaching').qualifier).toBe('and pricey');
+      expect(formatVerdict(3, 'unrealized').qualifier).toBe('and you overpaid');
+    });
+
+    it('no money lens (null tier) → never a qualifier', () => {
+      expect(formatVerdict(5, null).qualifier).toBeNull();
+      expect(formatVerdict(1, null).qualifier).toBeNull();
+    });
+  });
+
+  it('verdictText joins headline + qualifier with a middot', () => {
+    expect(verdictText(formatVerdict(5, 'unrealized'))).toBe('Glad I played it · paid a premium');
+    expect(verdictText(formatVerdict(5, 'exceeded'))).toBe('Glad I played it');
+  });
+
+  describe('calculateValueReceived integration', () => {
+    // The Amanda 3 case: short, loved, overpaid — efficiency says "below", rating leads.
+    it('rating leads in the money lens; tier/$/hr stay as supporting context', () => {
+      // 2.5h played, $25 paid → $10/hr; 95% reviews → $4/hr bar → >2× over → unrealized tier
+      const r = calculateValueReceived({
+        playtimeMinutes: 150,
+        hltbMainHours: 3,
+        reviewPercent: 95,
+        pricePaid: 25,
+        enjoymentRating: 5,
+      });
+      expect(r.lens).toBe('money');
+      expect(r.tier).toBe('unrealized'); // efficiency truth preserved
+      expect(r.verdict).not.toBeNull();
+      expect(r.verdict!.headline).toBe('Glad I played it');
+      expect(r.verdict!.qualifier).toBe('paid a premium');
+      expect(r.enjoymentRating).toBe(5);
+    });
+
+    it('a rating rescues the no-baseline (none) lens', () => {
+      // Played, but no HLTB and no price → lens 'none', which can't grade value...
+      const unrated = calculateValueReceived({
+        playtimeMinutes: 120,
+        hltbMainHours: null,
+        reviewPercent: null,
+        pricePaid: null,
+      });
+      expect(unrated.lens).toBe('none');
+      expect(unrated.verdict).toBeNull();
+
+      // ...until the user rates it. No money lens → no qualifier.
+      const rated = calculateValueReceived({
+        playtimeMinutes: 120,
+        hltbMainHours: null,
+        reviewPercent: null,
+        pricePaid: null,
+        enjoymentRating: 4,
+      });
+      expect(rated.lens).toBe('none');
+      expect(rated.verdict!.headline).toBe('Glad I played it');
+      expect(rated.verdict!.qualifier).toBeNull();
+    });
+
+    it('unrated games carry a null verdict (unchanged behavior)', () => {
+      const r = calculateValueReceived(makeInput());
+      expect(r.verdict).toBeNull();
+      expect(r.enjoymentRating).toBeNull();
+    });
+  });
+
+  describe('bet → payoff', () => {
+    it('is null unless interest was explicitly rated AND the game is rated', () => {
+      // enjoyment but no interest timestamp
+      expect(
+        computeBetPayoff({ playtimeMinutes: 600, hltbMainHours: 10, reviewPercent: 85, pricePaid: null, enjoymentRating: 5, personalInterest: 4 }),
+      ).toBeNull();
+      // interest rated but no enjoyment
+      expect(
+        computeBetPayoff({ playtimeMinutes: 600, hltbMainHours: 10, reviewPercent: 85, pricePaid: null, personalInterest: 4, interestRatedAt: '2026-01-01' }),
+      ).toBeNull();
+    });
+
+    it('labels the delta when both are present', () => {
+      const exceeded = computeBetPayoff({ playtimeMinutes: 600, hltbMainHours: 10, reviewPercent: 85, pricePaid: null, enjoymentRating: 5, personalInterest: 3, interestRatedAt: '2026-01-01' });
+      expect(exceeded).toEqual({ interest: 3, enjoyment: 5, delta: 2, label: 'exceeded expectations' });
+
+      const met = computeBetPayoff({ playtimeMinutes: 600, hltbMainHours: 10, reviewPercent: 85, pricePaid: null, enjoymentRating: 4, personalInterest: 4, interestRatedAt: '2026-01-01' });
+      expect(met!.label).toBe('met expectations');
+
+      const fell = computeBetPayoff({ playtimeMinutes: 600, hltbMainHours: 10, reviewPercent: 85, pricePaid: null, enjoymentRating: 2, personalInterest: 4, interestRatedAt: '2026-01-01' });
+      expect(fell!.label).toBe('fell short');
     });
   });
 });
