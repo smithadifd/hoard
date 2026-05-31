@@ -15,6 +15,12 @@ interface ValueReceivedIndicatorProps {
   realizedDollarsPerHour?: number;
   hoursPlayed?: number;
   summary?: string;
+  /** Post-play rating (1-5). When set, the warm verdict leads instead of the tier. */
+  enjoymentRating?: number;
+  /** Rating-led verdict headline ("Glad I played it"). */
+  headline?: string;
+  /** Efficiency qualifier ("paid a premium"), shown only when it would be misread. */
+  qualifier?: string;
 }
 
 const tierBg: Record<ValueReceivedTier, string> = {
@@ -24,6 +30,13 @@ const tierBg: Record<ValueReceivedTier, string> = {
   unrealized: 'bg-secondary',
 };
 
+// Verdict chip color keyed by the rating itself (not the efficiency tier).
+function ratingBg(rating: number): string {
+  if (rating >= 4) return 'bg-deal-great';
+  if (rating === 3) return 'bg-deal-okay';
+  return 'bg-secondary';
+}
+
 export function ValueReceivedIndicator({
   tier,
   lens,
@@ -31,7 +44,24 @@ export function ValueReceivedIndicator({
   realizedDollarsPerHour,
   hoursPlayed,
   summary,
+  enjoymentRating,
+  headline,
+  qualifier,
 }: ValueReceivedIndicatorProps) {
+  // Rated: the warm verdict leads. $/hr / completion are demoted to the tooltip.
+  if (enjoymentRating !== undefined && enjoymentRating > 0 && headline) {
+    const isMuted = enjoymentRating <= 2;
+    const label = qualifier ? `${headline} · ${qualifier}` : headline;
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-label font-bold ${isMuted ? 'text-muted-foreground' : 'text-white'} ${ratingBg(enjoymentRating)}`}
+        title={summary ?? label}
+      >
+        <span>{label}</span>
+      </span>
+    );
+  }
+
   // No honest baseline (played, but no HLTB estimate and no price): show a neutral
   // played-hours chip rather than a value tier we can't actually justify.
   if (lens === 'none') {

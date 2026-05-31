@@ -125,6 +125,14 @@ Weights (`priceWeight`, `reviewWeight`, `valueWeight`, `interestWeight`) and the
 
 The deal score is forward-looking — it grades a *price you could pay*. Its mirror, the **value received** score, grades a game you already own: realized $/hour (what you paid ÷ hours played) against the same per-review-tier thresholds, or, when no price is recorded, playtime against the HowLongToBeat main story. It reuses `getMaxDollarsPerHour` and the same 0.5×/1×/2× bands as the value sub-score, so the two stay consistent — a good-value buy reads as "realized" once you've played it through. The logic lives in `src/lib/scoring/valueReceived.ts`; see [Value received](/features/value-received/).
 
+### Rating-led verdict
+
+Once you record a **post-play enjoyment rating** (`user_games.enjoyment_rating`, 1–5), that rating *leads* the verdict and the efficiency lens ($/hr, completion) is demoted to supporting context. The reasoning: for a game you've actually played, your own rating is the most honest measure of value received — review % is a crowd proxy and $/hour is an efficiency proxy that's structurally unfair to short games (a two-hour game you loved can never "break even" on $/hour no matter the threshold).
+
+`formatVerdict(rating, moneyTier)` produces a warm, first-person headline — *Glad I played it* (4–5), *On the fence* (3), *Not for me* (2), *Regret it* (1) — plus an efficiency **qualifier** that appears only when it would otherwise be misread: *loved + overpaid* → "paid a premium", *disliked + a steal* → "at least it was cheap", and the neutral (3★) row always shows the efficiency. Clean cells (rating and efficiency agree) carry no qualifier. A rating also rescues the no-baseline (`lens: 'none'`) case — a played game with no price and no duration still gets an honest verdict.
+
+The verdict is purely additive: the existing `tier`/`lens`/`summary` fields are unchanged, so an unrated game scores exactly as before (`verdict: null`). A separate **bet → payoff** signal (`computeBetPayoff`) compares pre-purchase `personalInterest` against the post-play rating — but only when both were explicitly set — to surface whether the bet paid off ("exceeded / met / fell short"). The opt-in *Worth it?* triage view (`/triage?view=value`) lists owned, played, unrated games for backfill; settled (rated) games drop out of it.
+
 ## Implementation note
 
 The value score branching is a flat conditional chain, not a recursive tree. The Mermaid flowchart described in the plan would be misleading — there's no looping or backtracking. The path is: check if hours are known → compute $/hr → look up the review-tier threshold → compare against the five stepped bands → return the score.

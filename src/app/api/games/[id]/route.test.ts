@@ -121,4 +121,43 @@ describe('PATCH /api/games/:id', () => {
     const res = await PATCH(request, makeParams('1'));
     expect(res.status).toBe(400);
   });
+
+  it('sets a post-play enjoyment rating', async () => {
+    mockUpdateGame.mockReturnValue(true);
+
+    const request = new Request('http://localhost/api/games/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enjoymentRating: 5 }),
+    });
+
+    const res = await PATCH(request, makeParams('1'));
+    expect(res.status).toBe(200);
+    expect(mockUpdateGame).toHaveBeenCalledWith(1, { enjoymentRating: 5 }, 'test-user-id');
+  });
+
+  it('clears an enjoyment rating with null', async () => {
+    mockUpdateGame.mockReturnValue(true);
+
+    const request = new Request('http://localhost/api/games/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enjoymentRating: null }),
+    });
+
+    const res = await PATCH(request, makeParams('1'));
+    expect(res.status).toBe(200);
+    expect(mockUpdateGame).toHaveBeenCalledWith(1, { enjoymentRating: null }, 'test-user-id');
+  });
+
+  it('returns 400 for enjoyment rating out of range', async () => {
+    const request = new Request('http://localhost/api/games/1', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enjoymentRating: 6 }),
+    });
+
+    const res = await PATCH(request, makeParams('1'));
+    expect(res.status).toBe(400);
+  });
 });

@@ -14,6 +14,7 @@ import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
 import { DataStatus } from '@/components/games/DataStatus';
 import { HltbEditor } from '@/components/games/HltbEditor';
 import { PricePaidEditor } from '@/components/games/PricePaidEditor';
+import { EnjoymentRatingEditor } from '@/components/games/EnjoymentRatingEditor';
 import { PricePaidSuggestionPrompt } from '@/components/games/PricePaidSuggestionPrompt';
 import { LookupModeBanner } from '@/components/games/LookupModeBanner';
 import { ITADOverviewCard } from '@/components/games/ITADOverviewCard';
@@ -366,6 +367,12 @@ export default async function GameDetailPage({
               Hidden while a suggestion is pending; the prompt above handles entry then. */}
           {!isLookupMode && game.isOwned && !game.hasPricePaidSuggestion && (
             <PricePaidEditor gameId={game.id} pricePaid={game.pricePaid} />
+          )}
+
+          {/* Enjoyment Rating Editor — owned games only. Once set, the rating leads
+              the Value Received verdict and demotes $/hr to supporting context. */}
+          {!isLookupMode && game.isOwned && (
+            <EnjoymentRatingEditor gameId={game.id} enjoymentRating={game.enjoymentRating} />
           )}
 
           {/* External Links */}

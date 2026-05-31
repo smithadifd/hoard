@@ -10,4 +10,7 @@ export interface TriageGame {
   currentPrice: number | null;
   personalInterest: number;
   interestRatedAt: string | null;
+  // Post-play enjoyment ("was it worth it?") — used by the 'value' triage view.
+  enjoymentRating: number | null;
+  enjoymentRatedAt: string | null;
 }

@@ -59,6 +59,9 @@ export function GameCard({ game }: GameCardProps) {
               realizedDollarsPerHour={game.realizedDollarsPerHour}
               hoursPlayed={Math.round((game.playtimeMinutes / 60) * 10) / 10}
               summary={game.valueReceivedSummary}
+              enjoymentRating={game.enjoymentRating}
+              headline={game.valueReceivedHeadline}
+              qualifier={game.valueReceivedQualifier}
             />
           </div>
         ) : game.dealRating ? (
