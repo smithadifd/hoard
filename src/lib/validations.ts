@@ -129,6 +129,18 @@ export const alertUpdateSchema = z.object({
 // Settings
 // ============================================
 
+/**
+ * Setting keys whose values are secrets — never echo these back to the client
+ * (not via the API, not serialized into page HTML as client-component props).
+ * `steam_user_id` is deliberately excluded: a Steam64 ID is public.
+ */
+export const SECRET_SETTING_KEYS = [
+  'steam_api_key',
+  'itad_api_key',
+  'discord_webhook_url',
+  'discord_ops_webhook_url',
+] as const;
+
 const settingsKeyEnum = z.enum([
   'steam_api_key',
   'steam_user_id',

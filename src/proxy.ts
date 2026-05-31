@@ -12,11 +12,22 @@ import { getSessionCookie } from 'better-auth/cookies';
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
-/** Endpoints blocked in demo mode (method + path prefix) */
+/**
+ * Endpoints blocked in demo mode (method + path prefix).
+ *
+ * Invariant (see AGENTS.md): every mutation endpoint AND every endpoint that
+ * drives an outbound external call must appear here, so a public demo visitor
+ * cannot write to the DB or proxy authenticated third-party requests. GET reads
+ * are intentionally left open so the demo UI still renders.
+ *
+ * Matching is method + path-prefix (startsWith), so a namespace prefix like
+ * `/api/onboarding` covers all of its sub-routes.
+ */
 const DEMO_BLOCKED: { method: string; prefix: string }[] = [
   { method: 'POST', prefix: '/api/sync' },
   { method: 'POST', prefix: '/api/steam' },
-  { method: 'POST', prefix: '/api/prices' },
+  // Note: there is no `/api/prices` route — price-history mutation is
+  // `POST /api/games/[id]/prices/history`, already covered by `/api/games`.
   { method: 'POST', prefix: '/api/backup' },
   { method: 'PUT', prefix: '/api/settings' },
   { method: 'PATCH', prefix: '/api/settings' },
@@ -27,6 +38,18 @@ const DEMO_BLOCKED: { method: string; prefix: string }[] = [
   { method: 'POST', prefix: '/api/alerts' },
   { method: 'PATCH', prefix: '/api/alerts' },
   { method: 'DELETE', prefix: '/api/alerts' },
+  // Onboarding: validate-steam persists credentials + hits the Steam API,
+  // state/drain write onboarding + orchestrator state. Block the whole namespace.
+  { method: 'POST', prefix: '/api/onboarding' },
+  { method: 'PATCH', prefix: '/api/onboarding' },
+  { method: 'DELETE', prefix: '/api/onboarding' },
+  // Notifications: markAllRead / dismissAll / per-id PATCH mutate the dataset.
+  // GET /api/notifications stays open so the demo bell still renders.
+  { method: 'POST', prefix: '/api/notifications' },
+  { method: 'DELETE', prefix: '/api/notifications' },
+  { method: 'PATCH', prefix: '/api/notifications' },
+  // HLTB search drives an outbound HowLongToBeat request.
+  { method: 'POST', prefix: '/api/hltb' },
 ];
 
 // --- Public paths that bypass auth ---
@@ -57,6 +80,7 @@ const RATE_LIMITS: { pattern: RegExp; tier: RateLimitTier }[] = [
   { pattern: /^\/api\/steam/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/prices/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/backup/, tier: { tokensPerMinute: 5, burst: 5 } },
+  { pattern: /^\/api\/hltb/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\//, tier: { tokensPerMinute: 100, burst: 100 } },
 ];
 
@@ -138,6 +162,11 @@ function applyRateLimit(request: NextRequest): NextResponse | null {
 // --- CSP nonce ---
 
 function buildCsp(nonce: string): string {
+  // TODO(security, plan 27 note 1): the per-request nonce is set on `x-nonce` but
+  // not yet consumed by the layout/script tags, so the `'nonce-…'` term is inert
+  // and `'unsafe-eval'` currently does the work. Either wire the nonce through
+  // Next's <Script>/layout and drop `'unsafe-eval'` in prod, or remove the unused
+  // nonce term. Deferred — needs prod-render verification.
   return [
     "default-src 'self'",
     `script-src 'self' 'unsafe-eval' 'nonce-${nonce}'`,

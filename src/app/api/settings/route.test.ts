@@ -25,17 +25,45 @@ describe('GET /api/settings', () => {
     vi.clearAllMocks();
   });
 
-  it('returns all settings', async () => {
+  it('returns non-secret settings as-is', async () => {
     mockGetAll.mockReturnValue({
-      steam_api_key: 'key123',
-      discord_webhook_url: 'https://discord.com/api/webhooks/123',
+      steam_user_id: '76561198000000000',
+      alert_throttle_hours: '24',
     });
 
     const res = await GET(createRequest('/api/settings'));
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.data.steam_api_key).toBe('key123');
+    expect(body.data.steam_user_id).toBe('76561198000000000');
+    expect(body.data.alert_throttle_hours).toBe('24');
+  });
+
+  it('redacts secret values and reports them as configured booleans', async () => {
+    mockGetAll.mockReturnValue({
+      steam_api_key: 'key123',
+      itad_api_key: 'itad456',
+      discord_webhook_url: 'https://discord.com/api/webhooks/123',
+      steam_user_id: '76561198000000000',
+    });
+
+    const res = await GET(createRequest('/api/settings'));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    // Raw secret values must never be echoed back.
+    expect(body.data.steam_api_key).toBeUndefined();
+    expect(body.data.itad_api_key).toBeUndefined();
+    expect(body.data.discord_webhook_url).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('key123');
+    expect(JSON.stringify(body)).not.toContain('itad456');
+    // Configured-ness is surfaced without the value.
+    expect(body.data._secrets.steam_api_key).toBe(true);
+    expect(body.data._secrets.itad_api_key).toBe(true);
+    expect(body.data._secrets.discord_webhook_url).toBe(true);
+    expect(body.data._secrets.discord_ops_webhook_url).toBe(false);
+    // Non-secret values still pass through.
+    expect(body.data.steam_user_id).toBe('76561198000000000');
   });
 });
 
