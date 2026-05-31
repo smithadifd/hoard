@@ -3,21 +3,31 @@
 import { useState, useCallback, useRef } from 'react';
 import { Save, Loader2, CheckCircle, AlertCircle, Library, Heart, DollarSign, Clock, Star, X } from 'lucide-react';
 import { readSSEStream } from '@/lib/utils/sse';
+import { SECRET_SETTING_KEYS } from '@/lib/validations';
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+const SECRET_KEYS = SECRET_SETTING_KEYS as readonly string[];
 
 interface SettingsFormProps {
+  /** Non-secret settings only; secret values are never sent to the client. */
   initialSettings: Record<string, string>;
+  /** Whether each secret key already has a value stored, without the value. */
+  secretsConfigured: Record<string, boolean>;
 }
 
-export function SettingsForm({ initialSettings }: SettingsFormProps) {
+export function SettingsForm({ initialSettings, secretsConfigured }: SettingsFormProps) {
+  // Secret fields start empty and are write-only: an empty field means "keep the
+  // stored value". `secretConfigured` drives the placeholder + sync gating so the
+  // UI knows a key is set without ever holding its value.
   const [settings, setSettings] = useState({
-    steam_api_key: initialSettings['steam_api_key'] || '',
+    steam_api_key: '',
     steam_user_id: initialSettings['steam_user_id'] || '',
-    itad_api_key: initialSettings['itad_api_key'] || '',
-    discord_webhook_url: initialSettings['discord_webhook_url'] || '',
-    discord_ops_webhook_url: initialSettings['discord_ops_webhook_url'] || '',
+    itad_api_key: '',
+    discord_webhook_url: '',
+    discord_ops_webhook_url: '',
   });
+  const [secretConfigured, setSecretConfigured] = useState(secretsConfigured);
+  const touchedSecrets = useRef<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [syncStatus, setSyncStatus] = useState<Record<string, 'idle' | 'syncing' | 'success' | 'error'>>({
@@ -32,6 +42,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   const abortControllers = useRef<Record<string, AbortController>>({});
 
   const updateSetting = (key: string, value: string) => {
+    if (SECRET_KEYS.includes(key)) touchedSecrets.current.add(key);
     setSettings((prev) => ({ ...prev, [key]: value }));
     setSaveStatus('idle');
   };
@@ -39,14 +50,39 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   const handleSave = async () => {
     setSaving(true);
     setSaveStatus('idle');
+
+    // Send non-secret fields always; send a secret only if the user edited it,
+    // so an untouched (blank) secret field never overwrites the stored value.
+    const payload: Record<string, string> = {};
+    for (const [key, value] of Object.entries(settings)) {
+      if (!SECRET_KEYS.includes(key) || touchedSecrets.current.has(key)) {
+        payload[key] = value;
+      }
+    }
+
     try {
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings: payload }),
       });
       if (!res.ok) throw new Error('Save failed');
       setSaveStatus('success');
+
+      // Reflect new configured-state, then clear typed secrets from memory.
+      setSecretConfigured((prev) => {
+        const next = { ...prev };
+        for (const key of touchedSecrets.current) next[key] = Boolean(settings[key as keyof typeof settings]);
+        return next;
+      });
+      touchedSecrets.current.clear();
+      setSettings((prev) => ({
+        ...prev,
+        steam_api_key: '',
+        itad_api_key: '',
+        discord_webhook_url: '',
+        discord_ops_webhook_url: '',
+      }));
     } catch {
       setSaveStatus('error');
     } finally {
@@ -141,8 +177,9 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     }
   }, []);
 
-  const hasSteamKeys = settings.steam_api_key && settings.steam_user_id;
-  const hasItadKey = !!settings.itad_api_key;
+  const hasSteamKeys =
+    (secretConfigured.steam_api_key || !!settings.steam_api_key) && !!settings.steam_user_id;
+  const hasItadKey = secretConfigured.itad_api_key || !!settings.itad_api_key;
 
   return (
     <div className="space-y-8">
@@ -169,6 +206,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               value={settings.steam_api_key}
               onChange={(v) => updateSetting('steam_api_key', v)}
               type="password"
+              configured={secretConfigured.steam_api_key}
             />
             <FormField
               label="Steam User ID (Steam64 format)"
@@ -184,6 +222,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               value={settings.itad_api_key}
               onChange={(v) => updateSetting('itad_api_key', v)}
               type="password"
+              configured={secretConfigured.itad_api_key}
             />
             <FormField
               label="Discord Webhook URL (Deals)"
@@ -191,6 +230,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               helpText="Optional — for price alert notifications"
               value={settings.discord_webhook_url}
               onChange={(v) => updateSetting('discord_webhook_url', v)}
+              configured={secretConfigured.discord_webhook_url}
             />
             <FormField
               label="Discord Webhook URL (Ops)"
@@ -198,6 +238,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               helpText="Optional — for sync failures, startup alerts. Falls back to deals webhook if empty."
               value={settings.discord_ops_webhook_url}
               onChange={(v) => updateSetting('discord_ops_webhook_url', v)}
+              configured={secretConfigured.discord_ops_webhook_url}
             />
           </div>
 
@@ -324,6 +365,7 @@ function FormField({
   value,
   onChange,
   type = 'text',
+  configured,
 }: {
   label: string;
   placeholder: string;
@@ -331,13 +373,20 @@ function FormField({
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  /** Secret fields only: a value is already stored. Field is write-only. */
+  configured?: boolean;
 }) {
+  // When a secret is already stored and untouched, signal "saved" via the
+  // placeholder rather than echoing the value, and note that blank keeps it.
+  const effectivePlaceholder = configured && value === ''
+    ? '•••••••• saved — leave blank to keep'
+    : placeholder;
   return (
     <div className="space-y-1">
       <label className="text-sm font-medium">{label}</label>
       <input
         type={type}
-        placeholder={placeholder}
+        placeholder={effectivePlaceholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full px-3 py-2 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
