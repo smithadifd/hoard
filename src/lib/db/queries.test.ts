@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterAll } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
 import type { TestDb } from './test-helpers';
@@ -63,6 +63,11 @@ import {
   getGamesForMetadataRefresh,
   updateGameMetadata,
   getEarlyAccessSnapshot,
+  getAutoAlertCandidates,
+  cascadePurchaseCleanup,
+  getPreOwnershipState,
+  getGamesForTriage,
+  getDealScoreDistribution,
 } from './queries';
 
 beforeEach(() => {
@@ -1570,5 +1575,365 @@ describe('getEnrichedGames earlyAccess filter', () => {
     expect(byTitle.get('EA Game')?.isEarlyAccess).toBe(true);
     expect(byTitle.get('Released Game')?.isEarlyAccess).toBe(false);
     expect(byTitle.get('Unknown Game')?.isEarlyAccess).toBeUndefined();
+  });
+});
+
+// ============================================
+// getAutoAlertCandidates (auto-alert gating query)
+// ============================================
+
+describe('getAutoAlertCandidates', () => {
+  // Seed a fully-qualifying candidate: wishlisted, released, ATL, deal_score 90.
+  function seedCandidate(
+    opts: {
+      title: string;
+      steamAppId: number;
+      userId?: string;
+      isWishlisted?: boolean;
+      isReleased?: boolean;
+      autoAlertDisabled?: boolean;
+      dealScore?: number;
+      priceCurrent?: number;
+      isHistoricalLow?: boolean;
+      snapshotDate?: string;
+      historicalLowPrice?: number;
+    },
+  ): number {
+    const gameId = seedGame(testDb, {
+      steamAppId: opts.steamAppId,
+      title: opts.title,
+      isReleased: opts.isReleased ?? true,
+    });
+    seedUserGame(testDb, gameId, {
+      userId: opts.userId ?? 'default',
+      isWishlisted: opts.isWishlisted ?? true,
+      autoAlertDisabled: opts.autoAlertDisabled ?? false,
+    });
+    seedPriceSnapshot(testDb, gameId, {
+      isHistoricalLow: opts.isHistoricalLow ?? true,
+      dealScore: opts.dealScore ?? 90,
+      priceCurrent: opts.priceCurrent ?? 9.99,
+      historicalLowPrice: opts.historicalLowPrice ?? 9.99,
+      snapshotDate: opts.snapshotDate ?? '2026-05-15',
+    });
+    return gameId;
+  }
+
+  it('(a) surfaces only wishlisted, released, non-disabled games at historical low', () => {
+    seedCandidate({ title: 'Qualifies', steamAppId: 1 });
+    // not wishlisted
+    seedCandidate({ title: 'Not Wishlisted', steamAppId: 2, isWishlisted: false });
+    // unreleased
+    seedCandidate({ title: 'Unreleased', steamAppId: 3, isReleased: false });
+    // not at historical low
+    seedCandidate({ title: 'Not ATL', steamAppId: 4, isHistoricalLow: false });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates.map((c) => c.title)).toEqual(['Qualifies']);
+  });
+
+  it('(b) respects minDealScore, but price_current = 0 (free) bypasses it', () => {
+    seedCandidate({ title: 'Below Threshold', steamAppId: 1, dealScore: 40 });
+    seedCandidate({ title: 'Free Game', steamAppId: 2, dealScore: 10, priceCurrent: 0 });
+    seedCandidate({ title: 'Above Threshold', steamAppId: 3, dealScore: 80 });
+
+    const candidates = getAutoAlertCandidates('default', 70);
+    expect(candidates.map((c) => c.title).sort()).toEqual(['Above Threshold', 'Free Game']);
+  });
+
+  it('(c) excludes games that already have a price_alerts row (NOT EXISTS guard)', () => {
+    const withAlert = seedCandidate({ title: 'Has Manual Alert', steamAppId: 1 });
+    seedPriceAlert(testDb, withAlert, { userId: 'default' });
+    seedCandidate({ title: 'No Alert', steamAppId: 2 });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates.map((c) => c.title)).toEqual(['No Alert']);
+  });
+
+  it('(c) the NOT EXISTS guard is scoped per-user — another user\'s alert does not exclude', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Shared Game', isReleased: true });
+    seedUserGame(testDb, gameId, { userId: 'default', isWishlisted: true });
+    seedPriceSnapshot(testDb, gameId, { isHistoricalLow: true, dealScore: 90 });
+    // A different user holds an alert for the same game.
+    seedPriceAlert(testDb, gameId, { userId: 'other-user' });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates.map((c) => c.title)).toEqual(['Shared Game']);
+  });
+
+  it('(d) treats auto_alert_disabled = NULL as enabled', () => {
+    const gameId = seedCandidate({ title: 'Null Flag', steamAppId: 1 });
+    testDb.run(sql`UPDATE user_games SET auto_alert_disabled = NULL WHERE game_id = ${gameId}`);
+    // sanity: an explicitly-disabled game must NOT surface
+    seedCandidate({ title: 'Disabled', steamAppId: 2, autoAlertDisabled: true });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates.map((c) => c.title)).toEqual(['Null Flag']);
+  });
+
+  it('(e) prevHistoricalLowPrice resolves to the immediately-prior snapshot', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Two Snapshots', isReleased: true });
+    seedUserGame(testDb, gameId, { userId: 'default', isWishlisted: true });
+    // Earlier snapshot: ATL was 19.99
+    seedPriceSnapshot(testDb, gameId, {
+      snapshotDate: '2026-05-01',
+      historicalLowPrice: 19.99,
+      dealScore: 60,
+      isHistoricalLow: true,
+    });
+    // Latest snapshot: ATL dropped to 9.99 — this is the candidate row
+    seedPriceSnapshot(testDb, gameId, {
+      snapshotDate: '2026-05-02',
+      historicalLowPrice: 9.99,
+      dealScore: 90,
+      isHistoricalLow: true,
+    });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].historicalLowPrice).toBe(9.99);
+    expect(candidates[0].prevHistoricalLowPrice).toBe(19.99);
+  });
+
+  it('selects the latest snapshot by snapshot_date DESC, then deal_score DESC', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Same-Day Tie', isReleased: true });
+    seedUserGame(testDb, gameId, { userId: 'default', isWishlisted: true });
+    // Two snapshots on the same date: the higher deal_score is the "latest".
+    seedPriceSnapshot(testDb, gameId, {
+      snapshotDate: '2026-05-10',
+      store: 'steam',
+      dealScore: 55,
+      isHistoricalLow: true,
+    });
+    seedPriceSnapshot(testDb, gameId, {
+      snapshotDate: '2026-05-10',
+      store: 'gog',
+      dealScore: 88,
+      isHistoricalLow: true,
+    });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].dealScore).toBe(88);
+  });
+
+  it('scopes candidates to the requested user', () => {
+    seedCandidate({ title: 'Mine', steamAppId: 1, userId: 'default' });
+    seedCandidate({ title: 'Theirs', steamAppId: 2, userId: 'other-user' });
+
+    const candidates = getAutoAlertCandidates('default', 50);
+    expect(candidates.map((c) => c.title)).toEqual(['Mine']);
+  });
+});
+
+// ============================================
+// cascadePurchaseCleanup + getPreOwnershipState (ownership transition)
+// ============================================
+
+describe('cascadePurchaseCleanup', () => {
+  it('deactivates alerts, clears wishlist flags, and stamps wishlistRemovedAt for the passed games only', () => {
+    const g1 = seedGame(testDb, { steamAppId: 1, title: 'Bought' });
+    const g2 = seedGame(testDb, { steamAppId: 2, title: 'Still Wishlisted' });
+    const g3 = seedGame(testDb, { steamAppId: 3, title: 'Other User Game' });
+
+    seedUserGame(testDb, g1, { userId: 'userA', isWishlisted: true, isWatchlisted: true });
+    seedUserGame(testDb, g2, { userId: 'userA', isWishlisted: true });
+    seedUserGame(testDb, g3, { userId: 'userB', isWishlisted: true });
+    seedPriceAlert(testDb, g1, { userId: 'userA', isActive: true });
+    seedPriceAlert(testDb, g2, { userId: 'userA', isActive: true });
+    seedPriceAlert(testDb, g3, { userId: 'userB', isActive: true });
+
+    cascadePurchaseCleanup([g1], 'userA');
+
+    const rows = testDb.select().from(schema.userGames).all();
+    const byGame = new Map(rows.map((r) => [r.gameId, r]));
+    // g1 cleaned up
+    expect(byGame.get(g1)?.isWishlisted).toBe(false);
+    expect(byGame.get(g1)?.isWatchlisted).toBe(false);
+    expect(byGame.get(g1)?.wishlistRemovedAt).not.toBeNull();
+    // g2 (same user, not passed) untouched
+    expect(byGame.get(g2)?.isWishlisted).toBe(true);
+    expect(byGame.get(g2)?.wishlistRemovedAt).toBeNull();
+    // g3 (other user) untouched
+    expect(byGame.get(g3)?.isWishlisted).toBe(true);
+
+    const alerts = testDb.select().from(schema.priceAlerts).all();
+    const alertByGame = new Map(alerts.map((a) => [a.gameId, a]));
+    expect(alertByGame.get(g1)?.isActive).toBe(false); // deactivated
+    expect(alertByGame.get(g2)?.isActive).toBe(true); // untouched
+    expect(alertByGame.get(g3)?.isActive).toBe(true); // other user untouched
+  });
+
+  it('scopes by userId — another user\'s row for the SAME game is untouched', () => {
+    const shared = seedGame(testDb, { steamAppId: 1, title: 'Shared Game' });
+    // Both users hold the same game wishlisted, each with an active alert.
+    seedUserGame(testDb, shared, { userId: 'userA', isWishlisted: true });
+    seedUserGame(testDb, shared, { userId: 'userB', isWishlisted: true });
+    seedPriceAlert(testDb, shared, { userId: 'userA', isActive: true });
+    seedPriceAlert(testDb, shared, { userId: 'userB', isActive: true });
+
+    cascadePurchaseCleanup([shared], 'userA');
+
+    const rows = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, shared)).all();
+    const byUser = new Map(rows.map((r) => [r.userId, r]));
+    // userA bought it → cleaned up
+    expect(byUser.get('userA')?.isWishlisted).toBe(false);
+    expect(byUser.get('userA')?.wishlistRemovedAt).not.toBeNull();
+    // userB still wants it → must be left alone (would break if userId filter dropped)
+    expect(byUser.get('userB')?.isWishlisted).toBe(true);
+    expect(byUser.get('userB')?.wishlistRemovedAt).toBeNull();
+
+    const alerts = testDb.select().from(schema.priceAlerts).where(eq(schema.priceAlerts.gameId, shared)).all();
+    const alertByUser = new Map(alerts.map((a) => [a.userId, a]));
+    expect(alertByUser.get('userA')?.isActive).toBe(false);
+    expect(alertByUser.get('userB')?.isActive).toBe(true);
+  });
+
+  it('is a no-op for an empty gameIds array', () => {
+    const g1 = seedGame(testDb, { steamAppId: 1, title: 'Untouched' });
+    seedUserGame(testDb, g1, { userId: 'userA', isWishlisted: true });
+    seedPriceAlert(testDb, g1, { userId: 'userA', isActive: true });
+
+    cascadePurchaseCleanup([], 'userA');
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, g1)).get();
+    expect(row?.isWishlisted).toBe(true);
+    expect(row?.wishlistRemovedAt).toBeNull();
+  });
+});
+
+describe('getPreOwnershipState', () => {
+  it('reports wasOwned from is_owned and wasWishlisted only when not yet removed', () => {
+    const owned = seedGame(testDb, { steamAppId: 1, title: 'Owned' });
+    const wishlisted = seedGame(testDb, { steamAppId: 2, title: 'Wishlisted' });
+    const removed = seedGame(testDb, { steamAppId: 3, title: 'Removed Wishlist' });
+
+    seedUserGame(testDb, owned, { userId: 'userA', isOwned: true, isWishlisted: false });
+    seedUserGame(testDb, wishlisted, { userId: 'userA', isWishlisted: true });
+    seedUserGame(testDb, removed, {
+      userId: 'userA',
+      isWishlisted: true,
+      wishlistRemovedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const state = getPreOwnershipState([owned, wishlisted, removed], 'userA');
+    const byGame = new Map(state.map((s) => [s.gameId, s]));
+    expect(byGame.get(owned)).toMatchObject({ wasOwned: true, wasWishlisted: false });
+    expect(byGame.get(wishlisted)).toMatchObject({ wasOwned: false, wasWishlisted: true });
+    // currently wishlisted but already removed → not counted as wishlisted
+    expect(byGame.get(removed)).toMatchObject({ wasOwned: false, wasWishlisted: false });
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(getPreOwnershipState([], 'userA')).toEqual([]);
+  });
+
+  it('scopes by userId', () => {
+    const g1 = seedGame(testDb, { steamAppId: 1, title: 'A Game' });
+    seedUserGame(testDb, g1, { userId: 'userA', isOwned: true });
+    seedUserGame(testDb, g1, { userId: 'userB', isWishlisted: true });
+
+    const state = getPreOwnershipState([g1], 'userB');
+    expect(state).toHaveLength(1);
+    expect(state[0]).toMatchObject({ wasOwned: false, wasWishlisted: true });
+  });
+});
+
+// ============================================
+// getGamesForTriage (four-way view selector)
+// ============================================
+
+describe('getGamesForTriage', () => {
+  beforeEach(() => {
+    // owned + played + unrated → qualifies for 'value'
+    const ownedPlayed = seedGame(testDb, { steamAppId: 1, title: 'Owned Played', hltbMain: 10 });
+    seedUserGame(testDb, ownedPlayed, { isOwned: true, playtimeMinutes: 600 });
+    // owned but never played, has hltb
+    const ownedUnplayed = seedGame(testDb, { steamAppId: 2, title: 'Owned Unplayed', hltbMain: 5 });
+    seedUserGame(testDb, ownedUnplayed, { isOwned: true, playtimeMinutes: 0 });
+    // wishlisted, missing hltb
+    const wishlistedNoHltb = seedGame(testDb, { steamAppId: 3, title: 'Wishlisted NoHLTB' });
+    seedUserGame(testDb, wishlistedNoHltb, { isWishlisted: true });
+    // ignored — must never surface
+    const ignored = seedGame(testDb, { steamAppId: 4, title: 'Ignored', hltbMain: 8 });
+    seedUserGame(testDb, ignored, { isOwned: true, isIgnored: true, playtimeMinutes: 300 });
+  });
+
+  it('view=library returns owned games (excluding ignored)', () => {
+    const titles = getGamesForTriage('library', 'default').map((g) => g.title).sort();
+    expect(titles).toEqual(['Owned Played', 'Owned Unplayed']);
+  });
+
+  it('view=wishlist returns wishlisted games', () => {
+    const titles = getGamesForTriage('wishlist', 'default').map((g) => g.title);
+    expect(titles).toEqual(['Wishlisted NoHLTB']);
+  });
+
+  it('view=missing-hltb returns games with null hltb_main', () => {
+    const titles = getGamesForTriage('missing-hltb', 'default').map((g) => g.title);
+    expect(titles).toEqual(['Wishlisted NoHLTB']);
+  });
+
+  it('view=value returns owned + played + unrated games only', () => {
+    const titles = getGamesForTriage('value', 'default').map((g) => g.title);
+    expect(titles).toEqual(['Owned Played']);
+  });
+
+  it('undefined view returns all non-ignored games', () => {
+    const titles = getGamesForTriage(undefined, 'default').map((g) => g.title).sort();
+    expect(titles).toEqual(['Owned Played', 'Owned Unplayed', 'Wishlisted NoHLTB']);
+  });
+});
+
+// ============================================
+// getDealScoreDistribution (chart bucketing)
+// ============================================
+
+describe('getDealScoreDistribution', () => {
+  // getScoringConfig has a 60s Date.now()-keyed cache; advance past it each test.
+  let timeOffset = 0;
+  const realDateNow = Date.now;
+  beforeEach(() => {
+    timeOffset += 61_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => realDateNow() + timeOffset);
+  });
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns an empty array when the user has no games', () => {
+    expect(getDealScoreDistribution('default')).toEqual([]);
+  });
+
+  it('returns all five buckets in canonical order, summing only priced games', () => {
+    // two priced owned games + one free game (excluded from buckets)
+    const g1 = seedGame(testDb, { steamAppId: 1, title: 'Priced A', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, g1, { isOwned: true, personalInterest: 4 });
+    seedPriceSnapshot(testDb, g1, { priceCurrent: 9.99, priceRegular: 39.99, historicalLowPrice: 9.99 });
+
+    const g2 = seedGame(testDb, { steamAppId: 2, title: 'Priced B', reviewScore: 50, hltbMain: 2 });
+    seedUserGame(testDb, g2, { isOwned: true, personalInterest: 2 });
+    seedPriceSnapshot(testDb, g2, { priceCurrent: 59.99, priceRegular: 59.99, historicalLowPrice: 10 });
+
+    const g3 = seedGame(testDb, { steamAppId: 3, title: 'Free', reviewScore: 80, hltbMain: 5 });
+    seedUserGame(testDb, g3, { isOwned: true });
+    seedPriceSnapshot(testDb, g3, { priceCurrent: 0, priceRegular: 0, historicalLowPrice: 0 });
+
+    const dist = getDealScoreDistribution('default');
+    expect(dist.map((d) => d.bucket)).toEqual(['Poor', 'Okay', 'Good', 'Great', 'Excellent']);
+    const total = dist.reduce((sum, d) => sum + d.count, 0);
+    // free game excluded → only the two priced games are bucketed
+    expect(total).toBe(2);
+  });
+
+  it('excludes wishlist-removed games from the pool', () => {
+    const g1 = seedGame(testDb, { steamAppId: 1, title: 'Removed', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, g1, {
+      isWishlisted: true,
+      wishlistRemovedAt: '2026-01-01T00:00:00.000Z',
+    });
+    seedPriceSnapshot(testDb, g1, { priceCurrent: 9.99, priceRegular: 39.99 });
+
+    expect(getDealScoreDistribution('default')).toEqual([]);
   });
 });
