@@ -43,7 +43,9 @@ All of these have working defaults. Override them if the defaults don't fit your
 | `CRON_LIBRARY_SYNC` | Cron schedule for syncing your Steam library and wishlist. | `0 3 * * *` |
 | `CRON_WISHLIST_SYNC` | Cron schedule for syncing wishlist-only data. | `0 1 * * *` |
 | `CRON_HLTB_SYNC` | Cron schedule for HowLongToBeat enrichment. | `0 2 * * 0,3` |
-| `CRON_REVIEW_SYNC` | Cron schedule for refreshing Steam review scores. | `0 4 * * 2,5` |
+| `CRON_REVIEW_SYNC` | Cron schedule for refreshing Steam review scores. Runs weekly (Sunday) because daily review freshness for owned and wishlisted games is handled by `CRON_METADATA_REFRESH`; this job covers lookup-sourced and watchlist-only games that the metadata drain does not visit. | `0 4 * * 0` |
+| `CRON_PRICE_HISTORY_BACKFILL` | Cron schedule for the nightly price-history enrichment job. Processes up to 100 games per run, scoped to owned/wishlisted/watchlisted games with a resolved ITAD ID. Games already enriched are skipped. | `0 5 * * *` |
+| `CRON_METADATA_REFRESH` | Cron schedule for refreshing Steam metadata (review scores, tags, release info) for owned and wishlisted games. Runs daily and is the primary source of fresh review data for your active library. | `0 6 * * *` |
 | `CRON_BACKUP` | Cron schedule for automatic database backups. | `0 4 * * *` |
 
 Cron expressions follow standard five-field syntax (`minute hour day-of-month month day-of-week`).

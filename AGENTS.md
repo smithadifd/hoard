@@ -182,7 +182,7 @@ summarizes:
 - [Scoring engine](docs/src/content/docs/architecture/scoring-engine.md)
 - [Design decisions](docs/src/content/docs/design-decisions.md)
 - [Data sources](docs/src/content/docs/data-sources.md)
-- [Features: backlog](docs/src/content/docs/features/backlog.md) · [alerts](docs/src/content/docs/features/alerts.md)
+- [Features: backlog](docs/src/content/docs/features/backlog.md) · [alerts](docs/src/content/docs/features/alerts.md) · [value received](docs/src/content/docs/features/value-received.md)
 - [Self-hosting](docs/src/content/docs/self-hosting/index.md) · [configuration](docs/src/content/docs/self-hosting/configuration.md) · [backups](docs/src/content/docs/self-hosting/backups.md) · [upgrading](docs/src/content/docs/self-hosting/upgrading.md)
 - [Demo mode](docs/src/content/docs/demo.md)
 - [Changelog](docs/src/content/docs/changelog.md)
