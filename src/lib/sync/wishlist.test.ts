@@ -38,6 +38,7 @@ vi.mock('../db/schema', () => ({
     userId: 'user_games.user_id',
     isWishlisted: 'user_games.is_wishlisted',
     wishlistRemovedAt: 'user_games.wishlist_removed_at',
+    wishlistedLocally: 'user_games.wishlisted_locally',
   },
 }));
 
@@ -116,8 +117,9 @@ describe('syncWishlist', () => {
 
     // Should not call getAppDetails for existing games
     expect(mockUpsertUserGame).toHaveBeenCalledTimes(2);
-    expect(mockUpsertUserGame).toHaveBeenCalledWith(10, { isWishlisted: true }, 'user-1');
-    expect(mockUpsertUserGame).toHaveBeenCalledWith(20, { isWishlisted: true }, 'user-1');
+    // Reconciliation: clearing wishlistedLocally converts a Hoard-only entry into a synced one.
+    expect(mockUpsertUserGame).toHaveBeenCalledWith(10, { isWishlisted: true, wishlistedLocally: false }, 'user-1');
+    expect(mockUpsertUserGame).toHaveBeenCalledWith(20, { isWishlisted: true, wishlistedLocally: false }, 'user-1');
     expect(mockUpsertGame).not.toHaveBeenCalled();
     expect(result.stats.succeeded).toBe(2);
   });
@@ -168,7 +170,7 @@ describe('syncWishlist', () => {
         reviewDescription: 'Very Positive',
       })
     );
-    expect(mockUpsertUserGame).toHaveBeenCalledWith(50, { isWishlisted: true }, 'user-1');
+    expect(mockUpsertUserGame).toHaveBeenCalledWith(50, { isWishlisted: true, wishlistedLocally: false }, 'user-1');
     expect(result.stats.succeeded).toBe(1);
   });
 
@@ -290,7 +292,7 @@ describe('syncWishlist', () => {
 
     await syncWishlist(undefined, undefined, 'custom-user');
 
-    expect(mockUpsertUserGame).toHaveBeenCalledWith(10, { isWishlisted: true }, 'custom-user');
+    expect(mockUpsertUserGame).toHaveBeenCalledWith(10, { isWishlisted: true, wishlistedLocally: false }, 'custom-user');
   });
 
   it('propagates errors and logs sync failure', async () => {

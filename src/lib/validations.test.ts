@@ -165,6 +165,11 @@ describe('gameUpdateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts the Hoard-only wishlist flag', () => {
+    const result = gameUpdateSchema.safeParse({ isWishlisted: true, wishlistedLocally: true });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects interest out of range (too high)', () => {
     const result = gameUpdateSchema.safeParse({ personalInterest: 6 });
     expect(result.success).toBe(false);
