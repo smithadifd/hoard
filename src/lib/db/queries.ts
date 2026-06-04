@@ -428,6 +428,7 @@ export interface UpsertUserGameData {
   isWishlisted?: boolean;
   isWatchlisted?: boolean;
   isIgnored?: boolean;
+  wishlistedLocally?: boolean;
   playtimeMinutes?: number;
   playtimeRecentMinutes?: number;
   lastPlayed?: string;
@@ -448,6 +449,7 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
       isWishlisted: data.isWishlisted ?? false,
       isWatchlisted: data.isWatchlisted ?? false,
       isIgnored: data.isIgnored ?? false,
+      wishlistedLocally: data.wishlistedLocally ?? false,
       playtimeMinutes: data.playtimeMinutes ?? 0,
       playtimeRecentMinutes: data.playtimeRecentMinutes ?? 0,
       lastPlayed: data.lastPlayed,
@@ -464,6 +466,7 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
         ...(data.isWishlisted !== undefined && { isWishlisted: data.isWishlisted }),
         ...(data.isWatchlisted !== undefined && { isWatchlisted: data.isWatchlisted }),
         ...(data.isIgnored !== undefined && { isIgnored: data.isIgnored }),
+        ...(data.wishlistedLocally !== undefined && { wishlistedLocally: data.wishlistedLocally }),
         ...(data.playtimeMinutes !== undefined && { playtimeMinutes: data.playtimeMinutes }),
         ...(data.playtimeRecentMinutes !== undefined && { playtimeRecentMinutes: data.playtimeRecentMinutes }),
         ...(data.lastPlayed !== undefined && { lastPlayed: data.lastPlayed }),
@@ -534,6 +537,7 @@ export function cascadePurchaseCleanup(gameIds: number[], userId: string): void 
     .set({
       isWishlisted: false,
       isWatchlisted: false,
+      wishlistedLocally: false,
       wishlistRemovedAt: now,
       updatedAt: now,
     })
@@ -950,6 +954,7 @@ interface BaseEnrichedRow {
   isWishlisted: boolean | null;
   isWatchlisted: boolean | null;
   isIgnored: boolean | null;
+  wishlistedLocally: boolean | null;
   autoAlertDisabled: boolean | null;
   playtimeMinutes: number | null;
   personalInterest: number | null;
@@ -985,6 +990,7 @@ function mapBaseEnrichedGame(r: BaseEnrichedRow, bucket: TagBucket): EnrichedGam
     isWishlisted: r.isWishlisted ?? false,
     isWatchlisted: r.isWatchlisted ?? false,
     isIgnored: r.isIgnored ?? false,
+    wishlistedLocally: r.wishlistedLocally ?? false,
     autoAlertDisabled: r.autoAlertDisabled ?? false,
     playtimeMinutes: r.playtimeMinutes ?? 0,
     personalInterest: r.personalInterest ?? 3,
@@ -1256,6 +1262,7 @@ export function getEnrichedGames(
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
       isIgnored: userGames.isIgnored,
+      wishlistedLocally: userGames.wishlistedLocally,
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
@@ -1428,6 +1435,8 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       hltbCompletionist: games.hltbCompletionist,
       hltbManual: games.hltbManual,
       hltbMissCount: games.hltbMissCount,
+      priceHistoryBackfilledAt: games.priceHistoryBackfilledAt,
+      priceHistoryMissCount: games.priceHistoryMissCount,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
@@ -1440,6 +1449,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
       isIgnored: userGames.isIgnored,
+      wishlistedLocally: userGames.wishlistedLocally,
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
@@ -1480,6 +1490,8 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
   game.description = row.description ?? undefined;
   game.hltbManual = row.hltbManual ?? undefined;
   game.hltbMissCount = row.hltbMissCount ?? undefined;
+  game.priceHistoryBackfilledAt = row.priceHistoryBackfilledAt?.toISOString() ?? undefined;
+  game.priceHistoryMissCount = row.priceHistoryMissCount ?? 0;
 
   if (snapshot) {
     applySnapshotToGame(game, snapshot, {
@@ -2062,7 +2074,7 @@ export function setHltbExcluded(gameId: number, excluded: boolean): void {
 
 // After this many consecutive failed backfill attempts, stop retrying so we
 // don't pound ITAD for games whose itadGameId is permanently bad.
-const PRICE_HISTORY_GIVE_UP_MISSES = 3;
+export const PRICE_HISTORY_GIVE_UP_MISSES = 3;
 
 export function getGamesForPriceHistoryBackfill(
   limit: number,
@@ -2230,6 +2242,38 @@ export function getGameItadInfo(
   return row ?? null;
 }
 
+/** Cheap existence check for a game row (used to keep 404 semantics on PATCH). */
+export function gameExists(gameId: number): boolean {
+  const db = getDb();
+  return (
+    db.select({ id: games.id }).from(games).where(eq(games.id, gameId)).get() != null
+  );
+}
+
+/** Game fields needed to drive the on-demand price-history backfill (ensure-history route). */
+export function getGameBackfillState(gameId: number): {
+  id: number;
+  steamAppId: number;
+  itadGameId: string | null;
+  priceHistoryBackfilledAt: Date | null;
+  priceHistoryMissCount: number;
+} | null {
+  const db = getDb();
+  const row = db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      itadGameId: games.itadGameId,
+      priceHistoryBackfilledAt: games.priceHistoryBackfilledAt,
+      priceHistoryMissCount: games.priceHistoryMissCount,
+    })
+    .from(games)
+    .where(eq(games.id, gameId))
+    .get();
+  if (!row) return null;
+  return { ...row, priceHistoryMissCount: row.priceHistoryMissCount ?? 0 };
+}
+
 export function getLatestPriceSnapshots(gameIds: number[]): Map<number, PriceSnapshotRow> {
   if (gameIds.length === 0) return new Map();
 
@@ -2381,6 +2425,7 @@ export function updateUserGame(
     isIgnored: boolean;
     priceThreshold: number;
     isWishlisted: boolean;
+    wishlistedLocally: boolean;
     autoAlertDisabled: boolean;
     pricePaid: number | null;
     enjoymentRating: number | null;
@@ -2401,7 +2446,7 @@ export function updateUserGame(
         : undefined;
 
   // Only spread known user_games columns to prevent unexpected fields leaking through
-  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, autoAlertDisabled, pricePaid, enjoymentRating, dismissPriceSuggestion } = updates;
+  const { personalInterest, notes, isWatchlisted, isIgnored, priceThreshold, isWishlisted, wishlistedLocally, autoAlertDisabled, pricePaid, enjoymentRating, dismissPriceSuggestion } = updates;
 
   const result = db
     .update(userGames)
@@ -2412,6 +2457,7 @@ export function updateUserGame(
       ...(isIgnored !== undefined && { isIgnored }),
       ...(priceThreshold !== undefined && { priceThreshold }),
       ...(isWishlisted !== undefined && { isWishlisted }),
+      ...(wishlistedLocally !== undefined && { wishlistedLocally }),
       ...(autoAlertDisabled !== undefined && { autoAlertDisabled }),
       // Stamp pricePaidAt when a price is recorded; clear it when the price is cleared (null).
       // Confirming/entering a real price also consumes any pending suggestion.
@@ -2438,10 +2484,11 @@ export function updateUserGame(
 
   if (result.changes === 0) return false;
 
-  // Deactivate watchlist and price alert when unwishlisting
+  // Deactivate watchlist and price alert when unwishlisting; clear the
+  // Hoard-only flag (it's no longer a wishlist entry of any kind).
   if (updates.isWishlisted === false) {
     db.update(userGames)
-      .set({ isWatchlisted: false, updatedAt: now })
+      .set({ isWatchlisted: false, wishlistedLocally: false, updatedAt: now })
       .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
       .run();
     const existingAlert = db
@@ -2581,6 +2628,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       isWishlisted: userGames.isWishlisted,
       isWatchlisted: userGames.isWatchlisted,
       isIgnored: userGames.isIgnored,
+      wishlistedLocally: userGames.wishlistedLocally,
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,

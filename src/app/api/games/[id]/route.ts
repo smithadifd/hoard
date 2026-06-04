@@ -1,4 +1,4 @@
-import { getEnrichedGameById, updateUserGame, updateManualHltbData, setHltbExcluded, getRatedGameCount } from '@/lib/db/queries';
+import { getEnrichedGameById, updateUserGame, upsertUserGame, gameExists, updateManualHltbData, setHltbExcluded, getRatedGameCount } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
@@ -90,7 +90,16 @@ export async function PATCH(
     if (Object.keys(userFields).length > 0) {
       const updated = updateUserGame(idResult.data.id, userFields, userId);
       if (!updated) {
-        return apiNotFound('Game');
+        // No user_games row yet (e.g. a looked-up game the user is wishlisting
+        // for the first time). Create a baseline row, then re-apply so the field
+        // set + cascades run exactly once, in updateUserGame.
+        if (!gameExists(idResult.data.id)) {
+          return apiNotFound('Game');
+        }
+        upsertUserGame(idResult.data.id, {}, userId);
+        if (!updateUserGame(idResult.data.id, userFields, userId)) {
+          return apiNotFound('Game');
+        }
       }
     }
 

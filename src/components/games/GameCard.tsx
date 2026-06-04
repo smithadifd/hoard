@@ -70,6 +70,16 @@ export function GameCard({ game }: GameCardProps) {
           </div>
         ) : null}
 
+        {/* Hoard-only wishlist badge — tracked locally, not on the Steam wishlist */}
+        {game.isWishlisted && game.wishlistedLocally && !game.isOwned && game.isReleased !== false && (
+          <span
+            className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold bg-amber-500/80 text-white backdrop-blur-sm"
+            title="On your Hoard wishlist but not your Steam wishlist"
+          >
+            Not on Steam
+          </span>
+        )}
+
         {/* Coming Soon Badge (non-owned unreleased games) */}
         {game.isReleased === false && !game.isOwned && (
           <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold bg-teal/80 text-white backdrop-blur-sm">

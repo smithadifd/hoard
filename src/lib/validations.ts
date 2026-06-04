@@ -83,6 +83,8 @@ export const gameUpdateSchema = z.object({
   isIgnored: z.boolean().optional(),
   autoAlertDisabled: z.boolean().optional(),
   isWishlisted: z.boolean().optional(),
+  // Hoard-only wishlist flag — true = wishlisted in Hoard but not on the Steam wishlist
+  wishlistedLocally: z.boolean().optional(),
   priceThreshold: z.number().min(0).max(10000).optional(),
   // What the user paid for an owned game (USD); null clears → reverts to time lens
   pricePaid: z.number().min(0).max(100000).nullable().optional(),
