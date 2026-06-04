@@ -38,6 +38,10 @@ The "genuinely new ATL" distinction matters. If a game has been sitting at its A
 
 Games that are at their ATL but haven't set a new record are batched into a single "Still at All-Time Low" embed. All of them arrive in one message. This keeps the deal channel readable when several watchlisted games are on sale simultaneously.
 
+The digest is a **once-daily reminder**, sent independently of the price-check cadence. Price checks still run on `CRON_PRICE_CHECK` (every 12h by default), so genuinely new ATLs and free/threshold hits fire individually as often as that — but the still-at-ATL list is consolidated to the first run on or after the configured digest hour each day. That hour is set in **Settings → Notifications** ("Daily deals summary at"), evaluated in the server's timezone (the same reference quiet hours use); it defaults to `12` (≈ 8 AM US Eastern on the default UTC container) and can also be seeded with the `ATL_DIGEST_HOUR` env var. A `last_atl_digest_date` setting deduplicates the send so an off-cycle run later the same day doesn't repeat it.
+
+This is deliberate: with a 12h check and a 24h throttle, still-at-ATL games used to ping in *alternating* runs, so two consecutive digests were near-disjoint half-lists and the count swung wildly. Decoupling the digest gives one complete, stable list per day. Because the daily window is what limits digest frequency, the per-game throttle is **not** applied to digest entries — every game that is still at its ATL appears in each day's digest, even if it was individually alerted earlier.
+
 The digest embed is gray (`0x6b7280`) to distinguish it visually from the green (`0x22c55e`) individual ATL alerts.
 
 ## Auto-ATL alerts
@@ -54,7 +58,7 @@ See [Architecture](/architecture/) for the full scheduler chain.
 
 ## Throttle and deduplication
 
-`ALERT_THROTTLE_HOURS` (default: `24`) sets the minimum gap between notifications for the same game. Before queuing any alert, the checker reads `lastNotifiedAt` from the alert record and computes how many hours have passed. If fewer than `alertThrottleHours` hours have elapsed, the alert is skipped and counted as throttled.
+`ALERT_THROTTLE_HOURS` (default: `24`) sets the minimum gap between **individual** notifications for the same game. Before queuing an individual alert, the checker reads `lastNotifiedAt` from the alert record and computes how many hours have passed. If fewer than `alertThrottleHours` hours have elapsed, the alert is skipped and counted as throttled. A genuinely new ATL bypasses the throttle (it's fresh news). The throttle does **not** gate digest entries — those are limited by the once-daily digest window (the configurable digest hour) instead, so the daily list stays complete.
 
 The throttle applies independently to explicit watchlist alerts and auto-ATL alerts — each has its own `lastNotifiedAt` tracking column.
 

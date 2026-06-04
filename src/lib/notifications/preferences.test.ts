@@ -46,8 +46,9 @@ describe('DEFAULT_PREFERENCES', () => {
     }
   });
 
-  it('defaults throttle to 24h and quiet hours off', () => {
+  it('defaults throttle to 24h, digest to noon, and quiet hours off', () => {
     expect(DEFAULT_PREFERENCES.frequency.throttleHours).toBe(24);
+    expect(DEFAULT_PREFERENCES.frequency.digestHour).toBe(12);
     expect(DEFAULT_PREFERENCES.quietHours.enabled).toBe(false);
   });
 });

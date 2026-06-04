@@ -426,6 +426,23 @@ describe('settingsUpdateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a notification_preferences blob with a valid digestHour', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { notification_preferences: JSON.stringify({ frequency: { throttleHours: 24, digestHour: 7 } }) },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('flags an out-of-range digestHour', () => {
+    const result = settingsUpdateSchema.safeParse({
+      settings: { notification_preferences: JSON.stringify({ frequency: { throttleHours: 24, digestHour: 24 } }) },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((i) => i.path.join('.'))).toContain('settings.notification_preferences');
+    }
+  });
+
   it('surfaces every blob error in one pass — a bad scoring_thresholds does not mask other errors', () => {
     const result = settingsUpdateSchema.safeParse({
       settings: {
