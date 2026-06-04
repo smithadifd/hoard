@@ -1,11 +1,19 @@
 /**
- * Steam Early Access category id. Source: appdetails categories array.
- * https://partner.steamgames.com/doc/store/categories
+ * Steam Early Access genre id. Source: appdetails `genres` array.
+ *
+ * Early Access is a *genre* (id "70", description "Early Access"), NOT a
+ * category. Steam's `categories` array also has an id 70 — but there it means
+ * "Surround Sound", a common feature flag on released games. Deriving EA from
+ * categories therefore false-flags any game with surround sound and misses
+ * every genuine EA title, so we read it from `genres` instead.
+ *
+ * Note ids are strings in `genres` and numbers in `categories`.
+ * https://partner.steamgames.com/doc/store/getreviews (genres documented under appdetails)
  */
-const EARLY_ACCESS_CATEGORY_ID = 70;
+const EARLY_ACCESS_GENRE_ID = '70';
 
-export function isEarlyAccessFromCategories(
-  cats: Array<{ id: number }> | undefined,
+export function isEarlyAccessFromGenres(
+  genres: Array<{ id: string }> | undefined,
 ): boolean {
-  return !!cats?.some((c) => c.id === EARLY_ACCESS_CATEGORY_ID);
+  return !!genres?.some((g) => g.id === EARLY_ACCESS_GENRE_ID);
 }

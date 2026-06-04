@@ -109,7 +109,7 @@ describe('refreshMetadata', () => {
       { id: 1, steamAppId: 100, title: 'Hades II', metadataLastUpdated: null },
     ]);
     mockGetEa.mockReturnValue(true); // was in EA
-    mockGetAppDetails.mockResolvedValue(FIXTURE_DETAILS); // categories has no id 70 → no longer EA
+    mockGetAppDetails.mockResolvedValue(FIXTURE_DETAILS); // genres has no id "70" → no longer EA
     mockGetReviews.mockResolvedValue(FIXTURE_REVIEWS);
 
     await refreshMetadata();
@@ -142,7 +142,7 @@ describe('refreshMetadata', () => {
     mockGetEa.mockReturnValue(true);
     mockGetAppDetails.mockResolvedValue({
       ...FIXTURE_DETAILS,
-      categories: [{ id: 70, description: 'Early Access' }],
+      genres: [{ id: '70', description: 'Early Access' }],
     });
     mockGetReviews.mockResolvedValue(FIXTURE_REVIEWS);
 
