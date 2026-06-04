@@ -159,6 +159,7 @@ export function getNotificationPreferences(): NotificationPreferences {
   }
 
   let blobHadThrottle = false;
+  let blobHadDigestHour = false;
   try {
     const json = getSetting('notification_preferences');
     if (json) {
@@ -177,6 +178,10 @@ export function getNotificationPreferences(): NotificationPreferences {
       if (parsed.frequency && typeof parsed.frequency.throttleHours === 'number') {
         prefs.frequency.throttleHours = parsed.frequency.throttleHours;
         blobHadThrottle = true;
+      }
+      if (parsed.frequency && typeof parsed.frequency.digestHour === 'number') {
+        prefs.frequency.digestHour = clampDigestHour(parsed.frequency.digestHour, prefs.frequency.digestHour);
+        blobHadDigestHour = true;
       }
       if (parsed.quietHours) {
         const q = parsed.quietHours;
@@ -209,8 +214,21 @@ export function getNotificationPreferences(): NotificationPreferences {
     }
   }
 
+  // Digest hour: when the blob omits it, seed from the ATL_DIGEST_HOUR env var, then
+  // the built-in default — same single-source-of-truth pattern as the throttle above.
+  if (!blobHadDigestHour && process.env.ATL_DIGEST_HOUR) {
+    const parsed = parseInt(process.env.ATL_DIGEST_HOUR, 10);
+    prefs.frequency.digestHour = clampDigestHour(parsed, prefs.frequency.digestHour);
+  }
+
   notificationPrefsCache = { prefs, loadedAt: now };
   return prefs;
+}
+
+/** Coerce a digest hour to a valid 0–23 integer, falling back on out-of-range/NaN input. */
+function clampDigestHour(value: number, fallback: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > 23) return fallback;
+  return Math.floor(value);
 }
 
 // Default: games with < 10% of HLTB completed count as "barely played"

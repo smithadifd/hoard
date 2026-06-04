@@ -34,6 +34,12 @@ export interface AppConfig {
 
   // Alerts
   alertThrottleHours: number;
+  // Local hour (server timezone, 0-23) at/after which the once-daily "still at ATL"
+  // digest is allowed to send. The first price-check run on/after this hour each day
+  // sends the digest; later runs that day are deduped. New-ATL individual alerts are
+  // unaffected. Sourced from notification preferences (Settings → Notifications),
+  // falling back to the ATL_DIGEST_HOUR env var, then the default.
+  atlDigestHour: number;
 
   // Backups
   cronBackup: string;
@@ -41,6 +47,12 @@ export interface AppConfig {
 }
 
 let config: AppConfig | null = null;
+
+/** Coerce an env-provided hour to a valid 0-23 integer, falling back on bad input. */
+function clampHour(value: number, fallback: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > 23) return fallback;
+  return Math.floor(value);
+}
 
 export function getConfig(): AppConfig {
   if (!config) {
@@ -63,6 +75,7 @@ export function getConfig(): AppConfig {
       cronPriceHistoryBackfill: process.env.CRON_PRICE_HISTORY_BACKFILL || '0 5 * * *',
       cronMetadataRefresh: process.env.CRON_METADATA_REFRESH || '0 6 * * *',
       alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),
+      atlDigestHour: clampHour(parseInt(process.env.ATL_DIGEST_HOUR || '12', 10), 12),
       cronBackup: process.env.CRON_BACKUP || '0 4 * * *',
       backupRetentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10),
     };
@@ -98,6 +111,11 @@ export function getEffectiveConfig(): AppConfig {
     // DB may not be initialized yet — fall back to env config
   }
 
+  // Frequency settings (throttle + digest hour) live in notification_preferences.
+  // getNotificationPreferences() owns the full precedence (blob → legacy/env → default)
+  // and is cached, so this is the single source of truth shared with the settings UI.
+  const frequency = getNotificationPreferences().frequency;
+
   return {
     ...envConfig,
     steamApiKey: dbSettings['steam_api_key'] || envConfig.steamApiKey,
@@ -105,10 +123,7 @@ export function getEffectiveConfig(): AppConfig {
     itadApiKey: dbSettings['itad_api_key'] || envConfig.itadApiKey,
     discordWebhookUrl: dbSettings['discord_webhook_url'] || envConfig.discordWebhookUrl,
     discordOpsWebhookUrl: dbSettings['discord_ops_webhook_url'] || envConfig.discordOpsWebhookUrl,
-    // Throttle now lives in notification_preferences. getNotificationPreferences()
-    // owns the full precedence (new blob → legacy alert_throttle_hours setting →
-    // ALERT_THROTTLE_HOURS env → 24), so this is the single source of truth shared
-    // with the settings UI.
-    alertThrottleHours: getNotificationPreferences().frequency.throttleHours,
+    alertThrottleHours: frequency.throttleHours,
+    atlDigestHour: frequency.digestHour,
   };
 }

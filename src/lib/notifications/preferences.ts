@@ -39,6 +39,13 @@ export interface NotificationPreferences {
   frequency: {
     /** Minimum hours between notifications for the same game (1–168). */
     throttleHours: number;
+    /**
+     * Local hour (server timezone, 0–23) the once-daily "still at all-time low"
+     * digest is delivered. New-ATL / threshold / free alerts are unaffected — they
+     * fire on every price-check run. The digest is sent on the first price-check run
+     * on or after this hour each day.
+     */
+    digestHour: number;
   };
   quietHours: {
     enabled: boolean;
@@ -50,6 +57,8 @@ export interface NotificationPreferences {
 }
 
 export const DEFAULT_THROTTLE_HOURS = 24;
+/** Default digest hour: noon server time (8 AM US Eastern on the default UTC container). */
+export const DEFAULT_DIGEST_HOUR = 12;
 
 export const DEFAULT_PREFERENCES: NotificationPreferences = {
   categories: {
@@ -61,7 +70,7 @@ export const DEFAULT_PREFERENCES: NotificationPreferences = {
     'price-paid-suggestion': { inApp: true, discord: false },
     system: { inApp: true, discord: true },
   },
-  frequency: { throttleHours: DEFAULT_THROTTLE_HOURS },
+  frequency: { throttleHours: DEFAULT_THROTTLE_HOURS, digestHour: DEFAULT_DIGEST_HOUR },
   quietHours: { enabled: false, start: 22, end: 8 },
 };
 

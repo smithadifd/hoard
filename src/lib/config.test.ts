@@ -24,6 +24,7 @@ describe('getConfig', () => {
     delete process.env.CRON_HLTB_SYNC;
     delete process.env.CRON_REVIEW_SYNC;
     delete process.env.ALERT_THROTTLE_HOURS;
+    delete process.env.ATL_DIGEST_HOUR;
     delete process.env.CRON_BACKUP;
     delete process.env.BACKUP_RETENTION_DAYS;
   });
@@ -39,6 +40,7 @@ describe('getConfig', () => {
     expect(config.discordWebhookUrl).toBe('');
     expect(config.appUrl).toBe('https://hoard.home');
     expect(config.alertThrottleHours).toBe(24);
+    expect(config.atlDigestHour).toBe(12);
     expect(config.backupRetentionDays).toBe(30);
   });
 
@@ -86,6 +88,23 @@ describe('getConfig', () => {
 
     expect(config.alertThrottleHours).toBe(48);
     expect(config.backupRetentionDays).toBe(7);
+  });
+
+  it('reads a custom ATL digest hour from env', async () => {
+    process.env.ATL_DIGEST_HOUR = '0';
+
+    const { getConfig } = await loadConfig();
+    const config = getConfig();
+
+    expect(config.atlDigestHour).toBe(0);
+  });
+
+  it('falls back to the default ATL digest hour on out-of-range or invalid input', async () => {
+    for (const bad of ['24', '-1', 'abc']) {
+      process.env.ATL_DIGEST_HOUR = bad;
+      const { getConfig } = await loadConfig();
+      expect(getConfig().atlDigestHour).toBe(12);
+    }
   });
 });
 

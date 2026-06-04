@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../config', () => ({
   getEffectiveConfig: vi.fn(),
@@ -14,12 +14,13 @@ vi.mock('../db/queries', () => ({
   getAutoAlertCandidates: vi.fn(),
   updateAutoAlertLastNotified: vi.fn(),
   getSetting: vi.fn(),
+  setSetting: vi.fn(),
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
 }));
 
-import { checkPriceAlerts, isNewAtl, alreadyNotifiedForSnapshot } from './alerts';
+import { checkPriceAlerts, isNewAtl, alreadyNotifiedForSnapshot, shouldSendDigest, localDateKey } from './alerts';
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
 import {
@@ -28,6 +29,7 @@ import {
   getAutoAlertCandidates,
   updateAutoAlertLastNotified,
   getSetting,
+  setSetting,
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
@@ -42,6 +44,7 @@ const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
 const mockGetAutoAlertCandidates = vi.mocked(getAutoAlertCandidates);
 const mockGetSetting = vi.mocked(getSetting);
+const mockSetSetting = vi.mocked(setSetting);
 const _mockUpdateAutoNotified = vi.mocked(updateAutoAlertLastNotified);
 
 function makeAlert(overrides: Record<string, unknown> = {}) {
@@ -130,17 +133,58 @@ describe('alreadyNotifiedForSnapshot', () => {
   });
 });
 
+describe('shouldSendDigest', () => {
+  const hour = 12; // the configured digest hour (server-local)
+
+  it('sends on/after the digest hour with no prior send today', () => {
+    expect(shouldSendDigest(12, '2026-06-03', hour, null)).toBe(true);
+    expect(shouldSendDigest(20, '2026-06-03', hour, null)).toBe(true);
+  });
+
+  it('does not send before the digest hour', () => {
+    expect(shouldSendDigest(0, '2026-06-03', hour, null)).toBe(false);
+    expect(shouldSendDigest(11, '2026-06-03', hour, null)).toBe(false);
+  });
+
+  it('does not re-send when already sent for the same date', () => {
+    expect(shouldSendDigest(14, '2026-06-03', hour, '2026-06-03')).toBe(false);
+  });
+
+  it('sends again on a new date even if yesterday was sent', () => {
+    expect(shouldSendDigest(12, '2026-06-04', hour, '2026-06-03')).toBe(true);
+  });
+});
+
+describe('localDateKey', () => {
+  it('formats the server-local date as zero-padded YYYY-MM-DD', () => {
+    // TZ is pinned to UTC in vitest.config, so these are stable.
+    expect(localDateKey(new Date('2026-06-03T23:30:00Z'))).toBe('2026-06-03');
+    expect(localDateKey(new Date('2026-01-09T00:00:00Z'))).toBe('2026-01-09');
+  });
+});
+
 describe('checkPriceAlerts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Fake only Date so the once-daily digest gate is deterministic. Default to a
+    // morning time (>= atlDigestHour, server-local) with no prior send today, so digests are
+    // allowed; tests that exercise the gate override the system time. setTimeout etc.
+    // stay real, so emitNotification's async path is unaffected.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-03T12:00:00Z'));
     mockCreateSyncLog.mockReturnValue(42);
     mockGetFirstUserId.mockReturnValue('user-1');
     mockGetConfig.mockReturnValue({
       alertThrottleHours: 24,
+      atlDigestHour: 12,
     } as ReturnType<typeof getEffectiveConfig>);
     mockGetAlerts.mockReturnValue([]);
     mockGetAutoAlertCandidates.mockReturnValue([]);
     mockGetSetting.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns early with zero stats when no active alerts exist', async () => {
@@ -427,6 +471,7 @@ describe('checkPriceAlerts', () => {
     mockGetAlerts.mockReturnValue([alert]);
     mockGetConfig.mockReturnValue({
       alertThrottleHours: 24,
+      atlDigestHour: 12,
     } as ReturnType<typeof getEffectiveConfig>);
     const mockDiscord = makeMockDiscord();
     mockGetDiscordClient.mockReturnValue(mockDiscord);
@@ -471,7 +516,9 @@ describe('checkPriceAlerts', () => {
     // The 12:00 run sees the *same* (unadvanced) snapshot, so isNewAtl still reads the
     // previous-day baseline and the new-ATL throttle bypass re-fired the identical alert.
     // Fix: the bypass only applies once per snapshot — if we already notified at/after
-    // the latest snapshot was recorded, fall back to the throttle (which then skips it).
+    // the latest snapshot was recorded, it no longer re-fires as an individual alert.
+    // (On this morning digest run the game still correctly joins the once-daily digest,
+    // since it's genuinely still at its ATL — just without a duplicate 🏆 ping.)
     const snapshotAt = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(); // recorded 12h ago
     const notifiedAt = new Date(Date.now() - 12 * 60 * 60 * 1000 + 1000).toISOString(); // fired 1s later
     const alert = makeAlert({
@@ -491,9 +538,13 @@ describe('checkPriceAlerts', () => {
 
     const result = await checkPriceAlerts();
 
+    // The key regression: no duplicate individual 🏆 alert on the second same-day run.
     expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
-    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
-    expect(result.stats.skipped).toBe(1);
+    // It does belong in the morning still-at-ATL digest, though.
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
+      expect.objectContaining({ title: 'Test Game', currentPrice: 33.45 }),
+    ]);
+    expect(result.stats.succeeded).toBe(1);
   });
 
   it('still fires a genuine new ATL recorded after the last notification', async () => {
@@ -525,9 +576,10 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(1);
   });
 
-  it('throttles still-at-ATL digest entries (no spam every cycle)', async () => {
-    // Digest entries still respect the throttle — without this, the same game
-    // would land in the digest every 12h cron and re-ping the user constantly.
+  it('includes a still-at-ATL game in the daily digest even when recently notified', async () => {
+    // The digest is a once-daily reminder gated by the digest window, not the 24h
+    // throttle. A game notified an hour ago must still appear in today's complete list
+    // (otherwise the list would be missing games that are genuinely still at ATL).
     const recent = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
     const alert = makeAlert({
       currentPrice: 4.99,
@@ -545,11 +597,99 @@ describe('checkPriceAlerts', () => {
 
     const result = await checkPriceAlerts();
 
-    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
-    expect(result.stats.skipped).toBe(1);
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
+      expect.objectContaining({ title: 'Test Game', currentPrice: 4.99 }),
+    ]);
+    expect(result.stats.succeeded).toBe(1);
   });
 
-  it('auto-alert: new ATL bypasses throttle, still-at-ATL respects it', async () => {
+  it('skips the digest on a run before the daily digest hour (new-ATL alerts still fire)', async () => {
+    // Evening run (00:00 UTC = 8 PM ET): hour < atlDigestHour, so no still-at-ATL
+    // digest. A genuine new ATL on the same run must still ping immediately.
+    vi.setSystemTime(new Date('2026-06-03T00:00:00Z'));
+    const stillAtl = makeAlert({
+      id: 1,
+      title: 'Still ATL',
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99,
+    });
+    const newAtl = makeAlert({
+      id: 2,
+      title: 'New ATL',
+      currentPrice: 3.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 3.99,
+      prevHistoricalLowPrice: 4.99,
+    });
+    mockGetAlerts.mockReturnValue([stillAtl, newAtl]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(mockDiscord.sendPriceAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'New ATL' }),
+    );
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('does not re-send the digest when it already sent earlier today', async () => {
+    // Off-cycle run later the same UTC day: the date dedup blocks a second digest.
+    mockGetSetting.mockImplementation((key) =>
+      key === 'last_atl_digest_date' ? '2026-06-03' : null,
+    );
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+    expect(result.stats.succeeded).toBe(0);
+  });
+
+  it('records the digest date after a successful send', async () => {
+    const alert = makeAlert({
+      currentPrice: 4.99,
+      targetPrice: null,
+      notifyOnThreshold: false,
+      notifyOnAllTimeLow: true,
+      isHistoricalLow: true,
+      historicalLowPrice: 4.99,
+      prevHistoricalLowPrice: 4.99,
+    });
+    mockGetAlerts.mockReturnValue([alert]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    await checkPriceAlerts();
+
+    expect(mockSetSetting).toHaveBeenCalledWith(
+      'last_atl_digest_date',
+      '2026-06-03',
+      expect.any(String),
+    );
+  });
+
+  it('auto-alert: new ATL fires individually, still-at-ATL goes to the daily digest', async () => {
     mockGetAutoAlertCandidates.mockReturnValue([
       {
         gameId: 100,
@@ -594,13 +734,16 @@ describe('checkPriceAlerts', () => {
 
     const result = await checkPriceAlerts();
 
-    // Atomfall (new ATL) fires individually; Steady Sale (still ATL) is throttled.
+    // Atomfall (new ATL) fires individually; Steady Sale (still ATL) joins the daily digest
+    // regardless of its recent notification — the daily gate, not the 24h throttle, governs it.
     expect(mockDiscord.sendPriceAlert).toHaveBeenCalledTimes(1);
     expect(mockDiscord.sendPriceAlert).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Atomfall', currentPrice: 21.49 })
     );
-    expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
-    expect(result.stats.skipped).toBe(1);
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
+      expect.objectContaining({ title: 'Steady Sale', currentPrice: 4.99 }),
+    ]);
+    expect(result.stats.succeeded).toBe(2);
   });
 
   it('allows notification when throttle period has expired', async () => {
