@@ -172,6 +172,22 @@ export function NotificationConfig({ initialPreferences, discordConfigured, serv
           Prevents repeated alerts for the same game. A genuinely new all-time low always breaks
           through. Default: 24 hours.
         </p>
+
+        <div className="pt-4">
+          <div className="flex items-center gap-2">
+            <HourSelect
+              label="Daily deals summary at"
+              value={prefs.frequency.digestHour}
+              disabled={false}
+              onChange={(h) => update({ ...prefs, frequency: { ...prefs.frequency, digestHour: h } })}
+            />
+            <span className="text-sm text-muted-foreground">({serverTimeZone} time)</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            The &ldquo;still at all-time low&rdquo; roundup is delivered once a day at this time.
+            Brand-new all-time lows and target-price hits still alert immediately, around the clock.
+          </p>
+        </div>
       </div>
 
       {/* Quiet hours */}

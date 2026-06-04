@@ -193,7 +193,14 @@ const notificationPreferencesSchema = z.object({
   categories: z
     .record(z.string(), z.object({ inApp: z.boolean(), discord: z.boolean() }))
     .optional(),
-  frequency: z.object({ throttleHours: z.number().int().min(1).max(168) }).optional(),
+  frequency: z
+    .object({
+      // Both optional — the getter deep-merges any present value over defaults, so a
+      // partial frequency blob (e.g. only digestHour) is valid.
+      throttleHours: z.number().int().min(1).max(168).optional(),
+      digestHour: z.number().int().min(0).max(23).optional(),
+    })
+    .optional(),
   quietHours: z
     .object({
       enabled: z.boolean(),

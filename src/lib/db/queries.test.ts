@@ -158,8 +158,10 @@ describe('getNotificationPreferences', () => {
   beforeEach(() => {
     timeOffset += 61_000;
     vi.spyOn(Date, 'now').mockImplementation(() => realDateNow() + timeOffset);
-    // The throttle seed falls back to this env var — pin it empty for determinism.
+    // The throttle / digest-hour seeds fall back to these env vars — pin them empty
+    // for determinism so the built-in defaults apply unless a test seeds a setting.
     vi.stubEnv('ALERT_THROTTLE_HOURS', '');
+    vi.stubEnv('ATL_DIGEST_HOUR', '');
   });
 
   afterAll(() => {
@@ -170,8 +172,24 @@ describe('getNotificationPreferences', () => {
   it('returns defaults when no settings exist', () => {
     const prefs = getNotificationPreferences();
     expect(prefs.frequency.throttleHours).toBe(24);
+    expect(prefs.frequency.digestHour).toBe(12);
     expect(prefs.categories['deal-individual']).toEqual({ inApp: true, discord: true });
     expect(prefs.quietHours.enabled).toBe(false);
+  });
+
+  it('reads a custom digest hour from the blob', () => {
+    seedSetting(testDb, 'notification_preferences', JSON.stringify({ frequency: { throttleHours: 24, digestHour: 7 } }));
+    expect(getNotificationPreferences().frequency.digestHour).toBe(7);
+  });
+
+  it('seeds the digest hour from the ATL_DIGEST_HOUR env when the blob omits it', () => {
+    vi.stubEnv('ATL_DIGEST_HOUR', '20');
+    expect(getNotificationPreferences().frequency.digestHour).toBe(20);
+  });
+
+  it('clamps an out-of-range digest hour back to the default', () => {
+    seedSetting(testDb, 'notification_preferences', JSON.stringify({ frequency: { throttleHours: 24, digestHour: 99 } }));
+    expect(getNotificationPreferences().frequency.digestHour).toBe(12);
   });
 
   it('seeds throttle from the legacy alert_throttle_hours setting', () => {

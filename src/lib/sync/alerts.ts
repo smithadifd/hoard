@@ -21,6 +21,7 @@ import {
   getAutoAlertCandidates,
   updateAutoAlertLastNotified,
   getSetting,
+  setSetting,
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
@@ -66,6 +67,36 @@ export function alreadyNotifiedForSnapshot(
   const snapshot = parseTimestampMs(latestSnapshotAt);
   if (Number.isNaN(notified) || Number.isNaN(snapshot)) return false;
   return notified >= snapshot;
+}
+
+const LAST_DIGEST_DATE_KEY = 'last_atl_digest_date';
+
+/** Local YYYY-MM-DD for the server timezone — the dedup key for the once-daily digest. */
+export function localDateKey(now: Date): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Decide whether this run should send the once-daily "still at ATL" digest.
+ *
+ * Price checks run every 12h so a genuine new ATL still pings immediately (those go
+ * out as individual alerts, never throttled here). The *reminder* digest, however,
+ * should land once per day so the list is complete and stable instead of two
+ * alternating half-lists. We send on the first run on/after `digestHour` (server-local,
+ * matching quiet hours) each day, deduped by `lastDigestDate` so an off-cycle run later
+ * the same day doesn't re-send. Pure — the caller supplies the current hour and date
+ * key, so this stays free of `new Date()` and easy to test.
+ */
+export function shouldSendDigest(
+  currentHour: number,
+  currentDateKey: string,
+  digestHour: number,
+  lastDigestDate: string | null | undefined,
+): boolean {
+  return currentHour >= digestHour && lastDigestDate !== currentDateKey;
 }
 
 interface DigestGame {
@@ -172,6 +203,17 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     let throttled = 0;
     let insufficientHistory = 0;
 
+    // The still-at-ATL digest is a once-daily reminder, decoupled from the 12h price-check
+    // cadence. On non-digest runs we still queue individual (new-ATL/threshold/free) alerts,
+    // but skip gathering digest entries entirely so we don't half-send or churn the throttle.
+    const digestDateKey = localDateKey(now);
+    const digestSend = shouldSendDigest(
+      now.getHours(),
+      digestDateKey,
+      config.atlDigestHour,
+      getSetting(LAST_DIGEST_DATE_KEY),
+    );
+
     // Minimum snapshots required before any ATL alert fires for a game.
     // Guards against firing on the very first observation of a new wishlist game
     // when ITAD's reported historical low happens to equal the current price.
@@ -212,30 +254,33 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
       if (!shouldNotify) continue;
 
-      // Throttle: skip if notified within the configured period.
-      // A genuine new ATL bypasses the throttle — it's fresh news that should
-      // ping immediately even if a still-at-ATL digest recently consumed the slot.
-      if (!isNew && alert.lastNotifiedAt) {
-        const lastNotified = new Date(alert.lastNotifiedAt);
-        const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
-        if (hoursSince < config.alertThrottleHours) {
-          throttled++;
-          continue;
+      const routeIndividual = isFree || triggeredByThreshold || isNew;
+
+      if (routeIndividual) {
+        // Throttle: skip if notified within the configured period.
+        // A genuine new ATL bypasses the throttle — it's fresh news that should
+        // ping immediately even if a still-at-ATL digest recently consumed the slot.
+        if (!isNew && alert.lastNotifiedAt) {
+          const lastNotified = new Date(alert.lastNotifiedAt);
+          const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+          if (hoursSince < config.alertThrottleHours) {
+            throttled++;
+            continue;
+          }
         }
-      }
 
-      const payload = buildAlertPayload(alert);
-      const storeUrl = payload.storeUrl;
-
-      if (isFree || triggeredByThreshold || isNew) {
         pending.push({
           type: 'individual',
           gameId: alert.gameId,
-          alertPayload: payload,
+          alertPayload: buildAlertPayload(alert),
           onSent: () => updateAlertLastNotified(alert.id),
         });
       } else if (alert.discountPercent > 0) {
-        // Still-at-ATL with a real discount — goes to digest
+        // Still-at-ATL with a real discount — goes to the once-daily digest. Frequency is
+        // controlled by the daily digest gate, not the 24h throttle, so every still-at-ATL
+        // game appears in each day's complete list. Skip entirely on non-digest runs.
+        if (!digestSend) continue;
+        const payload = buildAlertPayload(alert);
         pending.push({
           type: 'digest',
           gameId: alert.gameId,
@@ -246,7 +291,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
             regularPrice: alert.regularPrice,
             discountPercent: alert.discountPercent,
             store: alert.store,
-            storeUrl,
+            storeUrl: payload.storeUrl,
           },
           onSent: () => updateAlertLastNotified(alert.id),
         });
@@ -276,29 +321,29 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
           isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice) &&
           !alreadyNotifiedForSnapshot(candidate.lastAutoAlertAt, candidate.latestSnapshotAt);
 
-        // Throttle: skip if recently notified. A genuine new ATL bypasses — a
-        // "still at ATL" digest entry on day N must not silence a genuine new ATL
-        // on day N+1 that lands inside the throttle window.
-        if (!isNew && candidate.lastAutoAlertAt) {
-          const lastNotified = new Date(candidate.lastAutoAlertAt);
-          const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
-          if (hoursSince < config.alertThrottleHours) {
-            autoThrottled++;
-            continue;
-          }
-        }
-
-        const payload = buildAlertPayload(candidate, candidate.dealScore);
-        const storeUrl = payload.storeUrl;
-
         if (isFree || isNew) {
+          // Throttle: skip if recently notified. A genuine new ATL bypasses — a
+          // "still at ATL" digest entry on day N must not silence a genuine new ATL
+          // on day N+1 that lands inside the throttle window.
+          if (!isNew && candidate.lastAutoAlertAt) {
+            const lastNotified = new Date(candidate.lastAutoAlertAt);
+            const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+            if (hoursSince < config.alertThrottleHours) {
+              autoThrottled++;
+              continue;
+            }
+          }
+
           pending.push({
             type: 'individual',
             gameId: candidate.gameId,
-            alertPayload: payload,
+            alertPayload: buildAlertPayload(candidate, candidate.dealScore),
             onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
           });
         } else if (candidate.discountPercent > 0) {
+          // Still-at-ATL with a discount — once-daily digest, gated like the explicit path.
+          if (!digestSend) continue;
+          const payload = buildAlertPayload(candidate, candidate.dealScore);
           pending.push({
             type: 'digest',
             gameId: candidate.gameId,
@@ -309,7 +354,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
               regularPrice: candidate.regularPrice,
               discountPercent: candidate.discountPercent,
               store: candidate.store,
-              storeUrl,
+              storeUrl: payload.storeUrl,
             },
             onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
           });
@@ -358,6 +403,8 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         for (const item of digestAlerts) {
           item.onSent();
         }
+        // Record the date so off-cycle runs later today don't re-send the digest.
+        setSetting(LAST_DIGEST_DATE_KEY, digestDateKey, 'Last date (server-local) the still-at-ATL digest was sent');
         notifiedCount += digestAlerts.length;
         console.log(`[AlertCheck] Digest sent: ${digestAlerts.length} still-at-ATL games`);
       }

@@ -37,7 +37,8 @@ All of these have working defaults. Override them if the defaults don't fit your
 | Variable | Description | Default |
 |---|---|---|
 | `DATABASE_URL` | Path to the SQLite database file. | `./data/hoard.db` |
-| `ALERT_THROTTLE_HOURS` | Minimum hours between price alert notifications for the same game. | `24` |
+| `ALERT_THROTTLE_HOURS` | Minimum hours between individual price alert notifications for the same game. | `24` |
+| `ATL_DIGEST_HOUR` | Hour (0-23, server timezone) for the once-daily "still at all-time low" digest. Seed default only — editable in Settings → Notifications. New-ATL alerts still fire on `CRON_PRICE_CHECK`; only the reminder digest is consolidated to this hour. | `12` |
 | `BACKUP_RETENTION_DAYS` | How many days of backup files to keep before auto-deletion. | `30` |
 | `CRON_PRICE_CHECK` | Cron schedule for checking prices. | `0 */12 * * *` |
 | `CRON_LIBRARY_SYNC` | Cron schedule for syncing your Steam library and wishlist. | `0 3 * * *` |
