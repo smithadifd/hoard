@@ -9,7 +9,7 @@
  */
 
 import { getSteamClient, getAndResetSteamApiCalls } from '../steam/client';
-import { isEarlyAccessFromCategories } from '../steam/utils';
+import { isEarlyAccessFromGenres } from '../steam/utils';
 import {
   getGamesForMetadataRefresh,
   getEarlyAccessSnapshot,
@@ -78,7 +78,7 @@ export async function refreshMetadata(
         // point of this job) — so count those runs as failed even if reviews
         // came back, and skip the EA-graduation check.
         const priorIsEarlyAccess = details ? getEarlyAccessSnapshot(game.id) : null;
-        const newIsEarlyAccess = details ? isEarlyAccessFromCategories(details.categories) : null;
+        const newIsEarlyAccess = details ? isEarlyAccessFromGenres(details.genres) : null;
 
         const patch: Parameters<typeof updateGameMetadata>[1] = {};
         if (details) {

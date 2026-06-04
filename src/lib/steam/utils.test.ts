@@ -1,30 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { isEarlyAccessFromCategories } from './utils';
+import { isEarlyAccessFromGenres } from './utils';
 
-describe('isEarlyAccessFromCategories', () => {
-  it('returns true when category id 70 is present', () => {
-    const cats = [
-      { id: 2, description: 'Single-player' },
-      { id: 70, description: 'Early Access' },
-      { id: 22, description: 'Steam Achievements' },
+describe('isEarlyAccessFromGenres', () => {
+  it('returns true when genre id "70" (Early Access) is present', () => {
+    const genres = [
+      { id: '1', description: 'Action' },
+      { id: '70', description: 'Early Access' },
+      { id: '23', description: 'Indie' },
     ];
-    expect(isEarlyAccessFromCategories(cats)).toBe(true);
+    expect(isEarlyAccessFromGenres(genres)).toBe(true);
   });
 
-  it('returns false when category id 70 is absent', () => {
-    const cats = [
-      { id: 2, description: 'Single-player' },
-      { id: 22, description: 'Steam Achievements' },
-      { id: 28, description: 'Full controller support' },
+  it('returns false when genre id "70" is absent', () => {
+    const genres = [
+      { id: '1', description: 'Action' },
+      { id: '25', description: 'Adventure' },
+      { id: '23', description: 'Indie' },
     ];
-    expect(isEarlyAccessFromCategories(cats)).toBe(false);
+    expect(isEarlyAccessFromGenres(genres)).toBe(false);
+  });
+
+  // Regression guard: the bug read the *categories* array, where id 70 means
+  // "Surround Sound". Genre ids are strings ("70"); a numeric category-style 70
+  // must never count as Early Access.
+  it('does not treat a numeric category-style id 70 as Early Access', () => {
+    const genres = [{ id: 70 as unknown as string, description: 'Surround Sound' }];
+    expect(isEarlyAccessFromGenres(genres)).toBe(false);
   });
 
   it('returns false for an empty array', () => {
-    expect(isEarlyAccessFromCategories([])).toBe(false);
+    expect(isEarlyAccessFromGenres([])).toBe(false);
   });
 
-  it('returns false when categories is undefined', () => {
-    expect(isEarlyAccessFromCategories(undefined)).toBe(false);
+  it('returns false when genres is undefined', () => {
+    expect(isEarlyAccessFromGenres(undefined)).toBe(false);
   });
 });
