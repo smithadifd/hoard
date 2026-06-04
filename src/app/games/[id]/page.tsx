@@ -20,6 +20,8 @@ import { LookupModeBanner } from '@/components/games/LookupModeBanner';
 import { ITADOverviewCard } from '@/components/games/ITADOverviewCard';
 import { AddToWishlistCTA } from '@/components/games/AddToWishlistCTA';
 import { HltbAutoFetch } from '@/components/games/HltbAutoFetch';
+import { EnsurePriceHistory } from '@/components/games/EnsurePriceHistory';
+import { PRICE_HISTORY_GIVE_UP_MISSES } from '@/lib/db/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +45,13 @@ export default async function GameDetailPage({
   // so we don't need a side-effecting write here in the render path.
   const isLookupMode = game.source === 'lookup' && !game.isOwned && !game.isWishlisted && !game.isWatchlisted;
 
+  // Eligible for the one-shot price-history backfill: never backfilled and not yet
+  // given up. Independent of lookup mode — a freshly Hoard-only wishlisted game may
+  // still lack history. The server route is idempotent and guards the same way.
+  const eligibleForHistoryBackfill =
+    !game.priceHistoryBackfilledAt &&
+    (game.priceHistoryMissCount ?? 0) < PRICE_HISTORY_GIVE_UP_MISSES;
+
   const alert = getPriceAlertForGame(gameId, session.user.id);
 
   // Compute full deal score breakdown for transparency display
@@ -64,6 +73,9 @@ export default async function GameDetailPage({
       {isLookupMode && game.hltbMain === undefined && (
         <HltbAutoFetch gameId={game.id} />
       )}
+
+      {/* Price-history auto-backfill trigger (invisible, once per game) */}
+      {eligibleForHistoryBackfill && <EnsurePriceHistory gameId={game.id} />}
 
       {/* Back Link */}
       <Link
@@ -166,6 +178,13 @@ export default async function GameDetailPage({
           {isLookupMode ? (
             <>
               <ITADOverviewCard gameId={game.id} />
+              {/* Gut-check price history — backfilled on demand by EnsurePriceHistory above. */}
+              <section className="rounded-xl bg-card p-5">
+                <h3 className="text-xs font-label font-medium uppercase tracking-widest text-muted-foreground mb-3">
+                  Price History
+                </h3>
+                <PriceHistoryChart gameId={game.id} />
+              </section>
               <AddToWishlistCTA gameId={game.id} />
             </>
           ) : (
@@ -303,6 +322,14 @@ export default async function GameDetailPage({
             {game.isWishlisted && (
               <span className="px-2 py-1 rounded-md bg-pink-500/10 text-pink-500 text-xs font-medium">
                 Wishlisted
+              </span>
+            )}
+            {game.isWishlisted && game.wishlistedLocally && (
+              <span
+                className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 text-xs font-medium"
+                title="On your Hoard wishlist but not your Steam wishlist"
+              >
+                Not on Steam
               </span>
             )}
             {game.isReleased === false && (

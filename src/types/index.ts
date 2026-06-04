@@ -36,6 +36,8 @@ export interface EnrichedGame {
   isWishlisted: boolean;
   isWatchlisted: boolean;
   isIgnored: boolean;
+  /** True = on the Hoard wishlist but NOT the user's Steam wishlist (survives Steam sync). */
+  wishlistedLocally: boolean;
   autoAlertDisabled: boolean;
   playtimeMinutes: number;
   personalInterest: number;
@@ -107,6 +109,11 @@ export interface EnrichedGame {
   // Source tracking — 'sync' (came from Steam library/wishlist sync) or 'lookup'
   // (created on-demand via the search Cmd+K Steam result click)
   source: 'sync' | 'lookup';
+
+  // Price-history backfill state (detail view only) — drives the once-per-game
+  // auto-backfill on the game detail page. NULL backfilledAt + missCount < 3 = eligible.
+  priceHistoryBackfilledAt?: string;
+  priceHistoryMissCount?: number;
 }
 
 /**

@@ -73,8 +73,10 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
       }
       const found = existing.get(entry.appid);
       if (found) {
-        // Game exists — just flag as wishlisted
-        upsertUserGame(found.id, { isWishlisted: true }, effectiveUserId);
+        // Game exists — flag as wishlisted. Clear wishlistedLocally: it's now on
+        // Steam's wishlist, so reconcile a previously Hoard-only entry into a
+        // normal synced one.
+        upsertUserGame(found.id, { isWishlisted: true, wishlistedLocally: false }, effectiveUserId);
         processed++;
         onProgress?.(processed, total, { gameName: found.title });
       } else {
@@ -111,7 +113,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
           isReleased: details?.release_date?.coming_soon === true ? false : details?.release_date ? true : undefined,
         });
 
-        upsertUserGame(gameId, { isWishlisted: true }, effectiveUserId);
+        upsertUserGame(gameId, { isWishlisted: true, wishlistedLocally: false }, effectiveUserId);
 
         // Enrich with review data
         const reviews = await client.getReviewSummary(appId);
@@ -151,7 +153,9 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
           and(
             eq(userGames.userId, effectiveUserId),
             eq(userGames.isWishlisted, true),
-            sql`${userGames.wishlistRemovedAt} IS NULL`
+            sql`${userGames.wishlistRemovedAt} IS NULL`,
+            // Hoard-only wishlist entries were never on Steam — don't auto-remove them.
+            sql`COALESCE(${userGames.wishlistedLocally}, 0) = 0`
           )
         )
         .all();

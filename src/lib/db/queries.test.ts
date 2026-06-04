@@ -311,6 +311,18 @@ describe('upsertUserGame', () => {
     const enriched = getEnrichedGameById(gameId, 'default');
     expect(enriched?.playtimeMinutes).toBe(200);
   });
+
+  it('reconciles a Hoard-only entry by clearing wishlistedLocally on conflict', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    // Hoard-only wishlist entry…
+    upsertUserGame(gameId, { isWishlisted: true, wishlistedLocally: true }, 'default');
+    // …then it shows up on the Steam wishlist sync (mirrors syncWishlist's reconcile call).
+    upsertUserGame(gameId, { isWishlisted: true, wishlistedLocally: false }, 'default');
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.isWishlisted).toBe(true);
+    expect(row?.wishlistedLocally).toBe(false);
+  });
 });
 
 describe('updateUserGame', () => {
@@ -355,6 +367,26 @@ describe('updateUserGame', () => {
     const alert = getPriceAlertForGame(gameId, 'default');
     expect(alert).not.toBeNull();
     expect(alert?.targetPrice).toBe(9.99);
+  });
+
+  it('sets wishlistedLocally (Hoard-only wishlist add)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, {});
+
+    updateUserGame(gameId, { isWishlisted: true, wishlistedLocally: true }, 'default');
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.isWishlisted).toBe(true);
+    expect(row?.wishlistedLocally).toBe(true);
+  });
+
+  it('clears wishlistedLocally when unwishlisting', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWishlisted: true, wishlistedLocally: true });
+
+    updateUserGame(gameId, { isWishlisted: false }, 'default');
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.isWishlisted).toBe(false);
+    expect(row?.wishlistedLocally).toBe(false);
   });
 
   it('persists pricePaid and stamps pricePaidAt', () => {
@@ -1780,6 +1812,17 @@ describe('cascadePurchaseCleanup', () => {
     expect(alertByGame.get(g1)?.isActive).toBe(false); // deactivated
     expect(alertByGame.get(g2)?.isActive).toBe(true); // untouched
     expect(alertByGame.get(g3)?.isActive).toBe(true); // other user untouched
+  });
+
+  it('clears wishlistedLocally on the purchased games', () => {
+    const g1 = seedGame(testDb, { steamAppId: 1, title: 'Hoard-only then bought' });
+    seedUserGame(testDb, g1, { userId: 'userA', isWishlisted: true, wishlistedLocally: true });
+
+    cascadePurchaseCleanup([g1], 'userA');
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, g1)).get();
+    expect(row?.isWishlisted).toBe(false);
+    expect(row?.wishlistedLocally).toBe(false);
   });
 
   it('scopes by userId — another user\'s row for the SAME game is untouched', () => {

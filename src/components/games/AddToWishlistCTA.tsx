@@ -25,7 +25,7 @@ export function AddToWishlistCTA({ gameId }: AddToWishlistCTAProps) {
       const res = await fetch(`/api/games/${gameId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isWishlisted: true }),
+        body: JSON.stringify({ isWishlisted: true, wishlistedLocally: true }),
       });
 
       if (!res.ok) {
@@ -53,8 +53,12 @@ export function AddToWishlistCTA({ gameId }: AddToWishlistCTAProps) {
         <Heart className={`h-4 w-4 ${loading ? 'animate-pulse' : ''}`} />
         {loading ? 'Adding...' : 'Add to Wishlist'}
       </button>
-      {error && (
+      {error ? (
         <p className="text-xs text-destructive text-center">{error}</p>
+      ) : (
+        <p className="text-xs text-muted-foreground text-center">
+          Tracked in Hoard only — not added to your Steam wishlist.
+        </p>
       )}
     </div>
   );

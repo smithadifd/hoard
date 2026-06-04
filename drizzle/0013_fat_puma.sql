@@ -1,0 +1,1 @@
+ALTER TABLE `user_games` ADD `wishlisted_locally` integer DEFAULT false NOT NULL;
