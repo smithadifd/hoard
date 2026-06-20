@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.0",
-    "@radix-ui/react-tooltip": "^1.1.0",
+    "@radix-ui/react-tooltip": "^1.2.10",
     "better-auth": "^1.6.11",
     "better-sqlite3": "^12.10.0",
     "drizzle-orm": "^0.45.1",
