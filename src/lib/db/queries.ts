@@ -26,6 +26,7 @@ import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 import type { NotificationPreferences, ChannelRouting, NotificationCategory } from '@/lib/notifications/preferences';
 import { DEFAULT_PREFERENCES, NOTIFICATION_CATEGORIES } from '@/lib/notifications/preferences';
+import { curateDisplayTags } from '@/lib/utils/tags';
 
 // ============================================
 // Auth Helpers
@@ -905,17 +906,25 @@ interface TagBucket {
   genres: string[];
 }
 
-/** Fold a single game's tag rows into { tags, genres }. */
+/**
+ * Fold a single game's tag rows into { tags, genres }. Non-genre tags (Steam
+ * categories) are curated down to the decision-relevant set — see
+ * `curateDisplayTags`.
+ */
 function groupTags(tagRows: { name: string; type: string }[]): TagBucket {
   const bucket: TagBucket = { tags: [], genres: [] };
   for (const t of tagRows) {
     if (t.type === 'genre') bucket.genres.push(t.name);
     else bucket.tags.push(t.name);
   }
+  bucket.tags = curateDisplayTags(bucket.tags);
   return bucket;
 }
 
-/** Fold multi-game tag rows into a per-gameId { tags, genres } map. */
+/**
+ * Fold multi-game tag rows into a per-gameId { tags, genres } map. Non-genre
+ * tags are curated per game — see `curateDisplayTags`.
+ */
 function groupTagsByGame(
   tagRows: { gameId: number; name: string; type: string }[],
 ): Map<number, TagBucket> {
@@ -928,6 +937,9 @@ function groupTagsByGame(
     }
     if (t.type === 'genre') bucket.genres.push(t.name);
     else bucket.tags.push(t.name);
+  }
+  for (const bucket of byGame.values()) {
+    bucket.tags = curateDisplayTags(bucket.tags);
   }
   return byGame;
 }
