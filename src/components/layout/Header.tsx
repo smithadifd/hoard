@@ -12,7 +12,7 @@ interface HeaderProps {
 
 export function Header({ userName, userEmail }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-background/60 backdrop-blur-xl">
+    <header className="safe-top sticky top-0 z-40 border-b border-white/[0.06] bg-background/60 backdrop-blur-xl">
       <div className="flex h-12 items-center justify-between px-4">
         {/* Logo — visible when sidebar is hidden (< lg) */}
         <div className="flex items-center gap-2 lg:hidden">
