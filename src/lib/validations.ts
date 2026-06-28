@@ -98,6 +98,8 @@ export const gameUpdateSchema = z.object({
   hltbCompletionist: z.number().min(0).max(10000).nullable().optional(),
   // Exclude game from HLTB sync entirely (true = stop looking, false = resume sync)
   hltbExcluded: z.boolean().optional(),
+  // Which playtime basis feeds $/hour scoring for this game
+  playtimeSource: z.enum(['hltb', 'steam_reviews']).optional(),
 });
 
 export const interestSchema = z.object({

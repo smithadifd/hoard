@@ -7,6 +7,10 @@ export interface TriageGame {
   reviewScore: number | null;
   reviewDescription: string | null;
   hltbMain: number | null;
+  steamPlaytimeMedian: number | null;
+  steamPlaytimeSampleSize: number | null;
+  steamPlaytimeMissCount: number | null;
+  playtimeSource: 'hltb' | 'steam_reviews';
   currentPrice: number | null;
   personalInterest: number;
   interestRatedAt: string | null;

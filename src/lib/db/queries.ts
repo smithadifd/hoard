@@ -20,7 +20,11 @@ import {
   user,
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
-import { calculateDealScore } from '@/lib/scoring/engine';
+import { calculateDealScore, getEffectivePlaytimeHours } from '@/lib/scoring/engine';
+import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playtimeSource';
+
+// Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
+export { STEAM_PLAYTIME_GIVE_UP_MISSES };
 import { calculateValueReceived, type ValueReceivedTier } from '@/lib/scoring/valueReceived';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
@@ -968,6 +972,9 @@ interface BaseEnrichedRow {
   hltbMain: number | null;
   hltbMainExtra: number | null;
   hltbCompletionist: number | null;
+  steamPlaytimeMedian: number | null;
+  steamPlaytimeSampleSize: number | null;
+  playtimeSource: string | null;
   isOwned: boolean | null;
   isWishlisted: boolean | null;
   isWatchlisted: boolean | null;
@@ -1004,6 +1011,9 @@ function mapBaseEnrichedGame(r: BaseEnrichedRow, bucket: TagBucket): EnrichedGam
     hltbMain: r.hltbMain ?? undefined,
     hltbMainExtra: r.hltbMainExtra ?? undefined,
     hltbCompletionist: r.hltbCompletionist ?? undefined,
+    steamPlaytimeMedian: r.steamPlaytimeMedian ?? undefined,
+    steamPlaytimeSampleSize: r.steamPlaytimeSampleSize ?? undefined,
+    playtimeSource: r.playtimeSource === 'steam_reviews' ? 'steam_reviews' : 'hltb',
     isOwned: r.isOwned ?? false,
     isWishlisted: r.isWishlisted ?? false,
     isWatchlisted: r.isWatchlisted ?? false,
@@ -1032,7 +1042,13 @@ function mapBaseEnrichedGame(r: BaseEnrichedRow, bucket: TagBucket): EnrichedGam
 function applySnapshotToGame(
   game: EnrichedGame,
   snapshot: PriceSnapshotRow,
-  scoreInputs: { reviewScore: number | null; hltbMain: number | null; personalInterest: number | null },
+  scoreInputs: {
+    reviewScore: number | null;
+    hltbMain: number | null;
+    steamPlaytimeMedian: number | null;
+    playtimeSource: string | null;
+    personalInterest: number | null;
+  },
 ): void {
   game.currentPrice = snapshot.priceCurrent;
   game.regularPrice = snapshot.priceRegular;
@@ -1050,7 +1066,7 @@ function applySnapshotToGame(
       regularPrice: snapshot.priceRegular,
       historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
       reviewPercent: scoreInputs.reviewScore,
-      hltbMainHours: scoreInputs.hltbMain,
+      hltbMainHours: getEffectivePlaytimeHours(scoreInputs),
       personalInterest: scoreInputs.personalInterest ?? 3,
     }, weights, thresholds);
     game.dealScore = score.overall;
@@ -1083,18 +1099,30 @@ export function recomputeLatestSnapshotDealScore(gameId: number): boolean {
   const db = getDb();
 
   const game = db
-    .select({ reviewScore: games.reviewScore, hltbMain: games.hltbMain })
+    .select({
+      reviewScore: games.reviewScore,
+      hltbMain: games.hltbMain,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+    })
     .from(games)
     .where(eq(games.id, gameId))
     .get();
   if (!game) return false;
 
   const interestRow = db
-    .select({ personalInterest: userGames.personalInterest })
+    .select({
+      personalInterest: userGames.personalInterest,
+      playtimeSource: userGames.playtimeSource,
+    })
     .from(userGames)
     .where(eq(userGames.gameId, gameId))
     .get();
   const personalInterest = interestRow?.personalInterest ?? 3;
+  const effectiveHours = getEffectivePlaytimeHours({
+    playtimeSource: interestRow?.playtimeSource ?? 'hltb',
+    hltbMain: game.hltbMain,
+    steamPlaytimeMedian: game.steamPlaytimeMedian,
+  });
 
   const latest = db
     .select()
@@ -1121,7 +1149,7 @@ export function recomputeLatestSnapshotDealScore(gameId: number): boolean {
         regularPrice: snap.priceRegular,
         historicalLow: snap.historicalLowPrice ?? snap.priceCurrent,
         reviewPercent: game.reviewScore,
-        hltbMainHours: game.hltbMain,
+        hltbMainHours: effectiveHours,
         personalInterest,
       },
       weights,
@@ -1161,6 +1189,8 @@ function applyValueReceivedToGame(
   r: {
     playtimeMinutes: number | null;
     hltbMain: number | null;
+    steamPlaytimeMedian: number | null;
+    playtimeSource: string | null;
     reviewScore: number | null;
     pricePaid: number | null;
     enjoymentRating: number | null;
@@ -1174,7 +1204,7 @@ function applyValueReceivedToGame(
   const vr = calculateValueReceived(
     {
       playtimeMinutes: r.playtimeMinutes ?? 0,
-      hltbMainHours: r.hltbMain,
+      hltbMainHours: getEffectivePlaytimeHours(r),
       reviewPercent: r.reviewScore,
       pricePaid: r.pricePaid,
       enjoymentRating: r.enjoymentRating,
@@ -1368,6 +1398,8 @@ export function getEnrichedGames(
       hltbMainExtra: games.hltbMainExtra,
       hltbCompletionist: games.hltbCompletionist,
       hltbManual: games.hltbManual,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      steamPlaytimeSampleSize: games.steamPlaytimeSampleSize,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
@@ -1384,6 +1416,7 @@ export function getEnrichedGames(
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
+      playtimeSource: userGames.playtimeSource,
       interestRatedAt: userGames.interestRatedAt,
       enjoymentRating: userGames.enjoymentRating,
       lastPlayed: userGames.lastPlayed,
@@ -1499,6 +1532,8 @@ export function getEnrichedGames(
       applySnapshotToGame(base, snapshot, {
         reviewScore: r.reviewScore,
         hltbMain: r.hltbMain,
+        steamPlaytimeMedian: r.steamPlaytimeMedian,
+        playtimeSource: r.playtimeSource,
         personalInterest: r.personalInterest,
       });
     }
@@ -1552,6 +1587,9 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       hltbMainExtra: games.hltbMainExtra,
       hltbCompletionist: games.hltbCompletionist,
       hltbManual: games.hltbManual,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      steamPlaytimeSampleSize: games.steamPlaytimeSampleSize,
+      steamPlaytimeMissCount: games.steamPlaytimeMissCount,
       hltbMissCount: games.hltbMissCount,
       priceHistoryBackfilledAt: games.priceHistoryBackfilledAt,
       priceHistoryMissCount: games.priceHistoryMissCount,
@@ -1571,6 +1609,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
+      playtimeSource: userGames.playtimeSource,
       interestRatedAt: userGames.interestRatedAt,
       enjoymentRating: userGames.enjoymentRating,
       lastPlayed: userGames.lastPlayed,
@@ -1608,6 +1647,7 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
   game.description = row.description ?? undefined;
   game.hltbManual = row.hltbManual ?? undefined;
   game.hltbMissCount = row.hltbMissCount ?? undefined;
+  game.steamPlaytimeMissCount = row.steamPlaytimeMissCount ?? undefined;
   game.priceHistoryBackfilledAt = row.priceHistoryBackfilledAt?.toISOString() ?? undefined;
   game.priceHistoryMissCount = row.priceHistoryMissCount ?? 0;
 
@@ -1615,6 +1655,8 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
     applySnapshotToGame(game, snapshot, {
       reviewScore: row.reviewScore,
       hltbMain: row.hltbMain,
+      steamPlaytimeMedian: row.steamPlaytimeMedian,
+      playtimeSource: row.playtimeSource,
       personalInterest: row.personalInterest,
     });
   }
@@ -2203,6 +2245,59 @@ export function setHltbExcluded(gameId: number, excluded: boolean): void {
     .run();
 }
 
+/**
+ * Persist the Steam-review playtime median for a game. On a usable sample, store
+ * the median (hours) + sample size + timestamp and reset the miss counter; on a
+ * miss (no/too-small sample), increment the counter and leave the value alone.
+ * Mirrors {@link updateGameHltbData}.
+ */
+export function updateGameSteamPlaytime(
+  gameId: number,
+  data: { medianHours: number; sampleSize: number } | null,
+): void {
+  const db = getDb();
+  const missed = data === null;
+
+  db.update(games)
+    .set({
+      steamPlaytimeUpdatedAt: new Date().toISOString(),
+      ...(missed
+        ? { steamPlaytimeMissCount: sql`COALESCE(${games.steamPlaytimeMissCount}, 0) + 1` }
+        : {
+            steamPlaytimeMedian: data.medianHours,
+            steamPlaytimeSampleSize: data.sampleSize,
+            steamPlaytimeMissCount: 0,
+          }),
+    })
+    .where(eq(games.id, gameId))
+    .run();
+
+  // A new median can change the $/hr value component for games whose source is
+  // (or falls back to) steam_reviews, so refresh the stored deal score. A miss
+  // leaves the value unchanged.
+  if (!missed) recomputeLatestSnapshotDealScore(gameId);
+}
+
+/**
+ * Set which playtime basis ('hltb' | 'steam_reviews') feeds $/hour scoring for a
+ * game, then refresh the stored deal score so the sort key tracks the badge —
+ * exactly as {@link updateManualHltbData} does for a manual HLTB edit.
+ */
+export function setPlaytimeSource(gameId: number, source: PlaytimeSource, userId: string): boolean {
+  const db = getDb();
+  const result = db
+    .update(userGames)
+    .set({ playtimeSource: source })
+    .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+    .run();
+
+  // No user_games row yet (e.g. a looked-up game) → nothing to set.
+  if (result.changes === 0) return false;
+
+  recomputeLatestSnapshotDealScore(gameId);
+  return true;
+}
+
 // After this many consecutive failed backfill attempts, stop retrying so we
 // don't pound ITAD for games whose itadGameId is permanently bad.
 export const PRICE_HISTORY_GIVE_UP_MISSES = 3;
@@ -2747,6 +2842,8 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       hltbMainExtra: games.hltbMainExtra,
       hltbCompletionist: games.hltbCompletionist,
       hltbManual: games.hltbManual,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      steamPlaytimeSampleSize: games.steamPlaytimeSampleSize,
       isCoop: games.isCoop,
       isMultiplayer: games.isMultiplayer,
       isReleased: games.isReleased,
@@ -2763,6 +2860,7 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       autoAlertDisabled: userGames.autoAlertDisabled,
       playtimeMinutes: userGames.playtimeMinutes,
       personalInterest: userGames.personalInterest,
+      playtimeSource: userGames.playtimeSource,
       lastPlayed: userGames.lastPlayed,
     })
     .from(games)
@@ -3012,6 +3110,10 @@ export interface TriageGame {
   reviewScore: number | null;
   reviewDescription: string | null;
   hltbMain: number | null;
+  steamPlaytimeMedian: number | null;
+  steamPlaytimeSampleSize: number | null;
+  steamPlaytimeMissCount: number | null;
+  playtimeSource: 'hltb' | 'steam_reviews';
   currentPrice: number | null;
   personalInterest: number;
   interestRatedAt: string | null;
@@ -3031,6 +3133,10 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
     reviewScore: number | null;
     reviewDescription: string | null;
     hltbMain: number | null;
+    steamPlaytimeMedian: number | null;
+    steamPlaytimeSampleSize: number | null;
+    steamPlaytimeMissCount: number | null;
+    playtimeSource: string | null;
     personalInterest: number;
     interestRatedAt: string | null;
     enjoymentRating: number | null;
@@ -3060,6 +3166,10 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
       g.review_score as reviewScore,
       g.review_description as reviewDescription,
       g.hltb_main as hltbMain,
+      g.steam_playtime_median as steamPlaytimeMedian,
+      g.steam_playtime_sample_size as steamPlaytimeSampleSize,
+      g.steam_playtime_miss_count as steamPlaytimeMissCount,
+      ug.playtime_source as playtimeSource,
       ug.personal_interest as personalInterest,
       ug.interest_rated_at as interestRatedAt,
       ug.enjoyment_rating as enjoymentRating,
@@ -3086,6 +3196,10 @@ export function getGamesForTriage(view: 'library' | 'wishlist' | 'missing-hltb' 
     reviewScore: r.reviewScore,
     reviewDescription: r.reviewDescription,
     hltbMain: r.hltbMain,
+    steamPlaytimeMedian: r.steamPlaytimeMedian,
+    steamPlaytimeSampleSize: r.steamPlaytimeSampleSize,
+    steamPlaytimeMissCount: r.steamPlaytimeMissCount,
+    playtimeSource: r.playtimeSource === 'steam_reviews' ? 'steam_reviews' : 'hltb',
     currentPrice: r.currentPrice,
     personalInterest: r.personalInterest ?? 3,
     interestRatedAt: r.interestRatedAt,
@@ -3606,7 +3720,9 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
   // Get all user game IDs (owned or wishlisted)
   const userGameRows = db.all(sql`
     SELECT ug.game_id as gameId, ug.personal_interest as personalInterest,
-           g.review_score as reviewScore, g.hltb_main as hltbMain
+           ug.playtime_source as playtimeSource,
+           g.review_score as reviewScore, g.hltb_main as hltbMain,
+           g.steam_playtime_median as steamPlaytimeMedian
     FROM user_games ug
     JOIN games g ON g.id = ug.game_id
     WHERE ug.user_id = ${userId}
@@ -3614,8 +3730,10 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
   `) as Array<{
     gameId: number;
     personalInterest: number | null;
+    playtimeSource: string | null;
     reviewScore: number | null;
     hltbMain: number | null;
+    steamPlaytimeMedian: number | null;
   }>;
 
   if (userGameRows.length === 0) return [];
@@ -3637,7 +3755,7 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
       regularPrice: snapshot.priceRegular,
       historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
       reviewPercent: gameData.reviewScore,
-      hltbMainHours: gameData.hltbMain,
+      hltbMainHours: getEffectivePlaytimeHours(gameData),
       personalInterest: gameData.personalInterest ?? 3,
     }, weights, thresholds);
 
@@ -3679,16 +3797,20 @@ export function getValueReceivedOverview(userId: string): ValueReceivedOverview 
   const rows = db.all(sql`
     SELECT ug.playtime_minutes as playtimeMinutes,
            ug.price_paid as pricePaid,
+           ug.playtime_source as playtimeSource,
            g.review_score as reviewScore,
-           g.hltb_main as hltbMain
+           g.hltb_main as hltbMain,
+           g.steam_playtime_median as steamPlaytimeMedian
     FROM user_games ug
     JOIN games g ON g.id = ug.game_id
     WHERE ug.user_id = ${userId} AND ug.is_owned = 1
   `) as Array<{
     playtimeMinutes: number | null;
     pricePaid: number | null;
+    playtimeSource: string | null;
     reviewScore: number | null;
     hltbMain: number | null;
+    steamPlaytimeMedian: number | null;
   }>;
 
   const buckets: Record<ValueReceivedBucket, number> = {
@@ -3711,7 +3833,7 @@ export function getValueReceivedOverview(userId: string): ValueReceivedOverview 
     const vr = calculateValueReceived(
       {
         playtimeMinutes: r.playtimeMinutes ?? 0,
-        hltbMainHours: r.hltbMain,
+        hltbMainHours: getEffectivePlaytimeHours(r),
         reviewPercent: r.reviewScore,
         pricePaid: r.pricePaid,
       },
