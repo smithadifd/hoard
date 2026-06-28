@@ -95,3 +95,22 @@ export interface SteamReviewSummary {
     total_reviews: number;
   };
 }
+
+// A single review from the paginated /appreviews endpoint. Only the playtime
+// fields we sample are typed; the full payload has many more.
+export interface SteamReview {
+  recommendationid: string;
+  author: {
+    steamid: string;
+    playtime_forever: number; // minutes, total
+    playtime_at_review?: number; // minutes, at the time the review was written
+  };
+}
+
+// Paginated /appreviews response (num_per_page > 0). `cursor` is the token for
+// the next page; it must be URL-encoded when passed back.
+export interface SteamReviewPage {
+  success: number;
+  cursor?: string;
+  reviews?: SteamReview[];
+}

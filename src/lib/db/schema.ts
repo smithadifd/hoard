@@ -28,6 +28,12 @@ export const games = sqliteTable('games', {
   hltbLastUpdated: text('hltb_last_updated'), // ISO date
   hltbManual: integer('hltb_manual', { mode: 'boolean' }).default(false), // User-entered or explicitly excluded HLTB data
   hltbMissCount: integer('hltb_miss_count').default(0), // Consecutive failed HLTB lookups (for backoff)
+  // Steam-review playtime — median of sampled reviewers' total playtime (SteamDB-style).
+  // An alternative "expected playtime" basis for indie/open-ended games where HLTB is thin.
+  steamPlaytimeMedian: real('steam_playtime_median'), // hours
+  steamPlaytimeSampleSize: integer('steam_playtime_sample_size'), // # of reviews the median is drawn from
+  steamPlaytimeUpdatedAt: text('steam_playtime_updated_at'), // ISO date
+  steamPlaytimeMissCount: integer('steam_playtime_miss_count').default(0), // Consecutive failed/too-small samples (for backoff)
   // Review metadata tracking
   reviewLastUpdated: text('review_last_updated'), // ISO date — tracks when reviews were fetched
   // ITAD price history backfill tracking
@@ -88,6 +94,10 @@ export const userGames = sqliteTable('user_games', {
   playtimeMinutes: integer('playtime_minutes').default(0),
   playtimeRecentMinutes: integer('playtime_recent_minutes').default(0), // last 2 weeks
   lastPlayed: text('last_played'), // ISO date
+  // Which playtime basis feeds $/hour scoring for this game: 'hltb' (default) or
+  // 'steam_reviews' (median of sampled reviewer playtime). Each falls back to the
+  // other when its own source has no data — see getEffectivePlaytimeHours.
+  playtimeSource: text('playtime_source').notNull().default('hltb'),
   // Personal scoring
   personalInterest: integer('personal_interest').default(3), // 1-5 scale — pre-purchase enthusiasm ("the bet")
   interestRatedAt: text('interest_rated_at'), // ISO date — NULL means never explicitly rated
