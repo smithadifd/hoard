@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { Clock, Star, DollarSign, Sparkles, TrendingDown } from 'lucide-react';
+import { Clock, Star, DollarSign, Sparkles, TrendingDown, Users } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
+import { getEffectivePlaytimeSource } from '@/lib/scoring/engine';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ValueReceivedIndicator } from '@/components/prices/ValueReceivedIndicator';
 import { GameImage } from './GameImage';
@@ -31,6 +32,15 @@ interface GameCardProps {
 }
 
 export function GameCard({ game }: GameCardProps) {
+  // The playtime basis actually driving $/hour — lets the duration chip show the
+  // Steam-review median for HLTB-less released games (the same value $/hour uses),
+  // instead of a bare "No duration".
+  const effectivePlaytimeSource = getEffectivePlaytimeSource({
+    playtimeSource: game.playtimeSource,
+    hltbMain: game.hltbMain ?? null,
+    steamPlaytimeMedian: game.steamPlaytimeMedian ?? null,
+    isReleased: game.isReleased ?? null,
+  });
   return (
     <Link
       href={`/games/${game.id}`}
@@ -125,11 +135,20 @@ export function GameCard({ game }: GameCardProps) {
             <span className="text-[10px] text-muted-foreground/60">No reviews</span>
           )}
 
-          {/* HLTB Duration */}
-          {game.hltbMain !== undefined && game.hltbMain > 0 ? (
+          {/* Duration — HLTB main story, or the Steam-review median when HLTB is
+              missing (the same basis $/hour falls back to). */}
+          {effectivePlaytimeSource === 'hltb' && game.hltbMain !== undefined && game.hltbMain > 0 ? (
             <span className="flex items-center gap-1 font-label">
               <Clock className="h-3 w-3" />
               {game.hltbMain}h
+            </span>
+          ) : effectivePlaytimeSource === 'steam_reviews' && game.steamPlaytimeMedian !== undefined ? (
+            <span
+              className="flex items-center gap-1 font-label"
+              title={`Median of ${game.steamPlaytimeSampleSize ?? 0} Steam reviewers' playtime`}
+            >
+              <Users className="h-3 w-3" />
+              ~{game.steamPlaytimeMedian}h
             </span>
           ) : game.reviewScore !== undefined ? (
             <span className="text-[10px] text-muted-foreground/60">No duration</span>

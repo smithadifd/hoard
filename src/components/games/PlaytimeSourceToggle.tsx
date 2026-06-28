@@ -5,9 +5,15 @@ import { Clock, Users, Loader2 } from 'lucide-react';
 
 interface PlaytimeSourceToggleProps {
   gameId: number;
-  /** Current per-game preference. */
+  /** Stored per-game preference. */
   source: 'hltb' | 'steam_reviews';
-  /** HLTB main-story hours, if known (for the inline value hint). */
+  /**
+   * The source ACTUALLY driving $/hour right now — may differ from `source` when
+   * an HLTB-less game falls back to the review median. Drives the highlight so the
+   * control reads honestly. Null when no playtime data is available.
+   */
+  effectiveSource?: 'hltb' | 'steam_reviews' | null;
+  /** HLTB main-story hours, if known. The HLTB option is disabled when absent. */
   hltbMain?: number;
   /** Steam-review median hours, if fetched. The Steam option is disabled when absent. */
   steamPlaytimeMedian?: number;
@@ -22,15 +28,23 @@ interface PlaytimeSourceToggleProps {
 export function PlaytimeSourceToggle({
   gameId,
   source,
+  effectiveSource,
   hltbMain,
   steamPlaytimeMedian,
 }: PlaytimeSourceToggleProps) {
   const [saving, setSaving] = useState<'hltb' | 'steam_reviews' | null>(null);
+  const hltbAvailable = hltbMain != null;
   const steamAvailable = steamPlaytimeMedian != null;
+  // Highlight what's actually driving $/hour; fall back to the stored preference.
+  const active = effectiveSource ?? source;
+  // True when $/hour is auto-using reviews because there's no HLTB data (stored
+  // preference is still HLTB, but reviews are filling the gap).
+  const autoFallback = source === 'hltb' && active === 'steam_reviews';
 
   const select = async (next: 'hltb' | 'steam_reviews') => {
     if (next === source || saving) return;
     if (next === 'steam_reviews' && !steamAvailable) return;
+    if (next === 'hltb' && !hltbAvailable) return;
     setSaving(next);
     try {
       await fetch(`/api/games/${gameId}`, {
@@ -53,17 +67,17 @@ export function PlaytimeSourceToggle({
       <div className="flex rounded-lg border border-input overflow-hidden">
         <button
           onClick={() => select('hltb')}
-          disabled={saving !== null}
-          className={`${baseBtn} ${source === 'hltb' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
-          title="Use HowLongToBeat main-story hours"
+          disabled={saving !== null || !hltbAvailable}
+          className={`${baseBtn} ${active === 'hltb' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
+          title={hltbAvailable ? 'Use HowLongToBeat main-story hours' : 'No HLTB data for this game'}
         >
           {saving === 'hltb' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />}
-          HLTB{hltbMain ? ` (${hltbMain}h)` : ''}
+          HLTB{hltbAvailable ? ` (${hltbMain}h)` : ''}
         </button>
         <button
           onClick={() => select('steam_reviews')}
           disabled={saving !== null || !steamAvailable}
-          className={`${baseBtn} border-l border-input ${source === 'steam_reviews' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
+          className={`${baseBtn} border-l border-input ${active === 'steam_reviews' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
           title={steamAvailable ? 'Use the median of Steam reviewers’ playtime' : 'No Steam review sample yet'}
         >
           {saving === 'steam_reviews' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5" />}
@@ -71,7 +85,9 @@ export function PlaytimeSourceToggle({
         </button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Which playtime drives the $/hour value score for this game.
+        {autoFallback
+          ? 'No HLTB data — $/hour is using the Steam-review median. It switches to HLTB automatically if that data lands.'
+          : 'Which playtime drives the $/hour value score for this game.'}
       </p>
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateDealScore, getEffectivePlaytimeHours } from './engine';
+import { calculateDealScore, getEffectivePlaytimeHours, getEffectivePlaytimeSource } from './engine';
 import { DEFAULT_WEIGHTS } from './types';
 import type { ScoringWeights, ScoringThresholds } from './types';
 
@@ -26,6 +26,50 @@ describe('getEffectivePlaytimeHours', () => {
 
   it('treats an unset/unknown source as hltb', () => {
     expect(getEffectivePlaytimeHours({ playtimeSource: null, hltbMain: 12, steamPlaytimeMedian: 40 })).toBe(12);
+  });
+
+  describe('released gating', () => {
+    it('allows the HLTB→reviews fallback for a released game', () => {
+      expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: 35, isReleased: true })).toBe(35);
+    });
+
+    it('allows the fallback when release status is unknown (null/undefined, e.g. Early Access)', () => {
+      expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: 35, isReleased: null })).toBe(35);
+    });
+
+    it('suppresses the fallback for a not-yet-released game (no borrowing review hours)', () => {
+      expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: 35, isReleased: false })).toBeNull();
+    });
+
+    it('still honours an EXPLICIT steam_reviews choice even when unreleased', () => {
+      expect(getEffectivePlaytimeHours({ playtimeSource: 'steam_reviews', hltbMain: null, steamPlaytimeMedian: 35, isReleased: false })).toBe(35);
+    });
+
+    it('does not suppress HLTB itself for an unreleased game', () => {
+      expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: 20, steamPlaytimeMedian: 35, isReleased: false })).toBe(20);
+    });
+  });
+});
+
+describe('getEffectivePlaytimeSource', () => {
+  it('reports hltb when HLTB drives the value', () => {
+    expect(getEffectivePlaytimeSource({ playtimeSource: 'hltb', hltbMain: 20, steamPlaytimeMedian: 35 })).toBe('hltb');
+  });
+
+  it('reports steam_reviews when the median drives the value (explicit)', () => {
+    expect(getEffectivePlaytimeSource({ playtimeSource: 'steam_reviews', hltbMain: 20, steamPlaytimeMedian: 35 })).toBe('steam_reviews');
+  });
+
+  it('reports steam_reviews for a released HLTB-less game (fallback)', () => {
+    expect(getEffectivePlaytimeSource({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: 35, isReleased: true })).toBe('steam_reviews');
+  });
+
+  it('reports null for an unreleased HLTB-less game (fallback suppressed)', () => {
+    expect(getEffectivePlaytimeSource({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: 35, isReleased: false })).toBeNull();
+  });
+
+  it('reports null when no playtime data exists', () => {
+    expect(getEffectivePlaytimeSource({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: null })).toBeNull();
   });
 });
 

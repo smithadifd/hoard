@@ -1066,7 +1066,7 @@ function applySnapshotToGame(
       regularPrice: snapshot.priceRegular,
       historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
       reviewPercent: scoreInputs.reviewScore,
-      hltbMainHours: getEffectivePlaytimeHours(scoreInputs),
+      hltbMainHours: getEffectivePlaytimeHours({ ...scoreInputs, isReleased: game.isReleased ?? null }),
       personalInterest: scoreInputs.personalInterest ?? 3,
     }, weights, thresholds);
     game.dealScore = score.overall;
@@ -1103,6 +1103,7 @@ export function recomputeLatestSnapshotDealScore(gameId: number): boolean {
       reviewScore: games.reviewScore,
       hltbMain: games.hltbMain,
       steamPlaytimeMedian: games.steamPlaytimeMedian,
+      isReleased: games.isReleased,
     })
     .from(games)
     .where(eq(games.id, gameId))
@@ -1122,6 +1123,7 @@ export function recomputeLatestSnapshotDealScore(gameId: number): boolean {
     playtimeSource: interestRow?.playtimeSource ?? 'hltb',
     hltbMain: game.hltbMain,
     steamPlaytimeMedian: game.steamPlaytimeMedian,
+    isReleased: game.isReleased,
   });
 
   const latest = db
@@ -3722,7 +3724,8 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
     SELECT ug.game_id as gameId, ug.personal_interest as personalInterest,
            ug.playtime_source as playtimeSource,
            g.review_score as reviewScore, g.hltb_main as hltbMain,
-           g.steam_playtime_median as steamPlaytimeMedian
+           g.steam_playtime_median as steamPlaytimeMedian,
+           g.is_released as isReleased
     FROM user_games ug
     JOIN games g ON g.id = ug.game_id
     WHERE ug.user_id = ${userId}
@@ -3734,6 +3737,7 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
     reviewScore: number | null;
     hltbMain: number | null;
     steamPlaytimeMedian: number | null;
+    isReleased: number | null;
   }>;
 
   if (userGameRows.length === 0) return [];
@@ -3755,7 +3759,10 @@ export function getDealScoreDistribution(userId: string): Array<{ bucket: string
       regularPrice: snapshot.priceRegular,
       historicalLow: snapshot.historicalLowPrice ?? snapshot.priceCurrent,
       reviewPercent: gameData.reviewScore,
-      hltbMainHours: getEffectivePlaytimeHours(gameData),
+      hltbMainHours: getEffectivePlaytimeHours({
+        ...gameData,
+        isReleased: gameData.isReleased == null ? null : gameData.isReleased === 1,
+      }),
       personalInterest: gameData.personalInterest ?? 3,
     }, weights, thresholds);
 
