@@ -176,8 +176,9 @@ export class DiscordClient {
   }
 
   /**
-   * Send a digest of games still sitting at their known all-time low.
-   * Condenses multiple "still at ATL" games into a single compact embed.
+   * Condense multiple ATL games into a single compact embed. `kind` selects the framing:
+   * 'new' for a sale-day burst of games that just hit a new low, 'still' (default) for the
+   * once-daily roundup of games sitting at a previously-known low.
    */
   async sendAtlDigest(games: Array<{
     title: string;
@@ -186,7 +187,7 @@ export class DiscordClient {
     discountPercent: number;
     store: string;
     storeUrl: string;
-  }>): Promise<boolean> {
+  }>, kind: 'new' | 'still' = 'still'): Promise<boolean> {
     if (games.length === 0) return true;
 
     const MAX_DESCRIPTION_LENGTH = 4000;
@@ -218,19 +219,25 @@ export class DiscordClient {
     }
 
     for (let i = 0; i < chunks.length; i++) {
-      embeds.push(this.buildDigestEmbed(chunks[i], games.length, chunks.length > 1 ? i + 1 : undefined, chunks.length > 1 ? chunks.length : undefined));
+      embeds.push(this.buildDigestEmbed(chunks[i], games.length, kind, chunks.length > 1 ? i + 1 : undefined, chunks.length > 1 ? chunks.length : undefined));
     }
 
     return this.send('', embeds);
   }
 
-  private buildDigestEmbed(lines: string[], totalCount: number, part?: number, totalParts?: number): DiscordEmbed {
+  private buildDigestEmbed(lines: string[], totalCount: number, kind: 'new' | 'still', part?: number, totalParts?: number): DiscordEmbed {
     const suffix = part && totalParts ? ` (part ${part}/${totalParts})` : '';
+    const isNew = kind === 'new';
     return {
-      title: `Still at All-Time Low (${totalCount} game${totalCount === 1 ? '' : 's'})${suffix}`,
+      title: `${isNew ? 'Just Hit' : 'Still at'} All-Time Low (${totalCount} game${totalCount === 1 ? '' : 's'})${suffix}`,
       description: lines.join('\n'),
-      color: 0x6b7280, // Gray — distinct from green "new ATL"
-      footer: { text: 'Hoard — These games remain at their historical low price' },
+      // Green matches the "new ATL" accent in sendPriceAlert; gray marks the lower-signal roundup.
+      color: isNew ? 0x22c55e : 0x6b7280,
+      footer: {
+        text: isNew
+          ? 'Hoard — These games just hit their lowest tracked price'
+          : 'Hoard — These games remain at their historical low price',
+      },
       timestamp: new Date().toISOString(),
     };
   }

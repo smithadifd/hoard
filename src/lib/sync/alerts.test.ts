@@ -272,7 +272,7 @@ describe('checkPriceAlerts', () => {
     expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
     expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
       expect.objectContaining({ title: 'Test Game', currentPrice: 4.99 }),
-    ]);
+    ], 'still');
     expect(mockUpdateNotified).toHaveBeenCalledWith(1);
     expect(result.stats.succeeded).toBe(1);
   });
@@ -299,7 +299,7 @@ describe('checkPriceAlerts', () => {
     expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
     expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
       expect.objectContaining({ title: 'Test Game' }),
-    ]);
+    ], 'still');
     expect(result.stats.succeeded).toBe(1);
   });
 
@@ -543,7 +543,7 @@ describe('checkPriceAlerts', () => {
     // It does belong in the morning still-at-ATL digest, though.
     expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
       expect.objectContaining({ title: 'Test Game', currentPrice: 33.45 }),
-    ]);
+    ], 'still');
     expect(result.stats.succeeded).toBe(1);
   });
 
@@ -599,7 +599,7 @@ describe('checkPriceAlerts', () => {
 
     expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
       expect.objectContaining({ title: 'Test Game', currentPrice: 4.99 }),
-    ]);
+    ], 'still');
     expect(result.stats.succeeded).toBe(1);
   });
 
@@ -742,8 +742,117 @@ describe('checkPriceAlerts', () => {
     );
     expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
       expect.objectContaining({ title: 'Steady Sale', currentPrice: 4.99 }),
-    ]);
+    ], 'still');
     expect(result.stats.succeeded).toBe(2);
+  });
+
+  describe('new-ATL burst condensing', () => {
+    // A genuinely-new-ATL alert with plenty of history, distinct per index so each marks
+    // its own throttle slot. Mirrors a Steam-sale flood where many wishlist games hit a
+    // fresh low in the same price-check run.
+    function makeNewAtlAlert(i: number) {
+      return makeAlert({
+        id: i,
+        gameId: i,
+        title: `Sale Game ${i}`,
+        targetPrice: null,
+        notifyOnThreshold: false,
+        notifyOnAllTimeLow: true,
+        isHistoricalLow: true,
+        currentPrice: 5 + i,
+        historicalLowPrice: 5 + i,
+        prevHistoricalLowPrice: 12 + i, // strictly higher than current = genuine new ATL
+      });
+    }
+
+    // Low threshold so a handful of alerts trips the burst gate without building 8 fixtures.
+    function withBurstThreshold(n: number) {
+      mockGetSetting.mockImplementation((key: string) => (key === 'atl_burst_threshold' ? String(n) : null));
+    }
+
+    it('collapses a flood of new ATLs into one digest on both channels, not N pings', async () => {
+      withBurstThreshold(3);
+      mockGetAlerts.mockReturnValue([1, 2, 3, 4].map(makeNewAtlAlert));
+      const mockDiscord = makeMockDiscord();
+      mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+      const result = await checkPriceAlerts();
+
+      // No individual pings — the whole flood condenses into a single 'new' digest.
+      expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+      expect(mockDiscord.sendAtlDigest).toHaveBeenCalledTimes(1);
+      expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ title: 'Sale Game 1' }),
+          expect.objectContaining({ title: 'Sale Game 4' }),
+        ]),
+        'new',
+      );
+      // Every condensed alert still marks its own throttle slot, preserving per-game dedup.
+      expect(mockUpdateNotified).toHaveBeenCalledTimes(4);
+      expect(result.stats.succeeded).toBe(4);
+    });
+
+    it('keeps new ATLs individual below the burst threshold', async () => {
+      withBurstThreshold(3);
+      mockGetAlerts.mockReturnValue([1, 2].map(makeNewAtlAlert));
+      const mockDiscord = makeMockDiscord();
+      mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+      const result = await checkPriceAlerts();
+
+      expect(mockDiscord.sendPriceAlert).toHaveBeenCalledTimes(2);
+      expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
+      expect(result.stats.succeeded).toBe(2);
+    });
+
+    it('never buries free games or explicit threshold hits in the burst digest', async () => {
+      withBurstThreshold(3);
+      const freeGame = makeAlert({
+        id: 90,
+        gameId: 90,
+        title: 'Free Game',
+        currentPrice: 0,
+        notifyOnThreshold: false,
+        notifyOnAllTimeLow: false,
+      });
+      const thresholdHit = makeAlert({
+        id: 91,
+        gameId: 91,
+        title: 'Target Hit',
+        currentPrice: 8,
+        targetPrice: 10,
+        notifyOnThreshold: true,
+        notifyOnAllTimeLow: false,
+      });
+      mockGetAlerts.mockReturnValue([...[1, 2, 3].map(makeNewAtlAlert), freeGame, thresholdHit]);
+      const mockDiscord = makeMockDiscord();
+      mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+      const result = await checkPriceAlerts();
+
+      // The 3 new ATLs condense; the free game and the user's explicit target still ping individually.
+      const burstCall = vi.mocked(mockDiscord.sendAtlDigest).mock.calls[0];
+      expect(burstCall[1]).toBe('new');
+      expect(burstCall[0]).toHaveLength(3);
+      expect(burstCall[0].map((g) => g.title)).not.toContain('Free Game');
+      expect(mockDiscord.sendPriceAlert).toHaveBeenCalledTimes(2);
+      const pingedTitles = vi.mocked(mockDiscord.sendPriceAlert).mock.calls.map((c) => c[0].title);
+      expect(pingedTitles).toEqual(expect.arrayContaining(['Free Game', 'Target Hit']));
+      expect(result.stats.succeeded).toBe(5);
+    });
+
+    it('uses a default threshold of 8 when the setting is unset', async () => {
+      // beforeEach leaves getSetting → null, so the default (8) applies. 8 new ATLs condense.
+      mockGetAlerts.mockReturnValue([1, 2, 3, 4, 5, 6, 7, 8].map(makeNewAtlAlert));
+      const mockDiscord = makeMockDiscord();
+      mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+      await checkPriceAlerts();
+
+      expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+      expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith(expect.any(Array), 'new');
+    });
   });
 
   it('allows notification when throttle period has expired', async () => {
@@ -886,7 +995,7 @@ describe('checkPriceAlerts', () => {
     );
     expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith([
       expect.objectContaining({ title: 'Still ATL Game' }),
-    ]);
+    ], 'still');
     expect(result.stats.succeeded).toBe(2);
   });
 

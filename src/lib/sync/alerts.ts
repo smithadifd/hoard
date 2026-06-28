@@ -115,6 +115,10 @@ interface PendingNotification {
   gameId: number;
   // For individual alerts
   alertPayload?: Parameters<ReturnType<typeof getDiscordClient>['sendPriceAlert']>[0];
+  // Why an individual alert routed individually. New-ATL alerts are the burst-prone ones a
+  // sale floods; free games and explicit threshold hits are rare, high-signal, and always
+  // ping individually — never folded into the burst digest.
+  individualKind?: 'new-atl' | 'priority';
   // For digest
   digestGame?: DigestGame;
   // Callback to mark as notified on success
@@ -167,14 +171,23 @@ function mapDealToInApp(payload: DealPayload, gameId: number): NotificationPaylo
   };
 }
 
-/** Collapse a still-at-ATL digest into a single summary notification (not one per game). */
-function buildDigestInApp(digestGames: DigestGame[]): NotificationPayload {
+/**
+ * Collapse a batch of ATL games into a single summary notification (not one per game).
+ * `kind` selects the framing: 'new' for a sale-day burst of games that just hit a new low,
+ * 'still' for the once-daily roundup of games sitting at a previously-known low. Both share
+ * the same metadata shape so the in-app digest modal renders either identically.
+ */
+function buildDigestInApp(digestGames: DigestGame[], kind: 'new' | 'still'): NotificationPayload {
   const count = digestGames.length;
   const names = digestGames.slice(0, 3).map((g) => g.title);
   const remainder = count - names.length;
   const list = remainder > 0 ? `${names.join(', ')} and ${remainder} more` : names.join(', ');
+  const title =
+    kind === 'new'
+      ? `${count} game${count === 1 ? '' : 's'} just hit all-time low${count === 1 ? '' : 's'}`
+      : `${count} game${count === 1 ? '' : 's'} still at all-time low`;
   return {
-    title: `${count} game${count === 1 ? '' : 's'} still at all-time low`,
+    title,
     body: list,
     link: '/wishlist',
     metadata: {
@@ -273,6 +286,9 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
           type: 'individual',
           gameId: alert.gameId,
           alertPayload: buildAlertPayload(alert),
+          // Free and explicit-threshold hits stay individual even in a burst; only a generic
+          // new ATL is foldable into the sale digest.
+          individualKind: isFree || triggeredByThreshold ? 'priority' : 'new-atl',
           onSent: () => updateAlertLastNotified(alert.id),
         });
       } else if (alert.discountPercent > 0) {
@@ -338,6 +354,8 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
             type: 'individual',
             gameId: candidate.gameId,
             alertPayload: buildAlertPayload(candidate, candidate.dealScore),
+            // Auto alerts only ever fire free or new-ATL; free is high-signal and stays individual.
+            individualKind: isFree ? 'priority' : 'new-atl',
             onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
           });
         } else if (candidate.discountPercent > 0) {
@@ -369,7 +387,20 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     const individualAlerts = pending.filter((p) => p.type === 'individual');
     const digestAlerts = pending.filter((p) => p.type === 'digest');
 
-    for (const item of individualAlerts) {
+    // Partition: only generic new-ATL alerts are burst-foldable. Free games and explicit
+    // threshold hits are rare and high-signal, so they always ping individually — never buried.
+    const newAtlAlerts = individualAlerts.filter((p) => p.individualKind === 'new-atl');
+    const priorityAlerts = individualAlerts.filter((p) => p.individualKind !== 'new-atl');
+
+    // Burst gate: when one run produces this many genuinely-new ATLs, it's a sale — N correlated
+    // events, not N independent ones. Collapse them into a single summary instead of flooding the
+    // bell (which caps at 20) and Discord. Tunable via the `atl_burst_threshold` setting; default 8.
+    const burstRaw = getSetting('atl_burst_threshold');
+    const parsedBurst = Number(burstRaw ?? '8');
+    const burstThreshold = Number.isFinite(parsedBurst) && parsedBurst >= 2 ? Math.floor(parsedBurst) : 8;
+    const burst = newAtlAlerts.length >= burstThreshold;
+
+    const sendIndividual = async (item: PendingNotification) => {
       const payload = item.alertPayload!;
       const { inAppDelivered, discordDelivered } = await emitNotification({
         category: 'deal-individual',
@@ -388,6 +419,44 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         }
         console.log(`[AlertCheck] Notified: ${payload.title} at $${payload.currentPrice.toFixed(2)}`);
       }
+    };
+
+    // Below the burst threshold, every individual alert pings on its own (the normal case).
+    // At/above it, only the priority (free/threshold) alerts do; the new-ATL flood is condensed.
+    for (const item of burst ? priorityAlerts : individualAlerts) {
+      await sendIndividual(item);
+    }
+
+    // Burst digest — collapse the new-ATL flood into one summary on both channels (in-app + Discord),
+    // mirroring the still-at-ATL digest below but framed as games that *just* hit a new low.
+    if (burst) {
+      const burstGames: DigestGame[] = newAtlAlerts.map((item) => {
+        const p = item.alertPayload!;
+        return {
+          gameId: item.gameId,
+          title: p.title,
+          currentPrice: p.currentPrice,
+          regularPrice: p.regularPrice,
+          discountPercent: p.discountPercent,
+          store: p.store,
+          storeUrl: p.storeUrl,
+        };
+      });
+      const { inAppDelivered, discordDelivered } = await emitNotification({
+        category: 'deal-digest',
+        userId: effectiveUserId,
+        inApp: buildDigestInApp(burstGames, 'new'),
+        discord: () => discord.sendAtlDigest(burstGames, 'new'),
+      });
+      if (inAppDelivered || discordDelivered) {
+        for (const item of newAtlAlerts) item.onSent();
+        notifiedCount += newAtlAlerts.length;
+        if (!firstDealFiredThisRun) {
+          firstDealFiredThisRun = true;
+          void milestones.firstDeal(effectiveUserId, burstGames[0].title);
+        }
+        console.log(`[AlertCheck] Burst-condensed ${newAtlAlerts.length} new-ATL alerts into one digest`);
+      }
     }
 
     // Send digest — one fan-out for the whole batch (one Discord embed, one in-app summary)
@@ -396,8 +465,8 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       const { inAppDelivered, discordDelivered } = await emitNotification({
         category: 'deal-digest',
         userId: effectiveUserId,
-        inApp: buildDigestInApp(digestGames),
-        discord: () => discord.sendAtlDigest(digestGames),
+        inApp: buildDigestInApp(digestGames, 'still'),
+        discord: () => discord.sendAtlDigest(digestGames, 'still'),
       });
       if (inAppDelivered || discordDelivered) {
         for (const item of digestAlerts) {

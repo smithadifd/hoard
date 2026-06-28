@@ -42,7 +42,15 @@ The digest is a **once-daily reminder**, sent independently of the price-check c
 
 This is deliberate: with a 12h check and a 24h throttle, still-at-ATL games used to ping in *alternating* runs, so two consecutive digests were near-disjoint half-lists and the count swung wildly. Decoupling the digest gives one complete, stable list per day. Because the daily window is what limits digest frequency, the per-game throttle is **not** applied to digest entries — every game that is still at its ATL appears in each day's digest, even if it was individually alerted earlier.
 
-The digest embed is gray (`0x6b7280`) to distinguish it visually from the green (`0x22c55e`) individual ATL alerts.
+The still-at-ATL digest embed is gray (`0x6b7280`) to distinguish it visually from the green (`0x22c55e`) individual ATL alerts.
+
+### Burst condensing
+
+The once-daily digest above only batches games *still* sitting at a known low. Genuinely **new** ATLs normally fire individually and bypass the throttle — correct on a normal day, but during a major sale (e.g. Steam's seasonal sale) a single price-check run can produce dozens of new ATLs at once, flooding the in-app bell (which shows the most recent 20) and the deal channel.
+
+To handle this, a single run that produces **`atl_burst_threshold` or more** new ATLs (default `8`, tunable via the `atl_burst_threshold` setting) collapses them into one summary instead — a "Just Hit All-Time Low" digest delivered on **both** channels (in-app + Discord). The rationale is that a burst of new ATLs in one run is a *correlated event* (the sale), not N independent ones. The burst embed is green (`0x22c55e`) to match the new-ATL accent, distinct from the gray still-at-ATL roundup.
+
+Free games and explicit **threshold hits are never condensed** — they're rare and high-signal (a giveaway, or a price *you* set), so they always ping individually even mid-burst. Each condensed alert still records its own `lastNotifiedAt`, so per-game throttle/dedup is unaffected; the next run won't re-fire. Below the threshold, new ATLs ping individually as before.
 
 ## Auto-ATL alerts
 
