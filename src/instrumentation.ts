@@ -122,6 +122,22 @@ export async function register() {
       // Non-fatal
     }
 
+    // One-time backfill: stored snapshot deal scores written before their game's
+    // enrichment (HLTB/review) landed are stale, so deal-score sorts bury games
+    // whose live badge reads higher. Recompute every game's latest snapshot score
+    // once; the update paths keep them fresh from here on. Guarded by a flag so
+    // it runs a single time after this version deploys.
+    try {
+      const { getSetting, setSetting, recomputeAllLatestDealScores } = await import('@/lib/db/queries');
+      if (getSetting('deal_score_backfill_v1') !== 'done') {
+        const changed = recomputeAllLatestDealScores();
+        setSetting('deal_score_backfill_v1', 'done');
+        console.log(`[Startup] Deal-score backfill: refreshed ${changed} stale snapshot score(s)`);
+      }
+    } catch (err) {
+      console.error('[Startup] Deal-score backfill failed:', err);
+    }
+
     // Send startup notification to Discord
     try {
       const taskStatus = getTaskStatus();

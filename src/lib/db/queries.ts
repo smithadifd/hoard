@@ -478,6 +478,12 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
       },
     })
     .run();
+
+  // Personal interest feeds the deal score's interest component. When the user
+  // (re)rates it, refresh the stored snapshot score so deal-score sorts match
+  // the live badge. Bulk sync upserts don't pass personalInterest, so they skip
+  // this.
+  if (data.personalInterest !== undefined) recomputeLatestSnapshotDealScore(gameId);
 }
 
 /**
@@ -1052,6 +1058,100 @@ function applySnapshotToGame(
     game.dealSummary = score.summary;
     game.dollarsPerHour = score.dollarsPerHour ?? undefined;
   }
+}
+
+/**
+ * Recompute and persist `deal_score` on a game's most-recent price snapshot(s)
+ * from the game's CURRENT scoring inputs (review %, HLTB hours, personal
+ * interest, live weights). Returns true if any stored score changed.
+ *
+ * Why this exists: the wishlist and other deal-score sorts read the stored
+ * `price_snapshots.deal_score` (the weighted score can't be expressed in SQL),
+ * while the on-card / detail badge is always recomputed live in
+ * `applySnapshotToGame`. The stored score is frozen at snapshot-write time, so
+ * when an input lands AFTER the latest snapshot — e.g. HLTB matches hours after
+ * a sale-day price sync and no price change since means no new snapshot — the
+ * stored score keeps its stale (often value-neutral) value and the game sorts
+ * far below where its badge says it belongs. Call this whenever an input
+ * changes so the sort key stays in sync with the badge.
+ *
+ * All snapshots sharing the latest `snapshot_date` are refreshed (each from its
+ * own price) so the value is correct regardless of which same-day row a given
+ * query picks for the badge vs. the sort.
+ */
+export function recomputeLatestSnapshotDealScore(gameId: number): boolean {
+  const db = getDb();
+
+  const game = db
+    .select({ reviewScore: games.reviewScore, hltbMain: games.hltbMain })
+    .from(games)
+    .where(eq(games.id, gameId))
+    .get();
+  if (!game) return false;
+
+  const interestRow = db
+    .select({ personalInterest: userGames.personalInterest })
+    .from(userGames)
+    .where(eq(userGames.gameId, gameId))
+    .get();
+  const personalInterest = interestRow?.personalInterest ?? 3;
+
+  const latest = db
+    .select()
+    .from(priceSnapshots)
+    .where(
+      and(
+        eq(priceSnapshots.gameId, gameId),
+        sql`${priceSnapshots.snapshotDate} = (
+          SELECT MAX(ps2.snapshot_date) FROM price_snapshots ps2
+          WHERE ps2.game_id = ${priceSnapshots.gameId}
+        )`,
+      ),
+    )
+    .all();
+  if (latest.length === 0) return false;
+
+  const { weights, thresholds } = getScoringConfig();
+  let changed = false;
+  for (const snap of latest) {
+    if (snap.priceCurrent <= 0) continue;
+    const score = calculateDealScore(
+      {
+        currentPrice: snap.priceCurrent,
+        regularPrice: snap.priceRegular,
+        historicalLow: snap.historicalLowPrice ?? snap.priceCurrent,
+        reviewPercent: game.reviewScore,
+        hltbMainHours: game.hltbMain,
+        personalInterest,
+      },
+      weights,
+      thresholds,
+    );
+    if (score.overall !== snap.dealScore) {
+      db.update(priceSnapshots).set({ dealScore: score.overall }).where(eq(priceSnapshots.id, snap.id)).run();
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Refresh the stored deal score on every game's latest snapshot. Used as a
+ * one-time backfill (stale scores written before enrichment landed) and after a
+ * scoring-weights change (which shifts every score). Returns the number of games
+ * whose stored score changed.
+ */
+export function recomputeAllLatestDealScores(): number {
+  const db = getDb();
+  const ids = db
+    .selectDistinct({ gameId: priceSnapshots.gameId })
+    .from(priceSnapshots)
+    .all();
+  let changed = 0;
+  for (const { gameId } of ids) {
+    if (recomputeLatestSnapshotDealScore(gameId)) changed++;
+  }
+  return changed;
 }
 
 /** Apply the owned-game value-received enrichment (the "did I get my money's
@@ -1955,6 +2055,10 @@ export function updateGameReviewData(
     })
     .where(eq(games.id, gameId))
     .run();
+
+  // A new review % shifts the review component of the deal score, so refresh the
+  // stored value the sort reads to match the live-recomputed badge.
+  if (data.reviewScore !== undefined) recomputeLatestSnapshotDealScore(gameId);
 }
 
 // Tags that indicate software, not games — skip HLTB lookup entirely
@@ -2043,6 +2147,11 @@ export function updateGameHltbData(
     })
     .where(eq(games.id, gameId))
     .run();
+
+  // A match changes HLTB hours → the $/hr value component, so refresh the stored
+  // deal score the sort reads to match the live-recomputed badge. A miss leaves
+  // HLTB unchanged, so nothing to recompute.
+  if (!missed) recomputeLatestSnapshotDealScore(gameId);
 }
 
 export function updateManualHltbData(
@@ -2066,6 +2175,10 @@ export function updateManualHltbData(
     })
     .where(eq(games.id, gameId))
     .run();
+
+  // Manual HLTB edit changes the value component → keep the stored deal score
+  // (the sort key) in sync with the live badge.
+  recomputeLatestSnapshotDealScore(gameId);
 }
 
 export function updateGameLastViewedAt(gameId: number): void {
