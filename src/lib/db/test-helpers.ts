@@ -78,6 +78,7 @@ const SCHEMA_SQL = `
     is_ignored INTEGER DEFAULT 0,
     wishlist_removed_at TEXT,
     wishlisted_locally INTEGER NOT NULL DEFAULT 0,
+    wishlisted_at TEXT,
     auto_alert_disabled INTEGER DEFAULT 0,
     last_auto_alert_at TEXT,
     playtime_minutes INTEGER DEFAULT 0,

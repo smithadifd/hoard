@@ -29,6 +29,7 @@ export interface AppConfig {
   cronWishlistSync: string;
   cronHltbSync: string;
   cronReviewSync: string;
+  cronSteamPlaytimeSync: string;
   cronPriceHistoryBackfill: string;
   cronMetadataRefresh: string;
 
@@ -72,6 +73,9 @@ export function getConfig(): AppConfig {
       // retains unique coverage for lookup-sourced rows (Global Search) and
       // watchlist-only games that the metadata drain never visits.
       cronReviewSync: process.env.CRON_REVIEW_SYNC || '0 4 * * 0',
+      // Daily off-peak, clear of the other Steam syncs (wishlist 1am, hltb 2am Sun/Wed,
+      // library 3am). Capped at 50 games/run, so a fresh wishlist drains over a few nights.
+      cronSteamPlaytimeSync: process.env.CRON_STEAM_PLAYTIME_SYNC || '30 2 * * *',
       cronPriceHistoryBackfill: process.env.CRON_PRICE_HISTORY_BACKFILL || '0 5 * * *',
       cronMetadataRefresh: process.env.CRON_METADATA_REFRESH || '0 6 * * *',
       alertThrottleHours: parseInt(process.env.ALERT_THROTTLE_HOURS || '24', 10),

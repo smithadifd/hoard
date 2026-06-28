@@ -13,3 +13,10 @@ export type PlaytimeSource = 'hltb' | 'steam_reviews';
  * sample. Mirrors the HLTB give-up policy.
  */
 export const STEAM_PLAYTIME_GIVE_UP_MISSES = 3;
+
+/**
+ * Require at least this many usable review playtimes before trusting the median.
+ * Below this the sample is too noisy to be honest, so callers mark a miss instead.
+ * Shared by the on-demand fetch route and the background backfill so they agree.
+ */
+export const STEAM_PLAYTIME_MIN_SAMPLE = 20;

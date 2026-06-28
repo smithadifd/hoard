@@ -3,14 +3,11 @@ import { getDb } from '@/lib/db/index';
 import { games } from '@/lib/db/schema';
 import { getSteamClient } from '@/lib/steam/client';
 import { updateGameSteamPlaytime, STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
+import { STEAM_PLAYTIME_MIN_SAMPLE } from '@/lib/playtimeSource';
 import { computePlaytimeStats } from '@/lib/utils/playtime';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiNotFound, apiValidationError } from '@/lib/utils/api';
 import { gameIdSchema } from '@/lib/validations';
-
-// Require at least this many usable review playtimes before trusting the median.
-// Below this the sample is too noisy to be honest, so we mark a miss instead.
-const MIN_SAMPLE_SIZE = 20;
 
 /**
  * POST /api/games/:id/steam-playtime-fetch
@@ -72,7 +69,7 @@ export async function POST(
     const playtimes = await getSteamClient().getReviewPlaytimes(game.steamAppId);
     const stats = playtimes === null ? null : computePlaytimeStats(playtimes);
 
-    if (stats && stats.sampleSize >= MIN_SAMPLE_SIZE) {
+    if (stats && stats.sampleSize >= STEAM_PLAYTIME_MIN_SAMPLE) {
       updateGameSteamPlaytime(game.id, stats);
       return apiSuccess({
         steamPlaytimeMedian: stats.medianHours,

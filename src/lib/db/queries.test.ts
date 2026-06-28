@@ -328,6 +328,28 @@ describe('upsertUserGame', () => {
     expect(row?.isWishlisted).toBe(true);
     expect(row?.wishlistedLocally).toBe(false);
   });
+
+  it('captures wishlistedAt set-if-null: keeps the earliest date, never overwrites', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    // First sync records the true Steam wishlist-add date.
+    upsertUserGame(gameId, { isWishlisted: true, wishlistedAt: '2023-11-14T22:13:20.000Z' }, 'default');
+    // A later sync reports a different date_added — must NOT overwrite the stored value.
+    upsertUserGame(gameId, { isWishlisted: true, wishlistedAt: '2025-01-01T00:00:00.000Z' }, 'default');
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.wishlistedAt).toBe('2023-11-14T22:13:20.000Z');
+  });
+
+  it('backfills wishlistedAt when the stored value is null', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    // Pre-existing row with no captured date (e.g. predates the column).
+    upsertUserGame(gameId, { isWishlisted: true }, 'default');
+    // Next sync supplies the date — fills the null.
+    upsertUserGame(gameId, { isWishlisted: true, wishlistedAt: '2023-11-14T22:13:20.000Z' }, 'default');
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.wishlistedAt).toBe('2023-11-14T22:13:20.000Z');
+  });
 });
 
 describe('updateUserGame', () => {
