@@ -443,7 +443,12 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         };
       });
       const { inAppDelivered, discordDelivered } = await emitNotification({
-        category: 'deal-digest',
+        // Route under 'deal-individual', not 'deal-digest': these are individual new-ATL deals
+        // condensed only for *presentation*. They must honor the user's individual-deal channel
+        // toggle, so disabling the (lower-signal) still-at-ATL digest never silences a sale's new
+        // lows. Both categories map to the same in-app type and quiet-hours set, so only routing
+        // changes — the digest rendering (modal + embed via metadata.games) is unaffected.
+        category: 'deal-individual',
         userId: effectiveUserId,
         inApp: buildDigestInApp(burstGames, 'new'),
         discord: () => discord.sendAtlDigest(burstGames, 'new'),
