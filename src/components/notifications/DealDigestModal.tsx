@@ -55,10 +55,10 @@ export function DealDigestModal({ games, onClose }: DealDigestModalProps) {
           <div className="flex items-start justify-between border-b border-white/[0.06] px-5 pt-5 pb-4">
             <div>
               <DialogPrimitive.Title className="text-base font-semibold text-foreground">
-                {games?.length ?? 0} game{(games?.length ?? 0) === 1 ? '' : 's'} still at all-time low
+                {games?.length ?? 0} game{(games?.length ?? 0) === 1 ? '' : 's'} at all-time low
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-0.5 text-xs text-muted-foreground">
-                Still discounted at their lowest tracked price.
+                At their lowest tracked price.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close
