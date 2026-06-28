@@ -10,6 +10,7 @@ vi.mock('@/lib/auth-helpers', () => ({
 vi.mock('@/lib/db/queries', () => ({
   getAllSettings: vi.fn(),
   setSetting: vi.fn(),
+  recomputeAllLatestDealScores: vi.fn(),
 }));
 
 import { getAllSettings, setSetting } from '@/lib/db/queries';
