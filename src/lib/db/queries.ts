@@ -1115,8 +1115,14 @@ export function getEnrichedGames(
   const conditionsWithoutDataFilters = [...conditions];
 
   if (filters.requireCompleteData) {
+    // A game is "deal-ready" when it has a price to judge and a review to anchor
+    // quality — enough to inform a buy/wait decision. HLTB is intentionally NOT
+    // required: many released games (and every unreleased one) will never get an
+    // HLTB match, and hiding a priced, well-reviewed sale for a gap we can't fill
+    // buries real opportunities. Such games still surface, but with a
+    // low-confidence deal badge (see GameCard / the game detail page) so the
+    // missing $/hr value signal is disclosed rather than hidden.
     conditions.push(sql`${games.reviewScore} IS NOT NULL`);
-    conditions.push(sql`${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0`);
     conditions.push(sql`${games.id} IN (SELECT ps.game_id FROM price_snapshots ps)`);
   }
 
