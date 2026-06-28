@@ -68,6 +68,9 @@ import {
   getPreOwnershipState,
   getGamesForTriage,
   getDealScoreDistribution,
+  updateGameHltbData,
+  recomputeLatestSnapshotDealScore,
+  recomputeAllLatestDealScores,
 } from './queries';
 
 beforeEach(() => {
@@ -545,6 +548,52 @@ describe('getEnrichedGames — requireCompleteData (deal-ready gate)', () => {
 
     const result = getEnrichedGames({ view: 'wishlist', requireCompleteData: true }, undefined, undefined, 'default');
     expect(result.games.map((g) => g.title)).not.toContain('No Review');
+  });
+});
+
+describe('recomputeLatestSnapshotDealScore (deal-score sort key ↔ live badge)', () => {
+  it('refreshes a stale stored score to match the live badge when HLTB lands after the snapshot', () => {
+    const id = seedGame(testDb, { steamAppId: 910, title: 'Late HLTB', reviewScore: 95, hltbMain: null });
+    seedUserGame(testDb, id, { isWishlisted: true, personalInterest: 3 });
+    // Snapshot written before HLTB matched — store a deliberately stale, value-neutral score.
+    seedPriceSnapshot(testDb, id, {
+      priceCurrent: 6.49, priceRegular: 9.99, historicalLowPrice: 6.49, isHistoricalLow: true, dealScore: 50,
+    });
+
+    // HLTB matches later; the wired update path recomputes the latest snapshot's stored score.
+    updateGameHltbData(id, { hltbId: 123, hltbMain: 2.44 }, false);
+
+    const live = getEnrichedGames({ view: 'wishlist' }, undefined, undefined, 'default').games.find((g) => g.id === id);
+    const stored = getLatestPriceSnapshots([id]).get(id);
+    expect(stored?.dealScore).toBe(live?.dealScore); // sort key now equals the badge
+    expect(stored?.dealScore).not.toBe(50); // no longer the stale value
+  });
+
+  it('does nothing on an HLTB miss (HLTB unchanged → score unchanged)', () => {
+    const id = seedGame(testDb, { steamAppId: 913, title: 'Miss', reviewScore: 90, hltbMain: null });
+    seedUserGame(testDb, id, { isWishlisted: true });
+    seedPriceSnapshot(testDb, id, { priceCurrent: 5, dealScore: 42 });
+
+    updateGameHltbData(id, {}, true); // miss → backoff, no enrichment
+
+    expect(getLatestPriceSnapshots([id]).get(id)?.dealScore).toBe(42);
+  });
+
+  it('recomputeAllLatestDealScores returns the count of games whose stored score changed', () => {
+    const stale = seedGame(testDb, { steamAppId: 911, title: 'Stale', reviewScore: 90, hltbMain: 5 });
+    seedUserGame(testDb, stale, { isWishlisted: true });
+    seedPriceSnapshot(testDb, stale, {
+      priceCurrent: 5, priceRegular: 10, historicalLowPrice: 5, isHistoricalLow: true, dealScore: 1,
+    });
+
+    const fresh = seedGame(testDb, { steamAppId: 912, title: 'Fresh', reviewScore: 90, hltbMain: 5 });
+    seedUserGame(testDb, fresh, { isWishlisted: true });
+    seedPriceSnapshot(testDb, fresh, {
+      priceCurrent: 5, priceRegular: 10, historicalLowPrice: 5, isHistoricalLow: true, dealScore: 1,
+    });
+    recomputeLatestSnapshotDealScore(fresh); // already fresh going in
+
+    expect(recomputeAllLatestDealScores()).toBe(1); // only the stale game changes
   });
 });
 
