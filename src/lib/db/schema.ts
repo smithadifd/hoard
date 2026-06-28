@@ -88,6 +88,11 @@ export const userGames = sqliteTable('user_games', {
   // Hoard-only wishlist: true = wishlisted in Hoard but NOT on the user's Steam wishlist.
   // Survives Steam wishlist sync auto-removal; cleared on reconciliation if it later appears on Steam.
   wishlistedLocally: integer('wishlisted_locally', { mode: 'boolean' }).notNull().default(false),
+  // True Steam wishlist-add date (Unix date_added → ISO), captured from the wishlist sync.
+  // Set-if-null so it stays stable across syncs. NULL for Hoard-only/local wishlist entries
+  // (never on Steam) and for rows predating this column until the next wishlist sync backfills it.
+  // The only honest source of wishlist age — created_at reflects Hoard's lifetime, not the wishlist's.
+  wishlistedAt: text('wishlisted_at'),
   autoAlertDisabled: integer('auto_alert_disabled', { mode: 'boolean' }).default(false), // Opt out of auto ATL deal alerts
   lastAutoAlertAt: text('last_auto_alert_at'), // Throttle tracking for auto ATL deal alerts
   // Playtime from Steam
