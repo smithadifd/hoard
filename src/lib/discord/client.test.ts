@@ -171,6 +171,49 @@ describe('DiscordClient', () => {
     });
   });
 
+  describe('sendAtlDigest', () => {
+    beforeEach(() => {
+      mockGetConfig.mockReturnValue({
+        discordWebhookUrl: 'https://discord.com/api/webhooks/123/abc',
+      } as never);
+    });
+
+    const games = [
+      { title: 'Game A', currentPrice: 4.99, regularPrice: 9.99, discountPercent: 50, store: 'Steam', storeUrl: 'https://store/a' },
+      { title: 'Game B', currentPrice: 0, regularPrice: 19.99, discountPercent: 100, store: 'Steam', storeUrl: 'https://store/b' },
+    ];
+
+    it('frames a sale-day burst as "Just Hit All-Time Low" in green', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+      await client.sendAtlDigest(games, 'new');
+
+      const embed = JSON.parse(mockFetch.mock.calls[0][1]!.body as string).embeds[0];
+      expect(embed.title).toContain('Just Hit All-Time Low');
+      expect(embed.title).toContain('(2 games)');
+      expect(embed.color).toBe(0x22c55e); // Green — matches the new-ATL accent
+      expect(embed.description).toContain('Game A');
+      expect(embed.description).toContain('Game B');
+    });
+
+    it('frames the daily roundup as "Still at All-Time Low" in gray (default kind)', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+      await client.sendAtlDigest(games); // kind defaults to 'still'
+
+      const embed = JSON.parse(mockFetch.mock.calls[0][1]!.body as string).embeds[0];
+      expect(embed.title).toContain('Still at All-Time Low');
+      expect(embed.color).toBe(0x6b7280); // Gray — lower-signal roundup
+    });
+
+    it('returns true without sending when the list is empty', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+      const result = await client.sendAtlDigest([], 'new');
+      expect(result).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendBackupNotification', () => {
     it('skips success notifications', async () => {
       const result = await client.sendBackupNotification({ success: true });
