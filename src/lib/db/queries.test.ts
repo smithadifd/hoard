@@ -514,6 +514,40 @@ describe('getEnrichedGames', () => {
   });
 });
 
+describe('getEnrichedGames — requireCompleteData (deal-ready gate)', () => {
+  // The wishlist's default gate: a game is "deal-ready" when it has a price to
+  // judge and a review to anchor quality. HLTB is optional — a priced, reviewed
+  // deal must not be hidden just because HLTB has no match (it surfaces with a
+  // low-confidence badge instead, driven by dataCompleteness).
+  it('shows a priced + reviewed game that is missing HLTB, flagged not-full', () => {
+    const id = seedGame(testDb, { steamAppId: 900, title: 'No HLTB Deal', reviewScore: 92, hltbMain: null });
+    seedUserGame(testDb, id, { isWishlisted: true });
+    seedPriceSnapshot(testDb, id, { priceCurrent: 9.99, discountPercent: 60 });
+
+    const result = getEnrichedGames({ view: 'wishlist', requireCompleteData: true }, undefined, undefined, 'default');
+    expect(result.games.map((g) => g.title)).toContain('No HLTB Deal');
+    const game = result.games.find((g) => g.title === 'No HLTB Deal');
+    expect(game?.dataCompleteness).not.toBe('full'); // drives the low-confidence badge
+  });
+
+  it('hides a wishlisted game with no price snapshot under the gate', () => {
+    const id = seedGame(testDb, { steamAppId: 901, title: 'No Price', reviewScore: 88, hltbMain: 12 });
+    seedUserGame(testDb, id, { isWishlisted: true });
+
+    const result = getEnrichedGames({ view: 'wishlist', requireCompleteData: true }, undefined, undefined, 'default');
+    expect(result.games.map((g) => g.title)).not.toContain('No Price');
+  });
+
+  it('hides a priced game with no review under the gate', () => {
+    const id = seedGame(testDb, { steamAppId: 902, title: 'No Review', reviewScore: null, hltbMain: 12 });
+    seedUserGame(testDb, id, { isWishlisted: true });
+    seedPriceSnapshot(testDb, id, { priceCurrent: 19.99 });
+
+    const result = getEnrichedGames({ view: 'wishlist', requireCompleteData: true }, undefined, undefined, 'default');
+    expect(result.games.map((g) => g.title)).not.toContain('No Review');
+  });
+});
+
 describe('value received (owned games)', () => {
   it('populates the time-lens tier for an owned game with no recorded price', () => {
     const gameId = seedGame(testDb, { steamAppId: 700, title: 'Hades', reviewScore: 96, hltbMain: 22 });
