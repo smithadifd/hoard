@@ -15,6 +15,7 @@ export async function register() {
     const { syncWishlist } = await import('@/lib/sync/wishlist');
     const { syncHltb } = await import('@/lib/sync/hltb');
     const { syncReviews } = await import('@/lib/sync/reviews');
+    const { syncSteamPlaytime } = await import('@/lib/sync/steam-playtime');
     const { syncPriceHistoryBackfill } = await import('@/lib/sync/price-history-backfill');
     const { refreshMetadata } = await import('@/lib/sync/metadata');
     const { runDatabaseBackup } = await import('@/lib/sync/backup');
@@ -40,6 +41,7 @@ export async function register() {
     registerTask('wishlist-sync', config.cronWishlistSync, skipWhileDraining('wishlist-sync', () => syncWishlist()));
     registerTask('hltb-sync', config.cronHltbSync, skipWhileDraining('hltb-sync', () => syncHltb()));
     registerTask('review-enrichment', config.cronReviewSync, skipWhileDraining('review-enrichment', () => syncReviews()));
+    registerTask('steam-playtime', config.cronSteamPlaytimeSync, skipWhileDraining('steam-playtime', () => syncSteamPlaytime()));
     registerTask('price-history-backfill', config.cronPriceHistoryBackfill, skipWhileDraining('price-history-backfill', () => syncPriceHistoryBackfill()));
     registerTask('metadata-refresh', config.cronMetadataRefresh, skipWhileDraining('metadata-refresh', () => refreshMetadata()));
 

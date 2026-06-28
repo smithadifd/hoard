@@ -434,6 +434,7 @@ export interface UpsertUserGameData {
   isWatchlisted?: boolean;
   isIgnored?: boolean;
   wishlistedLocally?: boolean;
+  wishlistedAt?: string; // ISO; set-if-null only (see upsertUserGame) — true Steam wishlist-add date
   playtimeMinutes?: number;
   playtimeRecentMinutes?: number;
   lastPlayed?: string;
@@ -455,6 +456,7 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
       isWatchlisted: data.isWatchlisted ?? false,
       isIgnored: data.isIgnored ?? false,
       wishlistedLocally: data.wishlistedLocally ?? false,
+      wishlistedAt: data.wishlistedAt,
       playtimeMinutes: data.playtimeMinutes ?? 0,
       playtimeRecentMinutes: data.playtimeRecentMinutes ?? 0,
       lastPlayed: data.lastPlayed,
@@ -472,6 +474,10 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
         ...(data.isWatchlisted !== undefined && { isWatchlisted: data.isWatchlisted }),
         ...(data.isIgnored !== undefined && { isIgnored: data.isIgnored }),
         ...(data.wishlistedLocally !== undefined && { wishlistedLocally: data.wishlistedLocally }),
+        // Set-if-null: keep the earliest captured date; never overwrite a stored value.
+        ...(data.wishlistedAt !== undefined && {
+          wishlistedAt: sql`COALESCE(${userGames.wishlistedAt}, ${data.wishlistedAt})`,
+        }),
         ...(data.playtimeMinutes !== undefined && { playtimeMinutes: data.playtimeMinutes }),
         ...(data.playtimeRecentMinutes !== undefined && { playtimeRecentMinutes: data.playtimeRecentMinutes }),
         ...(data.lastPlayed !== undefined && { lastPlayed: data.lastPlayed }),
@@ -2245,6 +2251,36 @@ export function setHltbExcluded(gameId: number, excluded: boolean): void {
     })
     .where(eq(games.id, gameId))
     .run();
+}
+
+/**
+ * Games eligible for a Steam-review playtime backfill: currently wishlisted (and
+ * not locally removed), no median stored yet, and under the give-up miss cap.
+ * Scoped to the wishlist (not the whole library) to keep Steam volume bounded —
+ * the wishlist is where playtime divergence informs a buy/wait/drop decision.
+ * Ordered by reviewCount desc so the most-reviewed (most reliable) games sample first.
+ * Mirrors {@link getGamesForHltbSync}.
+ */
+export function getGamesForSteamPlaytimeSync(): Array<{ id: number; title: string; steamAppId: number }> {
+  const db = getDb();
+  return db
+    .selectDistinct({
+      id: games.id,
+      title: games.title,
+      steamAppId: games.steamAppId,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.isWishlisted, true),
+        isNull(userGames.wishlistRemovedAt),
+        isNull(games.steamPlaytimeMedian),
+        sql`COALESCE(${games.steamPlaytimeMissCount}, 0) < ${STEAM_PLAYTIME_GIVE_UP_MISSES}`,
+      )
+    )
+    .orderBy(desc(games.reviewCount))
+    .all();
 }
 
 /**

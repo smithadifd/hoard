@@ -37,6 +37,14 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
     const appIds = wishlistEntries.map((e) => e.appid);
     const total = wishlistEntries.length;
 
+    // Steam's date_added is the only honest source of wishlist age (Hoard's created_at
+    // reflects when the row entered Hoard, not when it was wishlisted). Capture it here;
+    // upsertUserGame stores it set-if-null so it stays stable across syncs.
+    const wishlistedAtByAppId = new Map<number, string>();
+    for (const e of wishlistEntries) {
+      if (e.date_added) wishlistedAtByAppId.set(e.appid, new Date(e.date_added * 1000).toISOString());
+    }
+
     // Fetch locally-removed app IDs so sync does not re-add them
     const db = getDb();
     const removedRows = db
@@ -76,7 +84,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
         // Game exists — flag as wishlisted. Clear wishlistedLocally: it's now on
         // Steam's wishlist, so reconcile a previously Hoard-only entry into a
         // normal synced one.
-        upsertUserGame(found.id, { isWishlisted: true, wishlistedLocally: false }, effectiveUserId);
+        upsertUserGame(found.id, { isWishlisted: true, wishlistedLocally: false, wishlistedAt: wishlistedAtByAppId.get(entry.appid) }, effectiveUserId);
         processed++;
         onProgress?.(processed, total, { gameName: found.title });
       } else {
@@ -113,7 +121,7 @@ export async function syncWishlist(onProgress?: ProgressCallback, signal?: Abort
           isReleased: details?.release_date?.coming_soon === true ? false : details?.release_date ? true : undefined,
         });
 
-        upsertUserGame(gameId, { isWishlisted: true, wishlistedLocally: false }, effectiveUserId);
+        upsertUserGame(gameId, { isWishlisted: true, wishlistedLocally: false, wishlistedAt: wishlistedAtByAppId.get(appId) }, effectiveUserId);
 
         // Enrich with review data
         const reviews = await client.getReviewSummary(appId);

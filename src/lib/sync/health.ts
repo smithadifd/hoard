@@ -16,6 +16,7 @@ export const SUCCESS_RATE_THRESHOLDS: Record<string, number> = {
   itad_prices: 0.50,                 // Batch API, partial failures rare
   'price-history-backfill': 0.50,    // Most failures = transient ITAD blips; <50% means systemic
   metadata_refresh: 0.50,            // Two Steam calls/game; same regime as reviews
+  steam_playtime: 0.30,              // Sample-based; niche/unreleased games miss the 20-review bar
 };
 
 // HLTB's queue is a retry-backoff stream. When it drains to just the hard-to-match

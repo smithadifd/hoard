@@ -1,0 +1,1 @@
+ALTER TABLE `user_games` ADD `wishlisted_at` text;
