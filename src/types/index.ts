@@ -30,6 +30,14 @@ export interface EnrichedGame {
   hltbCompletionist?: number;
   hltbManual?: boolean;
   hltbMissCount?: number;
+  /** Median total playtime (hours) from sampled Steam reviewers (SteamDB-style). */
+  steamPlaytimeMedian?: number;
+  /** Number of reviews the Steam playtime median is drawn from. */
+  steamPlaytimeSampleSize?: number;
+  /** Consecutive failed/too-small Steam review samples (detail-view auto-fetch guard). */
+  steamPlaytimeMissCount?: number;
+  /** Which playtime basis feeds $/hour scoring for this game. */
+  playtimeSource?: 'hltb' | 'steam_reviews';
 
   // User relationship
   isOwned: boolean;

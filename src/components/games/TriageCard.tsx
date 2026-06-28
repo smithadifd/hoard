@@ -2,9 +2,11 @@
 
 import { useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Star, Clock, ChevronLeft, ChevronRight, Ban, HelpCircle } from 'lucide-react';
+import { Star, Clock, Users, ChevronLeft, ChevronRight, Ban, HelpCircle } from 'lucide-react';
 import { GameImage } from './GameImage';
 import { TriageHltbEditor } from './TriageHltbEditor';
+import { SteamPlaytimeAutoFetch } from './SteamPlaytimeAutoFetch';
+import { STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/playtimeSource';
 import type { TriageGame } from '@/app/triage/types';
 
 interface TriageCardProps {
@@ -140,6 +142,15 @@ export function TriageCard({
                 </Link>
               </>
             )}
+            {game.steamPlaytimeMedian !== null && game.steamPlaytimeMedian > 0 && (
+              <>
+                <span>&middot;</span>
+                <span className="flex items-center gap-0.5" title={`Median of ${game.steamPlaytimeSampleSize ?? 0} Steam reviewers' playtime`}>
+                  <Users className="h-3.5 w-3.5" />
+                  ~{game.steamPlaytimeMedian}h
+                </span>
+              </>
+            )}
             {game.currentPrice !== null && (
               <>
                 <span>&middot;</span>
@@ -156,12 +167,20 @@ export function TriageCard({
         </div>
 
         {hltbMode ? (
-          /* HLTB inline editor */
-          <TriageHltbEditor
-            gameId={game.id}
-            gameTitle={game.title}
-            onSaved={() => onHltbSaved?.(game.id)}
-          />
+          /* HLTB inline editor — plus a best-effort Steam-review median fetch so the
+             $/hour basis can fall back to it when HLTB stays unmatched. Only the
+             current card is mounted in this view, so this fetches one at a time. */
+          <>
+            {game.steamPlaytimeMedian === null &&
+              (game.steamPlaytimeMissCount ?? 0) < STEAM_PLAYTIME_GIVE_UP_MISSES && (
+                <SteamPlaytimeAutoFetch gameId={game.id} refreshOnSuccess={false} />
+              )}
+            <TriageHltbEditor
+              gameId={game.id}
+              gameTitle={game.title}
+              onSaved={() => onHltbSaved?.(game.id)}
+            />
+          </>
         ) : (
           <>
             {/* Star Rating */}

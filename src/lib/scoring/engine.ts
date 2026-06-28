@@ -17,6 +17,9 @@ import type {
   DealScore,
 } from './types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from './types';
+import type { PlaytimeSource } from '@/lib/playtimeSource';
+
+export type { PlaytimeSource };
 
 interface ScoringInput {
   currentPrice: number;
@@ -26,6 +29,24 @@ interface ScoringInput {
   reviewDescription?: string;
   hltbMainHours: number | null;
   personalInterest: number;        // 1-5
+}
+
+/**
+ * Resolve the playtime (hours) that should feed $/hour scoring for a game,
+ * honouring the user's per-game source preference. Each source falls back to the
+ * other when its own value is missing, so a preference for one never zeroes out
+ * scoring just because that source hasn't been fetched yet.
+ */
+export function getEffectivePlaytimeHours(input: {
+  playtimeSource: PlaytimeSource | string | null | undefined;
+  hltbMain: number | null | undefined;
+  steamPlaytimeMedian: number | null | undefined;
+}): number | null {
+  const hltb = input.hltbMain ?? null;
+  const steam = input.steamPlaytimeMedian ?? null;
+  return input.playtimeSource === 'steam_reviews'
+    ? (steam ?? hltb)
+    : (hltb ?? steam);
 }
 
 export function calculateDealScore(

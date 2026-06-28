@@ -1,7 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { calculateDealScore } from './engine';
+import { calculateDealScore, getEffectivePlaytimeHours } from './engine';
 import { DEFAULT_WEIGHTS } from './types';
 import type { ScoringWeights, ScoringThresholds } from './types';
+
+describe('getEffectivePlaytimeHours', () => {
+  it('uses HLTB when source is hltb (default)', () => {
+    expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: 20, steamPlaytimeMedian: 35 })).toBe(20);
+  });
+
+  it('uses the Steam median when source is steam_reviews', () => {
+    expect(getEffectivePlaytimeHours({ playtimeSource: 'steam_reviews', hltbMain: 20, steamPlaytimeMedian: 35 })).toBe(35);
+  });
+
+  it('falls back to the Steam median when HLTB is missing (gap-fill)', () => {
+    expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: 35 })).toBe(35);
+  });
+
+  it('falls back to HLTB when the chosen Steam median is missing', () => {
+    expect(getEffectivePlaytimeHours({ playtimeSource: 'steam_reviews', hltbMain: 20, steamPlaytimeMedian: null })).toBe(20);
+  });
+
+  it('returns null when neither source has data', () => {
+    expect(getEffectivePlaytimeHours({ playtimeSource: 'hltb', hltbMain: null, steamPlaytimeMedian: null })).toBeNull();
+  });
+
+  it('treats an unset/unknown source as hltb', () => {
+    expect(getEffectivePlaytimeHours({ playtimeSource: null, hltbMain: 12, steamPlaytimeMedian: 40 })).toBe(12);
+  });
+});
 
 // Helper to create a base input with sensible defaults
 function makeInput(overrides: Partial<Parameters<typeof calculateDealScore>[0]> = {}) {

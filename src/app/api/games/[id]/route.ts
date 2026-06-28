@@ -1,4 +1,4 @@
-import { getEnrichedGameById, updateUserGame, upsertUserGame, gameExists, updateManualHltbData, setHltbExcluded, getRatedGameCount } from '@/lib/db/queries';
+import { getEnrichedGameById, updateUserGame, upsertUserGame, gameExists, updateManualHltbData, setHltbExcluded, setPlaytimeSource, getRatedGameCount } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
 import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
@@ -73,8 +73,9 @@ export async function PATCH(
       return apiValidationError('No valid fields to update');
     }
 
-    // Separate HLTB fields (games table) from user fields (user_games table)
-    const { hltbMain, hltbMainExtra, hltbCompletionist, hltbExcluded, ...userFields } = parsed.data;
+    // Separate HLTB fields (games table) and the playtime-source preference
+    // (user_games, with its own recompute) from the plain user fields.
+    const { hltbMain, hltbMainExtra, hltbCompletionist, hltbExcluded, playtimeSource, ...userFields } = parsed.data;
     const hasHltbFields = hltbMain !== undefined || hltbMainExtra !== undefined || hltbCompletionist !== undefined;
 
     if (hltbExcluded !== undefined) {
@@ -85,6 +86,18 @@ export async function PATCH(
         hltbMainExtra: hltbMainExtra ?? null,
         hltbCompletionist: hltbCompletionist ?? null,
       });
+    }
+
+    if (playtimeSource !== undefined) {
+      // Create a baseline user_games row first if needed (e.g. a looked-up game),
+      // so the preference always lands.
+      if (!setPlaytimeSource(idResult.data.id, playtimeSource, userId)) {
+        if (!gameExists(idResult.data.id)) {
+          return apiNotFound('Game');
+        }
+        upsertUserGame(idResult.data.id, {}, userId);
+        setPlaytimeSource(idResult.data.id, playtimeSource, userId);
+      }
     }
 
     if (Object.keys(userFields).length > 0) {

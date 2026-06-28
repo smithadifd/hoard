@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink, Users } from 'lucide-react';
 import { getEnrichedGameById, getPriceAlertForGame, getScoringConfig } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { calculateDealScore } from '@/lib/scoring/engine';
@@ -20,8 +20,10 @@ import { LookupModeBanner } from '@/components/games/LookupModeBanner';
 import { ITADOverviewCard } from '@/components/games/ITADOverviewCard';
 import { AddToWishlistCTA } from '@/components/games/AddToWishlistCTA';
 import { HltbAutoFetch } from '@/components/games/HltbAutoFetch';
+import { SteamPlaytimeAutoFetch } from '@/components/games/SteamPlaytimeAutoFetch';
+import { PlaytimeSourceToggle } from '@/components/games/PlaytimeSourceToggle';
 import { EnsurePriceHistory } from '@/components/games/EnsurePriceHistory';
-import { PRICE_HISTORY_GIVE_UP_MISSES } from '@/lib/db/queries';
+import { PRICE_HISTORY_GIVE_UP_MISSES, STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,6 +75,13 @@ export default async function GameDetailPage({
       {isLookupMode && game.hltbMain === undefined && (
         <HltbAutoFetch gameId={game.id} />
       )}
+
+      {/* Steam-review playtime auto-fetch trigger (invisible, once per game until
+          a median lands or we give up). Best-effort gap-fill for the $/hour basis. */}
+      {game.steamPlaytimeMedian === undefined &&
+        (game.steamPlaytimeMissCount ?? 0) < STEAM_PLAYTIME_GIVE_UP_MISSES && (
+          <SteamPlaytimeAutoFetch gameId={game.id} />
+        )}
 
       {/* Price-history auto-backfill trigger (invisible, once per game) */}
       {eligibleForHistoryBackfill && <EnsurePriceHistory gameId={game.id} />}
@@ -167,6 +176,27 @@ export default async function GameDetailPage({
                   {game.hltbMainExtra !== undefined && game.hltbMainExtra > 0 && (
                     <div className="text-xs text-muted-foreground">
                       {game.hltbMainExtra}h completionist
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {game.steamPlaytimeMedian !== undefined && game.steamPlaytimeMedian > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <div className="text-sm font-medium">
+                    ~{game.steamPlaytimeMedian}h median play
+                    {game.playtimeSource === 'steam_reviews' && (
+                      <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary align-middle">
+                        $/hr basis
+                      </span>
+                    )}
+                  </div>
+                  {game.steamPlaytimeSampleSize !== undefined && (
+                    <div className="text-xs text-muted-foreground">
+                      from {game.steamPlaytimeSampleSize.toLocaleString()} reviews
                     </div>
                   )}
                 </div>
@@ -388,6 +418,17 @@ export default async function GameDetailPage({
               hltbCompletionist={game.hltbCompletionist}
               hltbManual={game.hltbManual}
               hltbMissCount={game.hltbMissCount}
+            />
+          )}
+
+          {/* Playtime-source toggle — pick which playtime drives $/hour. Shown once
+              a Steam-review median exists, so there's a genuine choice to make. */}
+          {!isLookupMode && game.steamPlaytimeMedian !== undefined && (
+            <PlaytimeSourceToggle
+              gameId={game.id}
+              source={game.playtimeSource ?? 'hltb'}
+              hltbMain={game.hltbMain}
+              steamPlaytimeMedian={game.steamPlaytimeMedian}
             />
           )}
 

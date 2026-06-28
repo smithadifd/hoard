@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Star, Clock, SkipForward, Library, Heart, Ban, AlertTriangle } from 'lucide-react';
+import { Star, Clock, Users, SkipForward, Library, Heart, Ban, AlertTriangle } from 'lucide-react';
 import { GameImage } from './GameImage';
 import { TriageCard } from './TriageCard';
 import { TriageHltbEditor } from './TriageHltbEditor';
@@ -501,6 +501,18 @@ function TriageRow({
               <span className="inline-flex items-center gap-0.5 shrink-0 text-yellow-500/60">
                 <Clock className="h-3 w-3" />
                 <span>?h</span>
+              </span>
+            </>
+          )}
+          {game.steamPlaytimeMedian !== null && game.steamPlaytimeMedian > 0 && (
+            <>
+              <span>&middot;</span>
+              <span
+                className="inline-flex items-center gap-0.5 shrink-0"
+                title={`Median of ${game.steamPlaytimeSampleSize ?? 0} Steam reviewers' playtime`}
+              >
+                <Users className="h-3 w-3" />
+                ~{game.steamPlaytimeMedian}h
               </span>
             </>
           )}

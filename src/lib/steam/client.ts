@@ -16,6 +16,7 @@ import type {
   SteamWishlistEntry,
   SteamAppDetails,
   SteamReviewSummary,
+  SteamReviewPage,
   SteamSearchResult,
 } from './types';
 
@@ -192,6 +193,69 @@ export class SteamClient {
       }
     } catch (err) {
       console.log(`[Steam] getReviewSummary(${appId}): fetch error: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Sample per-review total playtimes for a game from the paginated
+   * /appreviews endpoint. Returns an array of `playtime_forever` values (in
+   * minutes), dropping zero/missing entries, across up to `maxReviews` of the
+   * most-recent reviews (all languages). Returns null on any failure — the
+   * caller decides how to handle a missing sample. Never throws.
+   *
+   * No API key required (Store endpoint). Walks the `cursor` token; stops on an
+   * empty page, a repeated cursor, or once the cap is reached.
+   */
+  async getReviewPlaytimes(appId: number, maxReviews = 200): Promise<number[] | null> {
+    const playtimes: number[] = [];
+    const seenCursors = new Set<string>();
+    let cursor = '*';
+
+    try {
+      while (playtimes.length < maxReviews) {
+        const url =
+          `${STEAM_STORE_BASE}/appreviews/${appId}?json=1&num_per_page=100` +
+          `&filter=recent&language=all&purchase_type=all&cursor=${encodeURIComponent(cursor)}`;
+
+        const response = await this.fetchWithTimeout(url);
+        if (!response.ok) {
+          console.log(`[Steam] getReviewPlaytimes(${appId}): HTTP ${response.status}`);
+          break;
+        }
+
+        const text = await response.text();
+        let data: SteamReviewPage;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.log(`[Steam] getReviewPlaytimes(${appId}): JSON parse failed, response starts with: ${text.substring(0, 100)}`);
+          break;
+        }
+
+        if (!data.success) {
+          console.log(`[Steam] getReviewPlaytimes(${appId}): success=false`);
+          break;
+        }
+
+        const reviews = data.reviews ?? [];
+        if (reviews.length === 0) break;
+
+        for (const review of reviews) {
+          const minutes = review.author?.playtime_forever ?? 0;
+          if (minutes > 0) playtimes.push(minutes);
+        }
+
+        // Advance the cursor; stop if it's missing or repeats (last page).
+        const next = data.cursor;
+        if (!next || seenCursors.has(next)) break;
+        seenCursors.add(next);
+        cursor = next;
+      }
+
+      return playtimes;
+    } catch (err) {
+      console.log(`[Steam] getReviewPlaytimes(${appId}): fetch error: ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }
