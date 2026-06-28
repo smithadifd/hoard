@@ -66,7 +66,7 @@ export function GameCard({ game }: GameCardProps) {
           </div>
         ) : game.dealRating ? (
           <div className="absolute top-2 right-2">
-            <DealIndicator rating={game.dealRating} score={game.dealScore} lowConfidence={game.dataCompleteness === 'minimal'} />
+            <DealIndicator rating={game.dealRating} score={game.dealScore} lowConfidence={game.dataCompleteness !== 'full'} />
           </div>
         ) : null}
 

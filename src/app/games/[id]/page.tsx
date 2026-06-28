@@ -203,6 +203,7 @@ export default async function GameDetailPage({
                       <DealIndicator
                         rating={game.dealRating}
                         score={game.dealScore}
+                        lowConfidence={game.dataCompleteness !== 'full'}
                       />
                     )}
                   </div>

@@ -294,7 +294,7 @@ export function GameFilters({
                 onChange={(e) => updateFilter('requireCompleteData', e.target.value === 'complete')}
                 className="w-full px-2 py-2.5 rounded-md bg-background border border-input text-sm"
               >
-                <option value="complete">Complete data only</option>
+                <option value="complete">Deal-ready only</option>
                 <option value="all">Show all</option>
               </select>
             </div>
