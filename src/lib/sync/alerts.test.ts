@@ -18,11 +18,13 @@ vi.mock('../db/queries', () => ({
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
+  getNotificationPreferences: vi.fn(),
 }));
 
 import { checkPriceAlerts, isNewAtl, alreadyNotifiedForSnapshot, shouldSendDigest, localDateKey } from './alerts';
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
+import { DEFAULT_PREFERENCES } from '../notifications/preferences';
 import {
   getActivePriceAlerts,
   updateAlertLastNotified,
@@ -33,6 +35,7 @@ import {
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
+  getNotificationPreferences,
 } from '../db/queries';
 
 const mockGetConfig = vi.mocked(getEffectiveConfig);
@@ -45,6 +48,7 @@ const mockGetFirstUserId = vi.mocked(getFirstUserId);
 const mockGetAutoAlertCandidates = vi.mocked(getAutoAlertCandidates);
 const mockGetSetting = vi.mocked(getSetting);
 const mockSetSetting = vi.mocked(setSetting);
+const mockGetNotificationPreferences = vi.mocked(getNotificationPreferences);
 const _mockUpdateAutoNotified = vi.mocked(updateAutoAlertLastNotified);
 
 function makeAlert(overrides: Record<string, unknown> = {}) {
@@ -181,6 +185,9 @@ describe('checkPriceAlerts', () => {
     mockGetAlerts.mockReturnValue([]);
     mockGetAutoAlertCandidates.mockReturnValue([]);
     mockGetSetting.mockReturnValue(null);
+    // Dispatch reads delivery prefs; default to all-channels-on (matches the fallback used
+    // when prefs are unreadable), so existing tests behave as before. Routing tests override.
+    mockGetNotificationPreferences.mockReturnValue(DEFAULT_PREFERENCES);
   });
 
   afterEach(() => {
@@ -840,6 +847,59 @@ describe('checkPriceAlerts', () => {
       const pingedTitles = vi.mocked(mockDiscord.sendPriceAlert).mock.calls.map((c) => c[0].title);
       expect(pingedTitles).toEqual(expect.arrayContaining(['Free Game', 'Target Hit']));
       expect(result.stats.succeeded).toBe(5);
+    });
+
+    it('routes the burst under the individual-deal category, not the digest toggle', async () => {
+      // A user who silenced the lower-signal still-at-ATL digest but kept individual deals on
+      // must still hear about a sale's genuinely-new lows. Disable deal-digest, keep deal-individual.
+      withBurstThreshold(3);
+      mockGetNotificationPreferences.mockReturnValue({
+        ...DEFAULT_PREFERENCES,
+        categories: {
+          ...DEFAULT_PREFERENCES.categories,
+          'deal-individual': { inApp: true, discord: true },
+          'deal-digest': { inApp: false, discord: false },
+        },
+      });
+      mockGetAlerts.mockReturnValue([1, 2, 3, 4].map(makeNewAtlAlert));
+      const mockDiscord = makeMockDiscord();
+      mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+      const result = await checkPriceAlerts();
+
+      // Burst still delivers on Discord because it follows the (enabled) individual-deal routing.
+      expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith(expect.any(Array), 'new');
+      expect(result.stats.succeeded).toBe(4);
+    });
+
+    it('still suppresses the once-daily still-at-ATL digest when the digest category is off', async () => {
+      // Counterpart to the above: the genuine roundup digest *should* honor the deal-digest toggle.
+      mockGetNotificationPreferences.mockReturnValue({
+        ...DEFAULT_PREFERENCES,
+        categories: {
+          ...DEFAULT_PREFERENCES.categories,
+          'deal-digest': { inApp: false, discord: false },
+        },
+      });
+      mockGetAlerts.mockReturnValue([
+        makeAlert({
+          currentPrice: 4.99,
+          targetPrice: null,
+          notifyOnThreshold: false,
+          notifyOnAllTimeLow: true,
+          isHistoricalLow: true,
+          historicalLowPrice: 4.99,
+          prevHistoricalLowPrice: 4.99, // still at ATL → daily digest path
+        }),
+      ]);
+      const mockDiscord = makeMockDiscord();
+      mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+      await checkPriceAlerts();
+
+      // createNotification is unmocked (throws → in-app false) and Discord routing is off, so the
+      // still-at-ATL digest reaches no channel.
+      expect(mockDiscord.sendAtlDigest).not.toHaveBeenCalled();
     });
 
     it('uses a default threshold of 8 when the setting is unset', async () => {

@@ -52,6 +52,8 @@ To handle this, a single run that produces **`atl_burst_threshold` or more** new
 
 Free games and explicit **threshold hits are never condensed** — they're rare and high-signal (a giveaway, or a price *you* set), so they always ping individually even mid-burst. Each condensed alert still records its own `lastNotifiedAt`, so per-game throttle/dedup is unaffected; the next run won't re-fire. Below the threshold, new ATLs ping individually as before.
 
+The burst summary is routed under the **individual** deal category, not the digest category, even though it renders as a single condensed message. These are genuine new lows — only the *presentation* is batched — so they follow the same per-channel toggle as individual deal alerts. Disabling the (lower-signal) once-daily still-at-ATL digest never silences a sale's new ATLs.
+
 ## Auto-ATL alerts
 
 In addition to the manual watchlist, Hoard can automatically alert on any wishlisted game that reaches its all-time low and has a deal score of 55 or above. This is controlled by the `auto_atl_deal_alerts` setting (Settings → Notifications), which defaults to enabled. The same individual-vs-digest split applies: genuinely new ATLs and free games get individual alerts; games still sitting at a known ATL go into the digest.
