@@ -69,6 +69,8 @@ import {
   getGamesForTriage,
   getDealScoreDistribution,
   updateGameHltbData,
+  updateGameSteamPlaytime,
+  setPlaytimeSource,
   recomputeLatestSnapshotDealScore,
   recomputeAllLatestDealScores,
 } from './queries';
@@ -594,6 +596,99 @@ describe('recomputeLatestSnapshotDealScore (deal-score sort key ↔ live badge)'
     recomputeLatestSnapshotDealScore(fresh); // already fresh going in
 
     expect(recomputeAllLatestDealScores()).toBe(1); // only the stale game changes
+  });
+});
+
+describe('playtime-source toggle ($/hour basis ↔ stored deal score)', () => {
+  // Price $20; HLTB 10h → $2.00/h; Steam median 40h → $0.50/h. The two bases give
+  // clearly different $/hour so we can prove the toggle calculates against the
+  // right value each way.
+  function seedToggleGame() {
+    const id = seedGame(testDb, {
+      steamAppId: 920,
+      title: 'Toggle Me',
+      reviewScore: 90,
+      hltbMain: 10,
+      steamPlaytimeMedian: 40,
+      steamPlaytimeSampleSize: 150,
+    });
+    seedUserGame(testDb, id, { isWishlisted: true, personalInterest: 3 });
+    seedPriceSnapshot(testDb, id, {
+      priceCurrent: 20, priceRegular: 40, historicalLowPrice: 20, isHistoricalLow: true, dealScore: 0,
+    });
+    return id;
+  }
+
+  it('defaults to the HLTB basis for $/hour', () => {
+    const id = seedToggleGame();
+    const game = getEnrichedGameById(id, 'default');
+    expect(game?.playtimeSource).toBe('hltb');
+    expect(game?.dollarsPerHour).toBeCloseTo(2.0, 5); // 20 / 10h
+  });
+
+  it('switches $/hour to the Steam-review median when toggled to steam_reviews', () => {
+    const id = seedToggleGame();
+    setPlaytimeSource(id, 'steam_reviews', 'default');
+    const game = getEnrichedGameById(id, 'default');
+    expect(game?.playtimeSource).toBe('steam_reviews');
+    expect(game?.dollarsPerHour).toBeCloseTo(0.5, 5); // 20 / 40h
+  });
+
+  it('reverts $/hour to HLTB when toggled back, and the stored deal score round-trips', () => {
+    const id = seedToggleGame();
+
+    // Live HLTB-basis score (the seeded stored dealScore is a deliberately stale 0).
+    const hltbScore = getEnrichedGameById(id, 'default')?.dealScore;
+
+    setPlaytimeSource(id, 'steam_reviews', 'default');
+    const steamGame = getEnrichedGameById(id, 'default');
+    const steamStored = getLatestPriceSnapshots([id]).get(id)?.dealScore;
+    expect(steamGame?.dollarsPerHour).toBeCloseTo(0.5, 5);
+    // The basis change shifts the value component → a different score, and the
+    // stored sort key tracks the live badge after the toggle.
+    expect(steamStored).toBe(steamGame?.dealScore);
+    expect(steamGame?.dealScore).not.toBe(hltbScore);
+
+    setPlaytimeSource(id, 'hltb', 'default');
+    const backGame = getEnrichedGameById(id, 'default');
+    const backStored = getLatestPriceSnapshots([id]).get(id)?.dealScore;
+    expect(backGame?.playtimeSource).toBe('hltb');
+    expect(backGame?.dollarsPerHour).toBeCloseTo(2.0, 5);
+    expect(backGame?.dealScore).toBe(hltbScore); // live score round-tripped to the original
+    expect(backStored).toBe(backGame?.dealScore); // stored sort key tracks the badge
+  });
+
+  it('falls back to the Steam median for $/hour when HLTB is missing (gap-fill, default source)', () => {
+    const id = seedGame(testDb, {
+      steamAppId: 921, title: 'No HLTB', reviewScore: 90,
+      hltbMain: null, steamPlaytimeMedian: 25, steamPlaytimeSampleSize: 80,
+    });
+    seedUserGame(testDb, id, { isWishlisted: true });
+    seedPriceSnapshot(testDb, id, { priceCurrent: 20, priceRegular: 40, historicalLowPrice: 20, isHistoricalLow: true });
+
+    const game = getEnrichedGameById(id, 'default');
+    expect(game?.playtimeSource).toBe('hltb'); // preference untouched...
+    expect(game?.dollarsPerHour).toBeCloseTo(0.8, 5); // ...but $/hour falls back to 20 / 25h
+  });
+
+  it('updateGameSteamPlaytime recompute lifts the stored score for a steam_reviews game once a median lands', () => {
+    const id = seedGame(testDb, {
+      steamAppId: 922, title: 'Median Later', reviewScore: 90,
+      hltbMain: 10, steamPlaytimeMedian: null,
+    });
+    seedUserGame(testDb, id, { isWishlisted: true, playtimeSource: 'steam_reviews' });
+    seedPriceSnapshot(testDb, id, { priceCurrent: 20, priceRegular: 40, historicalLowPrice: 20, isHistoricalLow: true, dealScore: 0 });
+
+    // Source is steam_reviews but no median yet → falls back to HLTB (10h → $2/h).
+    const before = getEnrichedGameById(id, 'default');
+    expect(before?.dollarsPerHour).toBeCloseTo(2.0, 5);
+
+    // Median lands; the writer recomputes the stored score against the new basis.
+    updateGameSteamPlaytime(id, { medianHours: 40, sampleSize: 150 });
+    const after = getEnrichedGameById(id, 'default');
+    const stored = getLatestPriceSnapshots([id]).get(id)?.dealScore;
+    expect(after?.dollarsPerHour).toBeCloseTo(0.5, 5); // now 20 / 40h
+    expect(stored).toBe(after?.dealScore);
   });
 });
 
