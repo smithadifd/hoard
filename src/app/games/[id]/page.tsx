@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink, Users } from 'lucide-react';
 import { getEnrichedGameById, getPriceAlertForGame, getScoringConfig } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
-import { calculateDealScore } from '@/lib/scoring/engine';
+import { calculateDealScore, getEffectivePlaytimeSource } from '@/lib/scoring/engine';
 import { GameImage } from '@/components/games/GameImage';
 import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
@@ -41,6 +41,16 @@ export default async function GameDetailPage({
 
   const game = getEnrichedGameById(gameId, session.user.id);
   if (!game) notFound();
+
+  // The source that ACTUALLY drives $/hour (may differ from the stored preference
+  // when an HLTB-less released game falls back to the review median). Used to
+  // label the basis honestly in the UI.
+  const effectivePlaytimeSource = getEffectivePlaytimeSource({
+    playtimeSource: game.playtimeSource,
+    hltbMain: game.hltbMain ?? null,
+    steamPlaytimeMedian: game.steamPlaytimeMedian ?? null,
+    isReleased: game.isReleased ?? null,
+  });
 
   // Lookup mode: game exists in DB from a search lookup but not yet in user's library/wishlist.
   // lastViewedAt is stamped by /api/games/lookup on click (both insert and existing-row paths),
@@ -188,7 +198,7 @@ export default async function GameDetailPage({
                 <div>
                   <div className="text-sm font-medium">
                     ~{game.steamPlaytimeMedian}h median play
-                    {game.playtimeSource === 'steam_reviews' && (
+                    {effectivePlaytimeSource === 'steam_reviews' && (
                       <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary align-middle">
                         $/hr basis
                       </span>
@@ -427,6 +437,7 @@ export default async function GameDetailPage({
             <PlaytimeSourceToggle
               gameId={game.id}
               source={game.playtimeSource ?? 'hltb'}
+              effectiveSource={effectivePlaytimeSource}
               hltbMain={game.hltbMain}
               steamPlaytimeMedian={game.steamPlaytimeMedian}
             />

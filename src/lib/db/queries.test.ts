@@ -671,6 +671,18 @@ describe('playtime-source toggle ($/hour basis ↔ stored deal score)', () => {
     expect(game?.dollarsPerHour).toBeCloseTo(0.8, 5); // ...but $/hour falls back to 20 / 25h
   });
 
+  it('does NOT borrow the review median for an unreleased game (no HLTB, isReleased=false)', () => {
+    const id = seedGame(testDb, {
+      steamAppId: 923, title: 'Not Out Yet', reviewScore: 90,
+      hltbMain: null, steamPlaytimeMedian: 25, steamPlaytimeSampleSize: 80, isReleased: false,
+    });
+    seedUserGame(testDb, id, { isWishlisted: true });
+    seedPriceSnapshot(testDb, id, { priceCurrent: 20, priceRegular: 40, historicalLowPrice: 20, isHistoricalLow: true });
+
+    // Fallback suppressed for an unreleased game → no usable hours → no $/hour figure.
+    expect(getEnrichedGameById(id, 'default')?.dollarsPerHour).toBeUndefined();
+  });
+
   it('updateGameSteamPlaytime recompute lifts the stored score for a steam_reviews game once a median lands', () => {
     const id = seedGame(testDb, {
       steamAppId: 922, title: 'Median Later', reviewScore: 90,

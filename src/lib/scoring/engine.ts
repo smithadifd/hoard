@@ -31,22 +31,66 @@ interface ScoringInput {
   personalInterest: number;        // 1-5
 }
 
-/**
- * Resolve the playtime (hours) that should feed $/hour scoring for a game,
- * honouring the user's per-game source preference. Each source falls back to the
- * other when its own value is missing, so a preference for one never zeroes out
- * scoring just because that source hasn't been fetched yet.
- */
-export function getEffectivePlaytimeHours(input: {
+export interface EffectivePlaytimeInput {
   playtimeSource: PlaytimeSource | string | null | undefined;
   hltbMain: number | null | undefined;
   steamPlaytimeMedian: number | null | undefined;
-}): number | null {
+  /**
+   * Release status. When explicitly `false` (a not-yet-released game), the
+   * automatic HLTB→reviews fallback is suppressed — we don't borrow review-hour
+   * data for a game that isn't out, since any "playtime" would be noise. An
+   * *explicit* steam_reviews preference is still honoured regardless. `true`/
+   * `null`/`undefined` (released, or unknown — including Early Access) allow the
+   * fallback.
+   */
+  isReleased?: boolean | null;
+}
+
+/**
+ * Resolve which playtime basis actually drives $/hour for a game, plus the hours
+ * it yields. Single source of truth so scoring and the UI can never disagree.
+ *
+ * - An explicit `steam_reviews` choice always uses the median (falling back to
+ *   HLTB only if no median exists yet).
+ * - The default (`hltb`) prefers HLTB, then falls back to the review median when
+ *   HLTB is missing — but only for released games (see `isReleased`).
+ *
+ * Returns `{ source: null, hours: null }` when no usable playtime is available.
+ */
+export function resolveEffectivePlaytime(input: EffectivePlaytimeInput): {
+  source: PlaytimeSource | null;
+  hours: number | null;
+} {
   const hltb = input.hltbMain ?? null;
   const steam = input.steamPlaytimeMedian ?? null;
-  return input.playtimeSource === 'steam_reviews'
-    ? (steam ?? hltb)
-    : (hltb ?? steam);
+
+  if (input.playtimeSource === 'steam_reviews') {
+    if (steam != null) return { source: 'steam_reviews', hours: steam };
+    return hltb != null ? { source: 'hltb', hours: hltb } : { source: null, hours: null };
+  }
+
+  // Default 'hltb' preference.
+  if (hltb != null) return { source: 'hltb', hours: hltb };
+  if (input.isReleased === false) return { source: null, hours: null };
+  return steam != null ? { source: 'steam_reviews', hours: steam } : { source: null, hours: null };
+}
+
+/**
+ * The playtime (hours) that should feed $/hour scoring for a game. Thin wrapper
+ * over {@link resolveEffectivePlaytime}.
+ */
+export function getEffectivePlaytimeHours(input: EffectivePlaytimeInput): number | null {
+  return resolveEffectivePlaytime(input).hours;
+}
+
+/**
+ * Which source actually drives $/hour for a game ('hltb' | 'steam_reviews'), or
+ * null when no usable playtime exists. Used by the UI to label the real basis
+ * honestly even when it differs from the stored preference (e.g. an HLTB-less
+ * game falling back to reviews). Thin wrapper over {@link resolveEffectivePlaytime}.
+ */
+export function getEffectivePlaytimeSource(input: EffectivePlaytimeInput): PlaytimeSource | null {
+  return resolveEffectivePlaytime(input).source;
 }
 
 export function calculateDealScore(
