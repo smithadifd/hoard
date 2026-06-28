@@ -116,8 +116,30 @@ fi
 
 echo ""
 echo "--- Creating pre-deploy backup ---"
-# Hit the backup API endpoint on the running container
-if curl -sf --max-time 30 -X POST "http://localhost:3001/api/backup" > /dev/null 2>&1; then
+# Back up the live DB with better-sqlite3's WAL-safe online .backup, run inside the still-running
+# old container (before the rebuild below). The /api/backup endpoint is auth-gated, so an
+# unauthenticated curl always 401s — this uses the same backup engine the app/scheduler use, needs
+# no auth, and writes to the bind-mounted /app/data/backups. Non-fatal: a first-ever deploy has no
+# running container to exec into yet.
+if docker exec hoard_app node -e "
+const Database = require('better-sqlite3');
+const fs = require('fs'); const path = require('path');
+const dbPath = process.env.DATABASE_URL || '/app/data/hoard.db';
+const backupDir = path.join(path.dirname(dbPath), 'backups');
+const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+const out = path.join(backupDir, 'hoard_' + ts + '_pre-deploy.db');
+if (!fs.existsSync(dbPath)) { console.error('DB not found: ' + dbPath); process.exit(1); }
+fs.mkdirSync(backupDir, { recursive: true });
+const src = new Database(dbPath, { readonly: true });
+src.backup(out).then(() => {
+  src.close();
+  const chk = new Database(out, { readonly: true });
+  const ok = chk.pragma('integrity_check')[0].integrity_check === 'ok';
+  chk.close();
+  if (!ok) { fs.unlinkSync(out); console.error('integrity check failed'); process.exit(1); }
+  console.log('Pre-deploy backup created: ' + out + ' (' + fs.statSync(out).size + ' bytes)');
+}).catch((e) => { console.error(e.message); process.exit(1); });
+"; then
     echo "Pre-deploy backup created successfully"
 else
     echo "WARNING: Pre-deploy backup failed (container may not be running)"
