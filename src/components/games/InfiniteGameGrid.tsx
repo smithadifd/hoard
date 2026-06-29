@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import type { EnrichedGame, GameFilters } from '@/types';
+import type { GameDetailOrigin } from '@/lib/utils/backNav';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 import { GameCard } from './GameCard';
@@ -13,6 +14,8 @@ interface InfiniteGameGridProps {
   filters: GameFilters;
   pageSize?: number;
   emptyMessage?: string;
+  /** Origin list — propagated to each card's detail link for back-navigation. */
+  from?: GameDetailOrigin;
 }
 
 export function InfiniteGameGrid({
@@ -21,6 +24,7 @@ export function InfiniteGameGrid({
   filters,
   pageSize = 24,
   emptyMessage = 'No games found',
+  from,
 }: InfiniteGameGridProps) {
   useScrollRestoration();
 
@@ -71,7 +75,7 @@ export function InfiniteGameGrid({
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {games.map((game) => (
-          <GameCard key={game.id} game={game} />
+          <GameCard key={game.id} game={game} from={from} />
         ))}
       </div>
 
