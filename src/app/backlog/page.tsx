@@ -97,6 +97,7 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
           initialTotal={total}
           filters={filters}
           pageSize={pageSize}
+          from="backlog"
           emptyMessage="No games match your filters. Try adjusting the filters or sync your library from Settings."
         />
       )}

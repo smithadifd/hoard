@@ -44,6 +44,7 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
         initialTotal={total}
         filters={filters}
         pageSize={pageSize}
+        from="library"
         emptyMessage="No games found. Sync your Steam library from Settings to get started."
       />
     </div>

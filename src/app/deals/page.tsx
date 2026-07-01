@@ -167,7 +167,7 @@ function DealSection({
         </div>
         <p className="text-xs text-muted-foreground">{subtitle}</p>
       </div>
-      <GameGrid games={games} emptyMessage={emptyMessage} />
+      <GameGrid games={games} emptyMessage={emptyMessage} from="deals" />
     </section>
   );
 }
