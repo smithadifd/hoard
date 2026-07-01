@@ -78,6 +78,13 @@ export interface EnrichedGame {
   pricePaidSuggested?: number;
   /** True when an un-dismissed price-paid suggestion exists and no real price is recorded yet. */
   hasPricePaidSuggestion?: boolean;
+  /**
+   * Positive dollar gap when the user's recorded pricePaid is ABOVE the ITAD
+   * historical low for this game (pricePaid − historicalLow). Undefined unless a
+   * real recorded price and a real historical low both exist and price > low —
+   * so the "possible overpay" call-out only ever surfaces on genuine data.
+   */
+  overpaidVsHistoricalLow?: number;
   valueReceivedTier?: ValueReceivedTier;
   valueReceivedLens?: ValueReceivedLens;
   completionRatio?: number;

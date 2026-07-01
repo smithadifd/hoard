@@ -1225,6 +1225,18 @@ function applyValueReceivedToGame(
   game.pricePaidSuggested = r.pricePaidSuggested ?? undefined;
   game.hasPricePaidSuggestion =
     r.pricePaid == null && r.pricePaidSuggested != null && r.pricePaidSuggestionDismissedAt == null;
+  // Possible-overpay call-out (part 2): flag when the recorded price is above the
+  // ITAD historical low. `game.historicalLow` is already set by applySnapshotToGame
+  // (runs before this). Honest boundary — only when both a real price and a real
+  // low exist and the gap is positive; never surface an absent/stale number as fact.
+  game.overpaidVsHistoricalLow =
+    r.pricePaid != null &&
+    r.pricePaid > 0 &&
+    game.historicalLow != null &&
+    game.historicalLow > 0 &&
+    r.pricePaid > game.historicalLow
+      ? r.pricePaid - game.historicalLow
+      : undefined;
   game.valueReceivedTier = vr.tier;
   game.valueReceivedLens = vr.lens;
   game.completionRatio = vr.completionRatio;
@@ -2020,6 +2032,63 @@ export function getGamesForPriceSync(userId: string): Array<{
         // so newly-tracked games still get priced until release_check resolves them.
         sql`(${games.isReleased} IS NULL OR ${games.isReleased} = 1)`
       )
+    )
+    .all();
+}
+
+/**
+ * Count of games the user currently owns. Used by library sync to distinguish
+ * the very first import (0 prior owned) from steady-state incremental adds — the
+ * net-new price-fetch lane only fires "going forward from account creation", so
+ * the onboarding drain (which primes the whole library) owns the initial import.
+ */
+export function countOwnedGames(userId: string): number {
+  const db = getDb();
+  const row = db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(userGames)
+    .where(and(eq(userGames.userId, userId), eq(userGames.isOwned, true)))
+    .get();
+  return row?.n ?? 0;
+}
+
+/**
+ * Fetch the price-sync inputs for a specific set of games (by id), regardless of
+ * wishlist/watchlist status. Powers the net-new owned-add price fetch (part 2):
+ * a straight purchase that was never wishlisted has no snapshot yet, so we
+ * resolve its ITAD id + fetch one overview so the price-paid nudge has data.
+ * Mirrors getGamesForPriceSync's shape, minus the wishlist/watchlist filter.
+ */
+export function getGamesByIdsForPriceFetch(gameIds: number[]): Array<{
+  id: number;
+  steamAppId: number;
+  title: string;
+  itadGameId: string | null;
+  reviewScore: number | null;
+  hltbMain: number | null;
+  personalInterest: number | null;
+}> {
+  if (gameIds.length === 0) return [];
+  const db = getDb();
+  return db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+      itadGameId: games.itadGameId,
+      reviewScore: games.reviewScore,
+      hltbMain: games.hltbMain,
+      // personalInterest isn't user-scoped here (single-user price fetch); the
+      // net-new add path always uses the sync's effective user, so any row wins.
+      personalInterest: userGames.personalInterest,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        inArray(games.id, gameIds),
+        sql`(${games.isReleased} IS NULL OR ${games.isReleased} = 1)`,
+      ),
     )
     .all();
 }

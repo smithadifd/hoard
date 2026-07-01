@@ -54,6 +54,8 @@ import {
   getPlayAgainCompletionPct,
   getPlayAgainDormantMonths,
   getGamesForPriceSync,
+  getGamesByIdsForPriceFetch,
+  countOwnedGames,
   getRecentSyncStats,
   getLastSuccessfulSyncBySource,
   getFirstUserId,
@@ -457,6 +459,35 @@ describe('updateUserGame', () => {
     expect(row?.pricePaidSuggestionDismissedAt).not.toBeNull();
     expect(row?.pricePaid).toBeNull();
     expect(row?.pricePaidSuggested).toBe(14.99); // retained, just dismissed
+  });
+
+  it('flags overpaidVsHistoricalLow when the paid price is above the ITAD low', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 20 });
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 15, priceRegular: 20, historicalLowPrice: 5 });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.historicalLow).toBe(5);
+    expect(game?.overpaidVsHistoricalLow).toBeCloseTo(15); // 20 − 5
+  });
+
+  it('does not flag overpay when the paid price is at or below the ITAD low', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 5 });
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 15, priceRegular: 20, historicalLowPrice: 5 });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.overpaidVsHistoricalLow).toBeUndefined();
+  });
+
+  it('does not flag overpay when no historical low exists (never fabricates)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 20 });
+    // Snapshot with no historicalLowPrice.
+    seedPriceSnapshot(testDb, gameId, { priceCurrent: 15, priceRegular: 20 });
+
+    const game = getEnrichedGameById(gameId, 'default');
+    expect(game?.overpaidVsHistoricalLow).toBeUndefined();
   });
 });
 
@@ -1476,6 +1507,56 @@ describe('sync-related queries', () => {
       const titles = getGamesForPriceSync('default').map(g => g.title);
       expect(titles).toContain('Released');
       expect(titles).toContain('Unknown');
+      expect(titles).not.toContain('Unreleased');
+    });
+  });
+
+  describe('countOwnedGames', () => {
+    it('counts only owned games for the user', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Owned' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Wishlisted' });
+      const g3 = seedGame(testDb, { steamAppId: 300, title: 'Owned 2' });
+      seedUserGame(testDb, g1, { isOwned: true });
+      seedUserGame(testDb, g2, { isOwned: false, isWishlisted: true });
+      seedUserGame(testDb, g3, { isOwned: true });
+
+      expect(countOwnedGames('default')).toBe(2);
+    });
+
+    it('returns 0 for a fresh library with no owned games', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Wishlisted' });
+      seedUserGame(testDb, g1, { isOwned: false, isWishlisted: true });
+      expect(countOwnedGames('default')).toBe(0);
+    });
+  });
+
+  describe('getGamesByIdsForPriceFetch', () => {
+    it('returns the given games regardless of wishlist/watchlist status', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Owned Only' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Skipped' });
+      seedUserGame(testDb, g1, { isOwned: true, isWishlisted: false, isWatchlisted: false });
+      seedUserGame(testDb, g2, { isOwned: true });
+
+      const result = getGamesByIdsForPriceFetch([g1]);
+      const titles = result.map((g) => g.title);
+      expect(titles).toContain('Owned Only');
+      expect(titles).not.toContain('Skipped');
+    });
+
+    it('returns an empty array for an empty id list', () => {
+      expect(getGamesByIdsForPriceFetch([])).toEqual([]);
+    });
+
+    it('excludes unreleased games (ITAD preorder-placeholder guard)', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Released' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Unreleased' });
+      upsertGameFromSteam({ steamAppId: 100, title: 'Released', isReleased: true });
+      upsertGameFromSteam({ steamAppId: 200, title: 'Unreleased', isReleased: false });
+      seedUserGame(testDb, g1, { isOwned: true });
+      seedUserGame(testDb, g2, { isOwned: true });
+
+      const titles = getGamesByIdsForPriceFetch([g1, g2]).map((g) => g.title);
+      expect(titles).toContain('Released');
       expect(titles).not.toContain('Unreleased');
     });
   });

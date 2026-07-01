@@ -454,7 +454,12 @@ export default async function GameDetailPage({
           {/* Price Paid Editor — owned games only (unlocks the realized $/hr lens).
               Hidden while a suggestion is pending; the prompt above handles entry then. */}
           {!isLookupMode && game.isOwned && !game.hasPricePaidSuggestion && (
-            <PricePaidEditor gameId={game.id} pricePaid={game.pricePaid} />
+            <PricePaidEditor
+              gameId={game.id}
+              pricePaid={game.pricePaid}
+              historicalLow={game.historicalLow}
+              overpaidVsHistoricalLow={game.overpaidVsHistoricalLow}
+            />
           )}
 
           {/* Enjoyment Rating Editor — owned games only. Once set, the rating leads
