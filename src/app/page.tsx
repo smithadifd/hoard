@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Library, Heart, Bell, Gamepad2, RefreshCw, DollarSign, BookOpen, CalendarClock, Tags, BarChart3, Activity, Wallet, Hourglass } from 'lucide-react';
-import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistTitles, getGenreDistribution, getDealScoreDistribution, getRecentActivity, getRecentAtlEvents, getUserGameCount, getValueReceivedOverview, getEnrichedGames } from '@/lib/db/queries';
+import { getDashboardStats, getRecentSyncLogs, getDealsCount, getBacklogStats, getAlertStats, getUnreleasedWishlistTitles, getGenreDistribution, getDealScoreDistribution, getRecentWishlisted, getRecentPlayed, getRecentAtlEvents, getUserGameCount, getValueReceivedOverview, getEnrichedGames } from '@/lib/db/queries';
 import type { ActivityEvent, ValueReceivedOverview } from '@/lib/db/queries';
 import type { EnrichedGame } from '@/types';
 import { parseReleaseDate, getReleaseBucket } from '@/lib/utils/releaseDate';
@@ -53,7 +53,8 @@ export default async function DashboardPage() {
   let upcomingReleases: Array<{ title: string; releaseLabel: string; id: number }> = [];
   let genreData: Array<{ name: string; count: number }> = [];
   let dealScoreData: Array<{ bucket: string; count: number }> = [];
-  let recentActivity: ActivityEvent[] = [];
+  let recentWishlisted: ActivityEvent[] = [];
+  let recentPlayed: ActivityEvent[] = [];
   let recentAtls: ActivityEvent[] = [];
   let valueOverview: ValueReceivedOverview | null = null;
   let mostValueWaiting: EnrichedGame[] = [];
@@ -68,7 +69,8 @@ export default async function DashboardPage() {
     alertStats = getAlertStats(session.user.id);
     genreData = getGenreDistribution(session.user.id);
     dealScoreData = getDealScoreDistribution(session.user.id);
-    recentActivity = getRecentActivity(session.user.id);
+    recentWishlisted = getRecentWishlisted(session.user.id);
+    recentPlayed = getRecentPlayed(session.user.id);
     recentAtls = getRecentAtlEvents(session.user.id);
     valueOverview = getValueReceivedOverview(session.user.id);
     mostValueWaiting = getEnrichedGames(
@@ -181,7 +183,7 @@ export default async function DashboardPage() {
           {/* Activity + Upcoming Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DashboardCard icon={<Activity className="h-4 w-4" />} title="Recent Activity">
-              <RecentActivityFeed played={recentActivity} newAtls={recentAtls} />
+              <RecentActivityFeed wishlisted={recentWishlisted} played={recentPlayed} newAtls={recentAtls} />
             </DashboardCard>
 
             {mostValueWaiting.length > 0 && (

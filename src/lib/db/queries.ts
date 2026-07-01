@@ -3929,33 +3929,49 @@ export interface ActivityEvent {
 }
 
 /**
- * Lifecycle activity feed: recently played + recently wishlisted games.
- * Deal/price events live on the New ATLs tab via {@link getRecentAtlEvents}.
+ * Recently wishlisted games (the "New Wishlisted" activity tab).
+ *
+ * Ordered by the true Steam wishlist-add date (`wishlisted_at`) when known,
+ * falling back to Hoard's `created_at` for Hoard-only/local entries and rows
+ * predating that column. Only currently-wishlisted games (not removed locally)
+ * qualify — a game you've since unwishlisted is no longer news.
  */
-export function getRecentActivity(userId: string, limit = 10): ActivityEvent[] {
+export function getRecentWishlisted(userId: string, limit = 10): ActivityEvent[] {
   const db = getDb();
 
-  // Recently wishlisted games
-  const wishlisted = db.all(sql`
+  const rows = db.all(sql`
     SELECT
-      'wishlisted' as type,
       g.id as game_id,
       g.title,
-      'Added to wishlist' as detail,
-      SUBSTR(ug.created_at, 1, 10) as date
+      SUBSTR(COALESCE(ug.wishlisted_at, ug.created_at), 1, 10) as date
     FROM user_games ug
     JOIN games g ON g.id = ug.game_id
     WHERE ug.user_id = ${userId}
       AND ug.is_wishlisted = 1
       AND ug.wishlist_removed_at IS NULL
-    ORDER BY ug.created_at DESC
+    ORDER BY COALESCE(ug.wishlisted_at, ug.created_at) DESC
     LIMIT ${limit}
-  `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
+  `) as Array<{ game_id: number; title: string; date: string }>;
 
-  // Recently played games
-  const played = db.all(sql`
+  return rows.map((r) => ({
+    type: 'wishlisted' as const,
+    gameId: r.game_id,
+    title: r.title,
+    detail: 'Added to wishlist',
+    date: r.date,
+  }));
+}
+
+/**
+ * Recently played games (the "Played" activity tab). Owned games with a
+ * `last_played` timestamp and non-zero playtime, most-recently-played first.
+ * Deal/price events live on the New ATLs tab via {@link getRecentAtlEvents}.
+ */
+export function getRecentPlayed(userId: string, limit = 10): ActivityEvent[] {
+  const db = getDb();
+
+  const rows = db.all(sql`
     SELECT
-      'played' as type,
       g.id as game_id,
       g.title,
       ROUND(ug.playtime_minutes / 60.0, 1) || 'h played' as detail,
@@ -3968,14 +3984,15 @@ export function getRecentActivity(userId: string, limit = 10): ActivityEvent[] {
       AND ug.playtime_minutes > 0
     ORDER BY ug.last_played DESC
     LIMIT ${limit}
-  `) as Array<{ type: string; game_id: number; title: string; detail: string; date: string }>;
+  `) as Array<{ game_id: number; title: string; detail: string; date: string }>;
 
-  return [
-    ...wishlisted.map((r) => ({ type: 'wishlisted' as const, gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
-    ...played.map((r) => ({ type: 'played' as const, gameId: r.game_id, title: r.title, detail: r.detail, date: r.date })),
-  ]
-    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
-    .slice(0, limit);
+  return rows.map((r) => ({
+    type: 'played' as const,
+    gameId: r.game_id,
+    title: r.title,
+    detail: r.detail,
+    date: r.date,
+  }));
 }
 
 /**
