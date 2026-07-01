@@ -16,11 +16,16 @@ vi.mock('../db/queries', () => ({
   getPreOwnershipState: vi.fn(),
   cascadePurchaseCleanup: vi.fn(),
   capturePricePaidSuggestions: vi.fn(),
+  countOwnedGames: vi.fn(),
   getSetting: vi.fn(),
 }));
 
 vi.mock('../notifications/dispatch', () => ({
   emitNotification: vi.fn(),
+}));
+
+vi.mock('./net-new-prices', () => ({
+  fetchNetNewPrices: vi.fn(),
 }));
 
 import { syncLibrary } from './library';
@@ -35,9 +40,11 @@ import {
   getPreOwnershipState,
   cascadePurchaseCleanup,
   capturePricePaidSuggestions,
+  countOwnedGames,
   getSetting,
 } from '../db/queries';
 import { emitNotification } from '../notifications/dispatch';
+import { fetchNetNewPrices } from './net-new-prices';
 
 const mockGetSteamClient = vi.mocked(getSteamClient);
 const mockUpsertGame = vi.mocked(upsertGameFromSteam);
@@ -49,8 +56,10 @@ const mockGetExisting = vi.mocked(getExistingGamesByAppIds);
 const mockGetPreOwnership = vi.mocked(getPreOwnershipState);
 const mockCascadePurchase = vi.mocked(cascadePurchaseCleanup);
 const mockCapture = vi.mocked(capturePricePaidSuggestions);
+const mockCountOwned = vi.mocked(countOwnedGames);
 const mockGetSetting = vi.mocked(getSetting);
 const mockEmit = vi.mocked(emitNotification);
+const mockFetchNetNew = vi.mocked(fetchNetNewPrices);
 
 function makeSteamGame(appid: number, name: string, playtime = 0, recentPlaytime?: number, lastPlayed?: number) {
   return {
@@ -72,6 +81,11 @@ describe('syncLibrary', () => {
     mockGetExisting.mockReturnValue(new Map());
     mockGetPreOwnership.mockReturnValue([]);
     mockCapture.mockReturnValue([]);
+    // Default: library already has owned games (past the initial import), so the
+    // net-new price-fetch lane is eligible. Tests that assert first-import behavior
+    // override this to 0.
+    mockCountOwned.mockReturnValue(5);
+    mockFetchNetNew.mockResolvedValue({ snapshotted: 0 });
     mockGetSetting.mockReturnValue(null); // null → suggestions enabled (!== 'false')
     mockEmit.mockResolvedValue({ inAppDelivered: false, discordDelivered: false });
   });
@@ -320,6 +334,97 @@ describe('syncLibrary', () => {
     await syncLibrary();
 
     expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('fetches ITAD prices for a net-new owned add that was never wishlisted, then captures a suggestion', async () => {
+    // A brand-new game (not in `existing`, no prior row) added straight as owned.
+    const games = [makeSteamGame(999, 'New Purchase', 120)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(77);
+    mockGetExisting.mockReturnValue(new Map()); // never seen before
+    mockGetPreOwnership.mockReturnValue([]); // no prior row
+    mockFetchNetNew.mockResolvedValue({ snapshotted: 1 });
+    mockCapture.mockReturnValue([
+      { gameId: 77, title: 'New Purchase', suggested: 19.99, asOf: '2026-07-01' },
+    ]);
+
+    await syncLibrary();
+
+    // Net-new lane fetched a price for the new owned add...
+    expect(mockFetchNetNew).toHaveBeenCalledWith([77]);
+    // ...then captured a suggestion off the fresh snapshot...
+    expect(mockCapture).toHaveBeenCalledWith([77], 'user-1');
+    // ...and surfaced the nudge.
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls[0][0].inApp?.title).toBe('Confirm what you paid for New Purchase');
+  });
+
+  it('does NOT fetch net-new prices on the first library import (no prior owned games)', async () => {
+    mockCountOwned.mockReturnValue(0); // initial import — drain owns this
+    const games = [makeSteamGame(999, 'New Purchase', 120)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(77);
+    mockGetExisting.mockReturnValue(new Map());
+    mockGetPreOwnership.mockReturnValue([]);
+
+    await syncLibrary();
+
+    expect(mockFetchNetNew).not.toHaveBeenCalled();
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('does NOT run the net-new lane for a game that was previously wishlisted', async () => {
+    // Wishlisted-then-owned goes through the existing purchase lane, not net-new.
+    const games = [makeSteamGame(440, 'TF2', 100)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(10);
+    mockGetExisting.mockReturnValue(new Map([[440, { id: 10, title: 'TF2' }]]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 10, wasOwned: false, wasWishlisted: true },
+    ]);
+
+    await syncLibrary();
+
+    expect(mockFetchNetNew).not.toHaveBeenCalled();
+  });
+
+  it('skips the net-new capture when the ITAD fetch yields no snapshot (honest boundary)', async () => {
+    const games = [makeSteamGame(999, 'Obscure Game', 30)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(88);
+    mockGetExisting.mockReturnValue(new Map());
+    mockGetPreOwnership.mockReturnValue([]);
+    mockFetchNetNew.mockResolvedValue({ snapshotted: 0 }); // no price found
+
+    await syncLibrary();
+
+    expect(mockFetchNetNew).toHaveBeenCalledWith([88]);
+    // No snapshot → no capture → no nudge (never fabricate a number).
+    expect(mockCapture).not.toHaveBeenCalled();
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('does not run the net-new lane when suggestions are disabled', async () => {
+    mockGetSetting.mockReturnValue('false'); // master opt-out
+    const games = [makeSteamGame(999, 'New Purchase', 120)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(77);
+    mockGetExisting.mockReturnValue(new Map());
+    mockGetPreOwnership.mockReturnValue([]);
+
+    await syncLibrary();
+
+    expect(mockFetchNetNew).not.toHaveBeenCalled();
   });
 
   it('sets playtimeRecentMinutes to 0 when playtime_2weeks is undefined', async () => {
