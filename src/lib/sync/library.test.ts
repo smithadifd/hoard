@@ -252,6 +252,76 @@ describe('syncLibrary', () => {
     expect(mockCascadePurchase).not.toHaveBeenCalled();
   });
 
+  it('collapses N price-paid captures from one sync into a single digest notification', async () => {
+    const games = [makeSteamGame(440, 'TF2', 100), makeSteamGame(570, 'Dota 2', 50)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
+    mockGetExisting.mockReturnValue(new Map([
+      [440, { id: 10, title: 'TF2' }],
+      [570, { id: 20, title: 'Dota 2' }],
+    ]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 10, wasOwned: false, wasWishlisted: true },
+      { gameId: 20, wasOwned: false, wasWishlisted: true },
+    ]);
+    mockCapture.mockReturnValue([
+      { gameId: 10, title: 'TF2', suggested: 4.99, asOf: '2026-06-01' },
+      { gameId: 20, title: 'Dota 2', suggested: 9.99, asOf: '2026-06-02' },
+    ]);
+
+    await syncLibrary();
+
+    // One fan-out for the whole batch — not one per game.
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+    const event = mockEmit.mock.calls[0][0];
+    expect(event.category).toBe('price-paid-suggestion');
+    expect(event.inApp?.title).toContain('2 games');
+    expect(event.inApp?.metadata).toMatchObject({ count: 2 });
+    expect((event.inApp?.metadata as { games: unknown[] }).games).toHaveLength(2);
+  });
+
+  it('renders a single price-paid capture naturally (not "1 game")', async () => {
+    const games = [makeSteamGame(440, 'TF2', 100)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(10);
+    mockGetExisting.mockReturnValue(new Map([[440, { id: 10, title: 'TF2' }]]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 10, wasOwned: false, wasWishlisted: true },
+    ]);
+    mockCapture.mockReturnValue([
+      { gameId: 10, title: 'TF2', suggested: 4.99, asOf: '2026-06-01' },
+    ]);
+
+    await syncLibrary();
+
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+    const event = mockEmit.mock.calls[0][0];
+    expect(event.inApp?.title).toBe('Confirm what you paid for TF2');
+    expect(event.inApp?.title).not.toContain('1 game');
+    expect(event.inApp?.link).toBe('/games/10');
+  });
+
+  it('does not notify when no price-paid suggestions are captured', async () => {
+    const games = [makeSteamGame(570, 'Dota 2', 50)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(20);
+    mockGetExisting.mockReturnValue(new Map([[570, { id: 20, title: 'Dota 2' }]]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 20, wasOwned: false, wasWishlisted: true },
+    ]);
+    mockCapture.mockReturnValue([]);
+
+    await syncLibrary();
+
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
+
   it('sets playtimeRecentMinutes to 0 when playtime_2weeks is undefined', async () => {
     const games = [makeSteamGame(440, 'TF2', 100, undefined)];
     mockGetSteamClient.mockReturnValue({

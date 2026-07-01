@@ -21,7 +21,48 @@ import {
 } from '../db/queries';
 import { getDb } from '../db';
 import { emitNotification } from '../notifications/dispatch';
+import { getDiscordClient } from '../discord/client';
+import type { NotificationPayload } from '../notifications/types';
 import type { SyncResult, ProgressCallback } from './types';
+
+type PricePaidCapture = { gameId: number; title: string; suggested: number; asOf: string };
+
+/**
+ * Collapse a batch of price-paid captures from a SINGLE library sync into one
+ * in-app summary payload (not one row per game) — mirroring buildDigestInApp in
+ * the ATL path. A single capture still reads naturally ("Confirm what you paid
+ * for X"), not "1 game".
+ */
+function buildPricePaidInApp(captures: PricePaidCapture[]): NotificationPayload {
+  const count = captures.length;
+  if (count === 1) {
+    const s = captures[0];
+    return {
+      title: `Confirm what you paid for ${s.title}`,
+      body: `Last tracked at ~$${s.suggested.toFixed(2)} on ${s.asOf}. Confirm or update it to unlock realized $/hr.`,
+      link: `/games/${s.gameId}`,
+      metadata: { gameId: s.gameId, suggested: s.suggested, asOf: s.asOf },
+    };
+  }
+
+  const names = captures.slice(0, 3).map((c) => c.title);
+  const remainder = count - names.length;
+  const list = remainder > 0 ? `${names.join(', ')} and ${remainder} more` : names.join(', ');
+  return {
+    title: `You may have bought ${count} games — confirm what you paid`,
+    body: `${list}. Confirm or update each price to unlock realized $/hr.`,
+    link: '/library',
+    metadata: {
+      count,
+      games: captures.map((c) => ({
+        gameId: c.gameId,
+        title: c.title,
+        suggested: c.suggested,
+        asOf: c.asOf,
+      })),
+    },
+  };
+}
 
 export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortSignal, userId?: string): Promise<SyncResult> {
   const effectiveUserId = userId ?? getFirstUserId();
@@ -35,7 +76,7 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
     let processed = 0;
     let newlyPurchasedCount = 0;
     // Price-paid suggestions captured this run (written in-txn, notified after commit).
-    let capturedSuggestions: { gameId: number; title: string; suggested: number; asOf: string }[] = [];
+    let capturedSuggestions: PricePaidCapture[] = [];
     // Master opt-out — skip the whole capture (and thus all surfaces) when disabled.
     const suggestPrices = getSetting('price_paid_suggestions_enabled') !== 'false';
 
@@ -95,20 +136,22 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
       );
     }
 
-    // Fire price-paid-suggestion nudges AFTER the commit: emitNotification is async
-    // and a better-sqlite3 transaction callback must stay synchronous. Each call is
+    // Fire the price-paid-suggestion nudge AFTER the commit: emitNotification is async
+    // and a better-sqlite3 transaction callback must stay synchronous. The call is
     // self-isolating (never throws), so a notification failure can't fail the sync.
-    for (const s of capturedSuggestions) {
+    //
+    // All captures from this single sync collapse into ONE in-app row + ONE Discord
+    // embed (digest), mirroring the ATL alert path. This keeps onboarding/first-import
+    // safe from a per-game flood. Discord routing for this category defaults OFF
+    // (see preferences.ts) and is opt-in via the Settings toggle; the thunk below
+    // makes that toggle work end-to-end.
+    if (capturedSuggestions.length > 0) {
+      const discord = getDiscordClient();
       await emitNotification({
         category: 'price-paid-suggestion',
         userId: effectiveUserId,
-        inApp: {
-          title: `Confirm what you paid for ${s.title}`,
-          body: `Last tracked at ~$${s.suggested.toFixed(2)} on ${s.asOf}. Confirm or update it to unlock realized $/hr.`,
-          link: `/games/${s.gameId}`,
-          metadata: { gameId: s.gameId, suggested: s.suggested, asOf: s.asOf },
-        },
-        discord: () => Promise.resolve(false),
+        inApp: buildPricePaidInApp(capturedSuggestions),
+        discord: () => discord.sendPricePaidSuggestion(capturedSuggestions),
       });
     }
 

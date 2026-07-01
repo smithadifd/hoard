@@ -243,6 +243,65 @@ export class DiscordClient {
   }
 
   /**
+   * Condense a batch of newly-purchased games into a single price-paid nudge embed.
+   * Mirrors sendAtlDigest: N captures from one library sync collapse into ONE embed
+   * (one line per game with its last-tracked price), never one ping per game. A single
+   * capture reads naturally ("You may have bought a game") rather than "1 game".
+   */
+  async sendPricePaidSuggestion(games: Array<{
+    gameId: number;
+    title: string;
+    suggested: number;
+    asOf: string;
+  }>): Promise<boolean> {
+    if (games.length === 0) return true;
+
+    const MAX_DESCRIPTION_LENGTH = 4000;
+    const lines: string[] = games.map(
+      (g) => `**${g.title}** — last tracked at ~$${g.suggested.toFixed(2)} (${g.asOf})`,
+    );
+
+    // Chunk into multiple embeds if the description exceeds Discord's safe limit.
+    const chunks: string[][] = [];
+    let currentLines: string[] = [];
+    let currentLength = 0;
+    for (const line of lines) {
+      if (currentLength + line.length + 1 > MAX_DESCRIPTION_LENGTH && currentLines.length > 0) {
+        chunks.push(currentLines);
+        currentLines = [];
+        currentLength = 0;
+      }
+      currentLines.push(line);
+      currentLength += line.length + 1; // +1 for newline
+    }
+    if (currentLines.length > 0) {
+      chunks.push(currentLines);
+    }
+
+    const embeds: DiscordEmbed[] = chunks.map((chunk, i) =>
+      this.buildPricePaidEmbed(chunk, games.length, chunks.length > 1 ? i + 1 : undefined, chunks.length > 1 ? chunks.length : undefined),
+    );
+
+    return this.send('', embeds);
+  }
+
+  private buildPricePaidEmbed(lines: string[], totalCount: number, part?: number, totalParts?: number): DiscordEmbed {
+    const suffix = part && totalParts ? ` (part ${part}/${totalParts})` : '';
+    const headline =
+      totalCount === 1
+        ? 'You may have bought a game — was it for around this price?'
+        : `You may have bought ${totalCount} games — were they around these prices?`;
+    return {
+      title: `${headline}${suffix}`,
+      description: lines.join('\n'),
+      // Blue — a transactional nudge, distinct from the green/gray ATL digests.
+      color: 0x3b82f6,
+      footer: { text: 'Hoard — Confirm or update each price to unlock realized $/hr' },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
    * Send an operational alert (sync failures, startup, etc.).
    */
   async sendOperationalAlert(alert: {

@@ -214,6 +214,51 @@ describe('DiscordClient', () => {
     });
   });
 
+  describe('sendPricePaidSuggestion', () => {
+    beforeEach(() => {
+      mockGetConfig.mockReturnValue({
+        discordWebhookUrl: 'https://discord.com/api/webhooks/123/abc',
+      } as never);
+    });
+
+    const games = [
+      { gameId: 10, title: 'Game A', suggested: 4.99, asOf: '2026-06-01' },
+      { gameId: 20, title: 'Game B', suggested: 9.99, asOf: '2026-06-02' },
+    ];
+
+    it('collapses multiple captures into one embed listing every game', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+      await client.sendPricePaidSuggestion(games);
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1]!.body as string);
+      expect(body.embeds).toHaveLength(1);
+      const embed = body.embeds[0];
+      expect(embed.title).toContain('2 games');
+      expect(embed.color).toBe(0x3b82f6);
+      expect(embed.description).toContain('Game A');
+      expect(embed.description).toContain('Game B');
+      expect(embed.description).toContain('$4.99');
+    });
+
+    it('frames a single capture naturally (not "1 game")', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+      await client.sendPricePaidSuggestion([games[0]]);
+
+      const embed = JSON.parse(mockFetch.mock.calls[0][1]!.body as string).embeds[0];
+      expect(embed.title).toContain('a game');
+      expect(embed.title).not.toContain('1 game');
+    });
+
+    it('returns true without sending when the list is empty', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+      const result = await client.sendPricePaidSuggestion([]);
+      expect(result).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendBackupNotification', () => {
     it('skips success notifications', async () => {
       const result = await client.sendBackupNotification({ success: true });
