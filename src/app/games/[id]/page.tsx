@@ -24,13 +24,16 @@ import { SteamPlaytimeAutoFetch } from '@/components/games/SteamPlaytimeAutoFetc
 import { PlaytimeSourceToggle } from '@/components/games/PlaytimeSourceToggle';
 import { EnsurePriceHistory } from '@/components/games/EnsurePriceHistory';
 import { PRICE_HISTORY_GIVE_UP_MISSES, STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
+import { resolveBackTarget } from '@/lib/utils/backNav';
 
 export const dynamic = 'force-dynamic';
 
 export default async function GameDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect('/login');
@@ -38,6 +41,11 @@ export default async function GameDetailPage({
   const { id } = await params;
   const gameId = parseInt(id);
   if (isNaN(gameId)) notFound();
+
+  // Back link reflects where the user came from (wishlist, backlog, …); a direct
+  // load with no `?from=` falls back to the Library — the original behavior.
+  const { from } = await searchParams;
+  const backTarget = resolveBackTarget(from);
 
   const game = getEnrichedGameById(gameId, session.user.id);
   if (!game) notFound();
@@ -96,13 +104,13 @@ export default async function GameDetailPage({
       {/* Price-history auto-backfill trigger (invisible, once per game) */}
       {eligibleForHistoryBackfill && <EnsurePriceHistory gameId={game.id} />}
 
-      {/* Back Link */}
+      {/* Back Link — returns to the originating list (defaults to Library) */}
       <Link
-        href="/library"
+        href={backTarget.href}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to Library
+        {backTarget.label}
       </Link>
 
       {/* Lookup mode banner */}

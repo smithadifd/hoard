@@ -4,6 +4,7 @@ import type { EnrichedGame } from '@/types';
 import { getEffectivePlaytimeSource } from '@/lib/scoring/engine';
 import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ValueReceivedIndicator } from '@/components/prices/ValueReceivedIndicator';
+import { gameDetailHref, type GameDetailOrigin } from '@/lib/utils/backNav';
 import { GameImage } from './GameImage';
 
 /** Relative-time label for ATL badges. */
@@ -29,9 +30,11 @@ function formatAtlAge(atlHitDate: string): string {
  */
 interface GameCardProps {
   game: EnrichedGame;
+  /** Origin list — sets the detail page's "Back to <origin>" link. */
+  from?: GameDetailOrigin;
 }
 
-export function GameCard({ game }: GameCardProps) {
+export function GameCard({ game, from }: GameCardProps) {
   // The playtime basis actually driving $/hour — lets the duration chip show the
   // Steam-review median for HLTB-less released games (the same value $/hour uses),
   // instead of a bare "No duration".
@@ -43,7 +46,7 @@ export function GameCard({ game }: GameCardProps) {
   });
   return (
     <Link
-      href={`/games/${game.id}`}
+      href={gameDetailHref(game.id, from)}
       className="group rounded-xl bg-card overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/30"
     >
       {/* Header Image */}

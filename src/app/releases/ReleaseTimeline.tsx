@@ -75,7 +75,7 @@ export function ReleaseTimeline({ groups }: ReleaseTimelineProps) {
               {/* Game grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {group.games.map((game) => (
-                  <GameCard key={game.id} game={game} />
+                  <GameCard key={game.id} game={game} from="releases" />
                 ))}
               </div>
             </section>

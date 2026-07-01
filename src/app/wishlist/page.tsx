@@ -87,6 +87,7 @@ export default async function WishlistPage({ searchParams }: WishlistPageProps) 
           initialTotal={total}
           filters={filters}
           pageSize={pageSize}
+          from="wishlist"
           emptyMessage={
             filters.search
               ? 'No games found matching your search.'
