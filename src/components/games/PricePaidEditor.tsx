@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { DollarSign, Loader2, Check, Pencil, X, TrendingDown } from 'lucide-react';
+import { DollarSign, Loader2, Check, Pencil, X } from 'lucide-react';
 
 /**
  * PricePaidEditor - Inline editor for what the user paid for an owned game.
@@ -11,13 +11,9 @@ import { DollarSign, Loader2, Check, Pencil, X, TrendingDown } from 'lucide-reac
 interface PricePaidEditorProps {
   gameId: number;
   pricePaid?: number;
-  /** ITAD historical low (USD). Used only to flag a possible overpay — never fabricated. */
-  historicalLow?: number;
-  /** pricePaid − historicalLow when the paid price is above the ITAD low; undefined otherwise. */
-  overpaidVsHistoricalLow?: number;
 }
 
-export function PricePaidEditor({ gameId, pricePaid, historicalLow, overpaidVsHistoricalLow }: PricePaidEditorProps) {
+export function PricePaidEditor({ gameId, pricePaid }: PricePaidEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -75,20 +71,6 @@ export function PricePaidEditor({ gameId, pricePaid, historicalLow, overpaidVsHi
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">Optional — unlocks realized $/hr. Assumed USD.</p>
-        )}
-        {/* Possible-overpay call-out (part 2). Only shows when both a real recorded
-            price and a real ITAD historical low exist and the paid price is above
-            it — honest, never a fabricated or absent number dressed as fact. */}
-        {hasPrice && overpaidVsHistoricalLow !== undefined && historicalLow !== undefined && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs">
-            <TrendingDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-            <span className="text-muted-foreground">
-              You may have overpaid — the ITAD historical low is{' '}
-              <span className="font-medium text-foreground">${historicalLow.toFixed(2)}</span>, about{' '}
-              <span className="font-medium text-foreground">${overpaidVsHistoricalLow.toFixed(2)}</span> less than
-              you paid. Worth a wait next time.
-            </span>
-          </div>
         )}
       </div>
     );

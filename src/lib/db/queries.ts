@@ -1225,18 +1225,6 @@ function applyValueReceivedToGame(
   game.pricePaidSuggested = r.pricePaidSuggested ?? undefined;
   game.hasPricePaidSuggestion =
     r.pricePaid == null && r.pricePaidSuggested != null && r.pricePaidSuggestionDismissedAt == null;
-  // Possible-overpay call-out (part 2): flag when the recorded price is above the
-  // ITAD historical low. `game.historicalLow` is already set by applySnapshotToGame
-  // (runs before this). Honest boundary — only when both a real price and a real
-  // low exist and the gap is positive; never surface an absent/stale number as fact.
-  game.overpaidVsHistoricalLow =
-    r.pricePaid != null &&
-    r.pricePaid > 0 &&
-    game.historicalLow != null &&
-    game.historicalLow > 0 &&
-    r.pricePaid > game.historicalLow
-      ? r.pricePaid - game.historicalLow
-      : undefined;
   game.valueReceivedTier = vr.tier;
   game.valueReceivedLens = vr.lens;
   game.completionRatio = vr.completionRatio;

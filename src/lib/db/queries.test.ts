@@ -460,35 +460,6 @@ describe('updateUserGame', () => {
     expect(row?.pricePaid).toBeNull();
     expect(row?.pricePaidSuggested).toBe(14.99); // retained, just dismissed
   });
-
-  it('flags overpaidVsHistoricalLow when the paid price is above the ITAD low', () => {
-    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
-    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 20 });
-    seedPriceSnapshot(testDb, gameId, { priceCurrent: 15, priceRegular: 20, historicalLowPrice: 5 });
-
-    const game = getEnrichedGameById(gameId, 'default');
-    expect(game?.historicalLow).toBe(5);
-    expect(game?.overpaidVsHistoricalLow).toBeCloseTo(15); // 20 − 5
-  });
-
-  it('does not flag overpay when the paid price is at or below the ITAD low', () => {
-    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
-    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 5 });
-    seedPriceSnapshot(testDb, gameId, { priceCurrent: 15, priceRegular: 20, historicalLowPrice: 5 });
-
-    const game = getEnrichedGameById(gameId, 'default');
-    expect(game?.overpaidVsHistoricalLow).toBeUndefined();
-  });
-
-  it('does not flag overpay when no historical low exists (never fabricates)', () => {
-    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
-    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 20 });
-    // Snapshot with no historicalLowPrice.
-    seedPriceSnapshot(testDb, gameId, { priceCurrent: 15, priceRegular: 20 });
-
-    const game = getEnrichedGameById(gameId, 'default');
-    expect(game?.overpaidVsHistoricalLow).toBeUndefined();
-  });
 });
 
 // ============================================
