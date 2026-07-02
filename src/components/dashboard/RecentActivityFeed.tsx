@@ -15,12 +15,13 @@ interface ActivityItem {
 }
 
 interface RecentActivityFeedProps {
+  wishlisted: ActivityItem[];
   played: ActivityItem[];
   newAtls: ActivityItem[];
   initialCount?: number;
 }
 
-type TabKey = 'played' | 'atls';
+type TabKey = 'wishlisted' | 'played' | 'atls';
 
 const TAB_STORAGE_KEY = 'hoard-activity-tab';
 
@@ -112,14 +113,18 @@ function ActivityList({
   );
 }
 
+const VALID_TABS: readonly TabKey[] = ['wishlisted', 'played', 'atls'];
+
 export default function RecentActivityFeed({
+  wishlisted,
   played,
   newAtls,
   initialCount = 5,
 }: RecentActivityFeedProps) {
   const [tab, setTab] = useState<TabKey>(() => {
-    if (typeof window === 'undefined') return 'played';
-    return (sessionStorage.getItem(TAB_STORAGE_KEY) as TabKey) ?? 'played';
+    if (typeof window === 'undefined') return 'wishlisted';
+    const stored = sessionStorage.getItem(TAB_STORAGE_KEY) as TabKey | null;
+    return stored && VALID_TABS.includes(stored) ? stored : 'wishlisted';
   });
 
   const selectTab = (next: TabKey) => {
@@ -132,6 +137,9 @@ export default function RecentActivityFeed({
   return (
     <div>
       <div className="flex gap-1 mb-3 -mt-1">
+        <TabButton active={tab === 'wishlisted'} onClick={() => selectTab('wishlisted')}>
+          New Wishlisted
+        </TabButton>
         <TabButton active={tab === 'played'} onClick={() => selectTab('played')}>
           Played
         </TabButton>
@@ -140,9 +148,13 @@ export default function RecentActivityFeed({
         </TabButton>
       </div>
 
-      {tab === 'played' ? (
-        <ActivityList items={played} initialCount={initialCount} emptyLabel="No recent activity" />
-      ) : (
+      {tab === 'wishlisted' && (
+        <ActivityList items={wishlisted} initialCount={initialCount} emptyLabel="No recently wishlisted games" />
+      )}
+      {tab === 'played' && (
+        <ActivityList items={played} initialCount={initialCount} emptyLabel="No recently played games" />
+      )}
+      {tab === 'atls' && (
         <ActivityList items={newAtls} initialCount={initialCount} emptyLabel="No new all-time lows in the last 14 days" />
       )}
     </div>
