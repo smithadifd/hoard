@@ -1,0 +1,22 @@
+# Hoard — Local Configuration (DO NOT COMMIT)
+
+Personal deployment details and preferences. This file is gitignored; copy it to `CLAUDE.local.md`
+and fill in your own values. Store actual secrets in `.env.local`, never here.
+
+## Owner
+<your name / email>
+
+## Deployment Target
+<e.g. Synology NAS via Docker Compose behind Caddy at https://hoard.home → port 3001>
+
+## API Keys (references only — real values live in .env.local)
+- Steam API Key: https://steamcommunity.com/dev/apikey
+- Steam User ID: https://steamid.io
+- ITAD API Key: https://isthereanydeal.com/dev/app/
+- Discord Webhook: Server Settings → Integrations → Webhooks
+
+## Preferences
+- <how you weigh deals: $/hour, review quality, co-op vs solo, grey-market price checks, alert scope>
+
+## Deploy Host Notes
+- <Docker host, resource limits, persistent volume path, reverse-proxy hostname → container port>
