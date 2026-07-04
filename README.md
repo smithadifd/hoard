@@ -13,9 +13,26 @@ Paid deal trackers and wishlist services lock price history, backlog planning, a
 
 ## Screenshots
 
-| Dashboard | Backlog recommender | Price history |
-|-----------|--------------------|----------------|
-| [![Dashboard with deals and library stats](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Backlog recommender with mood and duration filters](docs/screenshots/backlog.png)](docs/screenshots/backlog.png) | [![Price history chart with all-time low](docs/screenshots/price-history.png)](docs/screenshots/price-history.png) |
+| Dashboard | Backlog recommender | Price history & deal score |
+|-----------|---------------------|----------------------------|
+| [![Dashboard — deals and library stats](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Backlog recommender](docs/screenshots/backlog.png)](docs/screenshots/backlog.png) | [![Price history and deal-score breakdown](docs/screenshots/price-history.png)](docs/screenshots/price-history.png) |
+
+<details>
+<summary>More screenshots</summary>
+
+| Wishlist | Wishlist triage | Wishlisted game |
+|----------|-----------------|-----------------|
+| [![Wishlist](docs/screenshots/wishlist.png)](docs/screenshots/wishlist.png) | [![Wishlist triage](docs/screenshots/triage.png)](docs/screenshots/triage.png) | [![Wishlisted game detail](docs/screenshots/wishlisted-game.png)](docs/screenshots/wishlisted-game.png) |
+
+| Library | Recent deals | Watchlist |
+|---------|-------------|-----------|
+| [![Library](docs/screenshots/library.png)](docs/screenshots/library.png) | [![Recent deals](docs/screenshots/recent-deals.png)](docs/screenshots/recent-deals.png) | [![Watchlist](docs/screenshots/watchlist.png)](docs/screenshots/watchlist.png) |
+
+| Settings — deal scoring | Settings — notifications |
+|-------------------------|--------------------------|
+| [![Settings — deal scoring options](docs/screenshots/settings-deal-scoring.png)](docs/screenshots/settings-deal-scoring.png) | [![Settings — notification options](docs/screenshots/settings-notifications.png)](docs/screenshots/settings-notifications.png) |
+
+</details>
 
 ## Live Demo
 
