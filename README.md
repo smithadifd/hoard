@@ -1,8 +1,21 @@
 # Hoard
 
+[![CI](https://github.com/smithadifd/hoard/actions/workflows/ci.yml/badge.svg)](https://github.com/smithadifd/hoard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Never overpay for a game again.**
 
 Hoard is a self-hosted web app that tracks game deals across stores, manages your Steam library and backlog, and helps you decide what to play next — all from a single dashboard.
+
+## Why This Exists
+
+Paid deal trackers and wishlist services lock price history, backlog planning, and value scoring behind subscriptions and hand your data to someone else. Hoard is a free, self-hosted alternative that puts wishlist tracking, backlog recommendations, and value-per-hour scoring in one place — and keeps every byte of your data on your own machine.
+
+## Screenshots
+
+| Dashboard | Backlog recommender | Price history |
+|-----------|--------------------|----------------|
+| [![Dashboard with deals and library stats](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Backlog recommender with mood and duration filters](docs/screenshots/backlog.png)](docs/screenshots/backlog.png) | [![Price history chart with all-time low](docs/screenshots/price-history.png)](docs/screenshots/price-history.png) |
 
 ## Live Demo
 
@@ -63,7 +76,7 @@ cp .env.example .env.production
 docker compose up -d
 ```
 
-For production deployment behind a reverse proxy, see `docker-compose.prod.yml`.
+For production deployment behind a reverse proxy, see `docker-compose.prod.yml` and the [self-hosting guide](https://smithadifd.github.io/hoard/self-hosting/).
 
 ## Configuration
 
@@ -73,6 +86,8 @@ All configuration is done through environment variables (see `.env.example`) and
 - **Cron schedules** — control how often prices and library data sync
 - **Alert thresholds** — set per-game price targets or track all-time lows
 - **Discord webhooks** — separate channels for deal alerts and ops notifications
+
+Full reference: the [configuration guide](https://smithadifd.github.io/hoard/self-hosting/configuration/).
 
 ## Architecture
 
@@ -135,6 +150,19 @@ npm test             # run tests (Vitest)
 npm run lint         # ESLint
 npm run db:studio    # Drizzle Studio (DB browser)
 ```
+
+## Contributing
+
+Bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the quick start, conventions, and CI gate, and the [documentation site](https://smithadifd.github.io/hoard/) for deeper reference.
+
+## Support This Project
+
+Hoard is free and self-hosted. If it saves you money or you just want to help keep it maintained, you can support development:
+
+- [GitHub Sponsors](https://github.com/sponsors/smithadifd)
+- [Ko-fi](https://ko-fi.com/smithadifd)
+
+Starring the repo and reporting bugs helps just as much.
 
 ## License
 
