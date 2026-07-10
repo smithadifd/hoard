@@ -20,3 +20,11 @@ and fill in your own values. Store actual secrets in `.env.local`, never here.
 
 ## Deploy Host Notes
 - <Docker host, resource limits, persistent volume path, reverse-proxy hostname → container port>
+
+## End-of-session workflow
+The generic branch → PR → CI-green → squash-merge sequence is your global
+`~/.claude/CLAUDE.md` checklist (its `gh run watch` step waits for GitHub checks
+name-agnostically); keep only Hoard's deltas here, e.g.:
+- Deploy: `./scripts/deploy.sh` (the `deploy` skill drives it) after main CI is green.
+- Migrations run on container boot (`scripts/start.mjs`) — never pre-apply on prod.
+- Docs to update in the same PR: `MEMORY.md` / `CLAUDE.md` / `plans/README.md`.
