@@ -21,14 +21,5 @@ self-contained; read it first. Personal/secret config lives in the gitignored `C
   apply mechanical fixes silently, surface real questions.
 - Doc updates (CLAUDE.md / AGENTS.md / MEMORY.md / `plans/README.md`) ship in the same PR as the code.
 - Conventional commits; never auto-push; confirm before destructive ops. No emojis unless asked.
-
-## End-of-session workflow
-
-1. **Branch** off `main` (`feat/…`, `fix/…`) — branch protection, no direct pushes.
-2. **Commit** staged files with a Conventional Commit message.
-3. **Push** `git push -u origin <branch>`, then `gh pr create` (summary + test plan).
-4. **CI** `gh run watch <run-id> --exit-status` — wait for "Lint & Build" + "Docker Build".
-5. **Merge** `gh pr merge <n> --squash --delete-branch`; then `git checkout main && git pull`.
-6. **Deploy** after main CI is green: `./scripts/deploy.sh` (builds + deploys to the Synology NAS).
-7. **Migrations** apply on container boot (`scripts/start.mjs`) — never pre-apply on prod (AGENTS.md).
-8. **Docs** update `MEMORY.md` / this file / `plans/README.md` in the same PR as the code.
+- End-of-session ship steps (deploy script, boot-migration rule) are deploy-specific
+  and live in the gitignored `CLAUDE.local.md`, not this committed shim.
