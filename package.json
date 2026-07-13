@@ -31,7 +31,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/eslintrc": "^3.3.6",
     "@serwist/turbopack": "^9.5.11",
     "@swc/helpers": "0.5.23",
     "@types/better-sqlite3": "^7.6.0",
