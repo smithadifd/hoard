@@ -14,6 +14,7 @@ import {
   tags,
   gameTags,
   priceSnapshots,
+  playtimeSnapshots,
   priceAlerts,
   settings,
   syncLog,
@@ -2712,6 +2713,371 @@ export function pruneOldPriceSnapshots(retainDays: number = 180): number {
     .where(sql`${priceSnapshots.snapshotDate} < ${cutoff}`)
     .run();
 
+  return result.changes;
+}
+
+// ============================================
+// Playtime Snapshots — time-series + realized-value derivations
+// ============================================
+// Steam library-sync OVERWRITES user_games.playtimeMinutes each run, destroying
+// the prior total. These rows preserve the pre-overwrite series so Hoard can
+// measure realized value over time the way price_snapshots preserve price
+// history. Written per game per sync (src/lib/sync/library.ts), deduped per
+// (game, user, day), pruned on the same 180-day window as price snapshots.
+
+/** YYYY-MM-DD for `days` ago (UTC), matching the snapshotDate format. */
+function daysAgoDate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split('T')[0];
+}
+
+/**
+ * Record a playtime data point for a game. Called during library-sync BEFORE
+ * upsertUserGame overwrites the stored total, so the accumulating series is the
+ * history the old code destroyed. Deduped on (gameId, userId, snapshotDate): a
+ * second sync the same day is a no-op (first-write-wins), mirroring
+ * insertPriceSnapshot's onConflictDoNothing.
+ */
+export function insertPlaytimeSnapshot(data: {
+  gameId: number;
+  userId: string;
+  playtimeMinutes: number;
+  recentMinutes?: number;
+  lastPlayed?: string;
+  snapshotDate?: string;
+}): void {
+  const db = getDb();
+  const snapshotDate = data.snapshotDate ?? new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+  db.insert(playtimeSnapshots)
+    .values({
+      gameId: data.gameId,
+      userId: data.userId,
+      playtimeMinutes: data.playtimeMinutes,
+      recentMinutes: data.recentMinutes ?? 0,
+      lastPlayed: data.lastPlayed,
+      snapshotDate,
+    })
+    .onConflictDoNothing({
+      target: [playtimeSnapshots.gameId, playtimeSnapshots.userId, playtimeSnapshots.snapshotDate],
+    })
+    .run();
+}
+
+export interface PlaytimeSnapshotRow {
+  snapshotDate: string;
+  playtimeMinutes: number;
+  recentMinutes: number;
+  lastPlayed: string | null;
+}
+
+/**
+ * Full playtime series for a game (oldest → newest), capped at the `limit` most
+ * recent points. Mirrors getPriceHistory.
+ */
+export function getPlaytimeHistory(gameId: number, userId: string, limit = 180): PlaytimeSnapshotRow[] {
+  const db = getDb();
+  const rows = db
+    .select({
+      snapshotDate: playtimeSnapshots.snapshotDate,
+      playtimeMinutes: playtimeSnapshots.playtimeMinutes,
+      recentMinutes: playtimeSnapshots.recentMinutes,
+      lastPlayed: playtimeSnapshots.lastPlayed,
+    })
+    .from(playtimeSnapshots)
+    .where(and(eq(playtimeSnapshots.gameId, gameId), eq(playtimeSnapshots.userId, userId)))
+    .orderBy(desc(playtimeSnapshots.snapshotDate))
+    .limit(limit)
+    .all();
+
+  return rows
+    .map((r) => ({
+      snapshotDate: r.snapshotDate,
+      playtimeMinutes: r.playtimeMinutes,
+      recentMinutes: r.recentMinutes ?? 0,
+      lastPlayed: r.lastPlayed,
+    }))
+    .reverse(); // oldest → newest
+}
+
+export interface PlaytimeWindow {
+  baselineMinutes: number; // cumulative total as the window opened
+  latestMinutes: number; // most recent cumulative total
+  gainedMinutes: number; // max(0, latest - baseline)
+}
+
+/**
+ * How much playtime a game gained since `sinceDate` (YYYY-MM-DD).
+ * Baseline = the most recent snapshot on/before the cutoff (the total as the
+ * window opened); if none exists, the earliest snapshot after it (best
+ * available — we can't know playtime before our first sample). Gain is clamped
+ * ≥0 to absorb Steam refunds / playtime resets. Returns null when the game has
+ * no snapshots at all.
+ */
+export function getPlaytimeWindow(gameId: number, userId: string, sinceDate: string): PlaytimeWindow | null {
+  const db = getDb();
+
+  const latest = db
+    .select({ playtimeMinutes: playtimeSnapshots.playtimeMinutes })
+    .from(playtimeSnapshots)
+    .where(and(eq(playtimeSnapshots.gameId, gameId), eq(playtimeSnapshots.userId, userId)))
+    .orderBy(desc(playtimeSnapshots.snapshotDate))
+    .limit(1)
+    .get();
+
+  if (!latest) return null;
+
+  // Most recent snapshot at/before the window start = the total as the window opened.
+  let baselineRow = db
+    .select({ playtimeMinutes: playtimeSnapshots.playtimeMinutes })
+    .from(playtimeSnapshots)
+    .where(
+      and(
+        eq(playtimeSnapshots.gameId, gameId),
+        eq(playtimeSnapshots.userId, userId),
+        sql`${playtimeSnapshots.snapshotDate} <= ${sinceDate}`,
+      ),
+    )
+    .orderBy(desc(playtimeSnapshots.snapshotDate))
+    .limit(1)
+    .get();
+
+  // No pre-window sample: fall back to the earliest sample we do have. Gain is
+  // then measured from first observation, never from an assumed zero.
+  if (!baselineRow) {
+    baselineRow = db
+      .select({ playtimeMinutes: playtimeSnapshots.playtimeMinutes })
+      .from(playtimeSnapshots)
+      .where(and(eq(playtimeSnapshots.gameId, gameId), eq(playtimeSnapshots.userId, userId)))
+      .orderBy(asc(playtimeSnapshots.snapshotDate))
+      .limit(1)
+      .get();
+  }
+
+  const baselineMinutes = baselineRow?.playtimeMinutes ?? latest.playtimeMinutes;
+  const gainedMinutes = Math.max(0, latest.playtimeMinutes - baselineMinutes);
+  return { baselineMinutes, latestMinutes: latest.playtimeMinutes, gainedMinutes };
+}
+
+export type PlaytimeMomentum = 'playing' | 'cooling' | 'dormant' | 'untouched';
+
+/**
+ * Classify a game's momentum from playtime deltas. Maps the audit's
+ * playing/dormant/dropped-off onto four honest buckets:
+ *   playing   — gained time this week, or Steam reports 2-week activity
+ *   cooling   — no gain this week but gained within the month
+ *   dormant   — meaningfully played before, but quiet for a month (the
+ *               backlog-staleness / "dropped-off" signal)
+ *   untouched — owned but effectively never played
+ * Pure and DB-free so it's unit-testable in isolation.
+ */
+export function classifyPlaytimeMomentum(input: {
+  gainedThisWeek: number; // minutes
+  gainedThisMonth: number; // minutes
+  totalMinutes: number;
+  recentMinutes: number; // Steam rolling 2-week
+}): PlaytimeMomentum {
+  const MEANINGFUL_MINUTES = 60; // < 1h ever ≈ never really started
+  if (input.gainedThisWeek > 0 || input.recentMinutes > 0) return 'playing';
+  if (input.gainedThisMonth > 0) return 'cooling';
+  if (input.totalMinutes >= MEANINGFUL_MINUTES) return 'dormant';
+  return 'untouched';
+}
+
+export interface PlaytimeValueAccrual {
+  pricePaid: number;
+  dollarsPerHourNow: number;
+  dollarsPerHourMonthAgo: number | null; // null when no hours a month ago
+  improved: boolean; // $/hr now < $/hr a month ago → value accruing
+}
+
+export interface GamePlaytimeInsight {
+  gameId: number;
+  totalMinutes: number;
+  hoursThisWeek: number; // hours gained, rounded to 0.1
+  hoursThisMonth: number;
+  momentum: PlaytimeMomentum;
+  valueAccrual: PlaytimeValueAccrual | null; // null unless pricePaid known & played
+}
+
+const PLAYTIME_WEEK_DAYS = 7;
+const PLAYTIME_MONTH_DAYS = 30;
+
+function roundHours(minutes: number): number {
+  return Math.round((minutes / 60) * 10) / 10;
+}
+
+/**
+ * Per-game realized-value derivations from the snapshot series: hours gained
+ * this week/month, momentum, and $/hr value-accrual (when the user has entered
+ * pricePaid). Surface-ready for a detail-page card; the consuming UI is a later
+ * item. Returns null when the game has no snapshots yet.
+ */
+export function getGamePlaytimeInsight(gameId: number, userId: string): GamePlaytimeInsight | null {
+  const db = getDb();
+  const weekWindow = getPlaytimeWindow(gameId, userId, daysAgoDate(PLAYTIME_WEEK_DAYS));
+  if (!weekWindow) return null;
+  const monthWindow = getPlaytimeWindow(gameId, userId, daysAgoDate(PLAYTIME_MONTH_DAYS));
+
+  const latest = db
+    .select({
+      playtimeMinutes: playtimeSnapshots.playtimeMinutes,
+      recentMinutes: playtimeSnapshots.recentMinutes,
+    })
+    .from(playtimeSnapshots)
+    .where(and(eq(playtimeSnapshots.gameId, gameId), eq(playtimeSnapshots.userId, userId)))
+    .orderBy(desc(playtimeSnapshots.snapshotDate))
+    .limit(1)
+    .get();
+
+  const totalMinutes = latest?.playtimeMinutes ?? weekWindow.latestMinutes;
+  const recentMinutes = latest?.recentMinutes ?? 0;
+  const gainedThisWeek = weekWindow.gainedMinutes;
+  const gainedThisMonth = monthWindow?.gainedMinutes ?? gainedThisWeek;
+
+  const momentum = classifyPlaytimeMomentum({
+    gainedThisWeek,
+    gainedThisMonth,
+    totalMinutes,
+    recentMinutes,
+  });
+
+  // Value accrual: realized $/hr now vs a month ago. Needs a user-entered price
+  // and non-zero hours. As hours grow, $/hr falls — that fall is the value accruing.
+  let valueAccrual: PlaytimeValueAccrual | null = null;
+  const ug = db
+    .select({ pricePaid: userGames.pricePaid })
+    .from(userGames)
+    .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+    .get();
+  const pricePaid = ug?.pricePaid ?? null;
+  if (pricePaid != null && pricePaid > 0 && totalMinutes > 0) {
+    const dollarsPerHourNow = pricePaid / (totalMinutes / 60);
+    const monthAgoMinutes = monthWindow?.baselineMinutes ?? totalMinutes;
+    const dollarsPerHourMonthAgo = monthAgoMinutes > 0 ? pricePaid / (monthAgoMinutes / 60) : null;
+    valueAccrual = {
+      pricePaid,
+      dollarsPerHourNow: Math.round(dollarsPerHourNow * 100) / 100,
+      dollarsPerHourMonthAgo:
+        dollarsPerHourMonthAgo != null ? Math.round(dollarsPerHourMonthAgo * 100) / 100 : null,
+      improved: dollarsPerHourMonthAgo != null && dollarsPerHourNow < dollarsPerHourMonthAgo,
+    };
+  }
+
+  return {
+    gameId,
+    totalMinutes,
+    hoursThisWeek: roundHours(gainedThisWeek),
+    hoursThisMonth: roundHours(gainedThisMonth),
+    momentum,
+    valueAccrual,
+  };
+}
+
+export interface PlaytimeRecapGainer {
+  gameId: number;
+  title: string;
+  hoursThisWeek: number;
+}
+
+export interface LibraryPlaytimeRecap {
+  hoursThisWeek: number;
+  hoursThisMonth: number;
+  gamesPlayedThisWeek: number;
+  topGainers: PlaytimeRecapGainer[]; // most hours gained this week, desc
+}
+
+/**
+ * Small dashboard rollup over the whole library: total hours gained this
+ * week/month, how many games saw play this week, and the week's top gainers.
+ * Only games with a snapshot inside the month window are candidates (a game with
+ * no recent sample gained nothing to report). Iterates per candidate game at
+ * single-user scale — deliberately readable over a windowed mega-query, matching
+ * the repo's single-user performance posture (plans/30-performance).
+ */
+export function getLibraryPlaytimeRecap(
+  userId: string,
+  opts: { weekDays?: number; monthDays?: number; topN?: number } = {},
+): LibraryPlaytimeRecap {
+  const db = getDb();
+  const weekDays = opts.weekDays ?? PLAYTIME_WEEK_DAYS;
+  const monthDays = opts.monthDays ?? PLAYTIME_MONTH_DAYS;
+  const topN = opts.topN ?? 5;
+  const weekCutoff = daysAgoDate(weekDays);
+  const monthCutoff = daysAgoDate(monthDays);
+
+  // Candidate games: any snapshot inside the month window (indexed range scan).
+  const candidates = db
+    .selectDistinct({ gameId: playtimeSnapshots.gameId })
+    .from(playtimeSnapshots)
+    .where(
+      and(
+        eq(playtimeSnapshots.userId, userId),
+        sql`${playtimeSnapshots.snapshotDate} >= ${monthCutoff}`,
+      ),
+    )
+    .all();
+
+  let weekMinutes = 0;
+  let monthMinutes = 0;
+  let gamesPlayedThisWeek = 0;
+  const gainers: { gameId: number; weekMinutes: number }[] = [];
+
+  for (const { gameId } of candidates) {
+    const week = getPlaytimeWindow(gameId, userId, weekCutoff);
+    const month = getPlaytimeWindow(gameId, userId, monthCutoff);
+    const wk = week?.gainedMinutes ?? 0;
+    const mo = month?.gainedMinutes ?? 0;
+    weekMinutes += wk;
+    monthMinutes += mo;
+    if (wk > 0) {
+      gamesPlayedThisWeek++;
+      gainers.push({ gameId, weekMinutes: wk });
+    }
+  }
+
+  gainers.sort((a, b) => b.weekMinutes - a.weekMinutes);
+  const top = gainers.slice(0, topN);
+  const titlesById = new Map<number, string>();
+  if (top.length > 0) {
+    const rows = db
+      .select({ id: games.id, title: games.title })
+      .from(games)
+      .where(
+        inArray(
+          games.id,
+          top.map((g) => g.gameId),
+        ),
+      )
+      .all();
+    for (const r of rows) titlesById.set(r.id, r.title);
+  }
+
+  return {
+    hoursThisWeek: roundHours(weekMinutes),
+    hoursThisMonth: roundHours(monthMinutes),
+    gamesPlayedThisWeek,
+    topGainers: top.map((g) => ({
+      gameId: g.gameId,
+      title: titlesById.get(g.gameId) ?? 'Unknown',
+      hoursThisWeek: roundHours(g.weekMinutes),
+    })),
+  };
+}
+
+/**
+ * Prune old playtime snapshots, keeping only the most recent N days. Mirrors
+ * pruneOldPriceSnapshots (same 180-day default, same monthly prune task).
+ * Returns the number of rows deleted.
+ */
+export function pruneOldPlaytimeSnapshots(retainDays = 180): number {
+  const db = getDb();
+  const cutoff = daysAgoDate(retainDays);
+  const result = db
+    .delete(playtimeSnapshots)
+    .where(sql`${playtimeSnapshots.snapshotDate} < ${cutoff}`)
+    .run();
   return result.changes;
 }
 
