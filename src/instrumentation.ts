@@ -107,21 +107,38 @@ export async function register() {
 
     startScheduler();
 
-    // Clean up abandoned sync_log rows from previous process
+    // Initialize the database. A fatal init failure here — e.g. the fail-loud
+    // legacy-auth guard refusing to drop populated auth tables — is surfaced
+    // loudly at startup with its actionable message, instead of only appearing
+    // later as a 500 on the first request. (Every request path calls getDb()
+    // and would fail the same way, so the process stays effectively down until
+    // the operator resolves it.)
+    let db: ReturnType<typeof import('@/lib/db').getDb> | undefined;
     try {
       const { getDb } = await import('@/lib/db');
-      const { sql } = await import('drizzle-orm');
-      const db = getDb();
-      const cleaned = db.run(sql`
-        UPDATE sync_log
-        SET status = 'error', error_message = 'Process restarted — sync did not complete', completed_at = datetime('now')
-        WHERE status = 'running' AND started_at < datetime('now', '-5 minutes')
-      `);
-      if (cleaned.changes > 0) {
-        console.log(`[Startup] Cleaned ${cleaned.changes} abandoned sync_log row(s)`);
+      db = getDb();
+    } catch (err) {
+      console.error(
+        '[Startup] Database initialization failed — the app cannot serve requests until this is resolved:\n',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+
+    // Clean up abandoned sync_log rows from previous process (non-fatal).
+    if (db) {
+      try {
+        const { sql } = await import('drizzle-orm');
+        const cleaned = db.run(sql`
+          UPDATE sync_log
+          SET status = 'error', error_message = 'Process restarted — sync did not complete', completed_at = datetime('now')
+          WHERE status = 'running' AND started_at < datetime('now', '-5 minutes')
+        `);
+        if (cleaned.changes > 0) {
+          console.log(`[Startup] Cleaned ${cleaned.changes} abandoned sync_log row(s)`);
+        }
+      } catch {
+        // Non-fatal
       }
-    } catch {
-      // Non-fatal
     }
 
     // One-time backfill: stored snapshot deal scores written before their game's

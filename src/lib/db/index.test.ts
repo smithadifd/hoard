@@ -14,6 +14,9 @@
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { ensureSchema, reconcileLegacyAuthSchema } from './index';
@@ -215,21 +218,68 @@ describe('reconcileLegacyAuthSchema — destructive auth-table-drop guard', () =
     sqlite.close();
   });
 
-  it('gated override: HOARD_ALLOW_AUTH_TABLE_RESET=true resets a populated legacy schema (explicit opt-in)', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('gated override on an in-memory DB REFUSES the reset (fail closed — no backup possible)', () => {
+    // Defense in depth: the "backup before reset" invariant must hold
+    // UNCONDITIONALLY. An in-memory DB cannot be backed up, so even with the
+    // override flag set, a populated reset must be refused rather than dropping
+    // the data unprotected.
     process.env[RESET_ENV] = 'true';
     const sqlite = createLegacyDb({ seed: true });
 
-    expect(() => ensureSchema(sqlite)).not.toThrow();
+    expect(() => ensureSchema(sqlite)).toThrow(/could not be taken/i);
 
-    // Reset to snake_case; legacy data intentionally discarded under the flag.
-    expect(columns(sqlite, 'user')).toContain('email_verified');
-    expect(columns(sqlite, 'user')).not.toContain('emailVerified');
-    expect(count(sqlite, 'user')).toBe(0);
-
-    // The destructive reset was announced loudly.
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(RESET_ENV));
+    // Populated data is untouched — never dropped without a backup.
+    expect(count(sqlite, 'user')).toBe(1);
+    expect(count(sqlite, 'session')).toBe(1);
+    expect(count(sqlite, 'account')).toBe(1);
+    expect(count(sqlite, 'verification')).toBe(1);
+    expect(columns(sqlite, 'user')).toContain('emailVerified');
 
     sqlite.close();
+  });
+
+  it('gated override on a FILE DB backs up first, then resets (happy path — backup preserves the data)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env[RESET_ENV] = 'true';
+    const dir = mkdtempSync(join(tmpdir(), 'hoard-r18-'));
+    const dbPath = join(dir, 'hoard.db');
+
+    try {
+      // Build a populated legacy camelCase DB on disk.
+      const seed = new Database(dbPath);
+      seed.exec(LEGACY_AUTH_DDL);
+      seed
+        .prepare(
+          `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run('u1', 'Andrew', 'andrew@example.com', 1, 1000, 1000);
+      seed.close();
+
+      const sqlite = new Database(dbPath);
+      sqlite.pragma('journal_mode = WAL');
+      sqlite.pragma('foreign_keys = true');
+
+      expect(() => ensureSchema(sqlite)).not.toThrow();
+
+      // Live DB was reset to snake_case; legacy data discarded under the flag.
+      expect(columns(sqlite, 'user')).toContain('email_verified');
+      expect(columns(sqlite, 'user')).not.toContain('emailVerified');
+      expect(count(sqlite, 'user')).toBe(0);
+      sqlite.close();
+
+      // The invariant: a backup was written BEFORE the reset and it preserved
+      // the original row — the data was never dropped without a copy on disk.
+      const backups = readdirSync(dir).filter((f) => f.includes('.auth-reset-backup-'));
+      expect(backups.length).toBe(1);
+      const backup = new Database(join(dir, backups[0]));
+      const backupUsers = backup.prepare(`SELECT COUNT(*) AS c FROM user`).get() as { c: number };
+      expect(backupUsers.c).toBe(1);
+      backup.close();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('backup written to'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -105,21 +105,53 @@ function recreateAuthTables(sqlite: BetterSqlite3.Database): void {
 }
 
 /**
+ * Build the fail-loud, actionable error thrown when a legacy camelCase auth
+ * schema still holds data. Shared by the default refusal and the gated path's
+ * "backup could not be taken" refusal so the guidance is identical.
+ */
+function legacyAuthDataLossError(authRowCount: number, extraReason?: string): Error {
+  const lines: string[] = [
+    `Legacy camelCase auth schema detected (\`user.emailVerified\` present) with ` +
+      `${authRowCount} existing row(s) across ${AUTH_TABLES.join('/')}.`,
+  ];
+  if (extraReason) {
+    lines.push(extraReason);
+  }
+  lines.push(
+    'Refusing to auto-drop the auth tables — that would permanently destroy user',
+    'accounts, password credentials, active sessions and verification tokens with no backup.',
+    '',
+    'Resolve one of two ways, then restart:',
+    '  1. Back up the database, then migrate the auth tables from camelCase to snake_case',
+    '     columns yourself (rename the columns, or copy the rows into fresh snake_case tables); OR',
+    `  2. To intentionally DISCARD the existing auth data, restart with ` +
+      `${ALLOW_AUTH_TABLE_RESET_ENV}=true`,
+    '     — a timestamped database backup is taken automatically before the reset.'
+  );
+  return new Error(lines.join('\n'));
+}
+
+/**
  * Take a consistent, timestamped snapshot of the database file before a
  * destructive auth-table reset. Uses `VACUUM INTO` (synchronous, WAL-safe).
- * In-memory databases have no file to back up. Returns a human-readable
- * description of what happened, for logging.
+ *
+ * A successful backup is a HARD PRECONDITION for the reset. If one cannot be
+ * taken — an in-memory database (no file to copy), a missing path, or a failing
+ * `VACUUM INTO` — this THROWS, so the caller refuses the reset (fail closed)
+ * rather than dropping populated auth data unprotected. Returns the backup file
+ * path on success.
  */
 function backupBeforeAuthReset(sqlite: BetterSqlite3.Database): string {
-  if (sqlite.memory) {
-    return 'in-memory database — no file backup taken';
+  if (sqlite.memory || !sqlite.name) {
+    throw new Error('database is in-memory — there is no file to back up');
   }
   const dbPath = sqlite.name;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupPath = `${dbPath}.auth-reset-backup-${stamp}`;
   // VACUUM INTO writes a clean, consistent copy of the live DB to a new file.
+  // Throws if the target exists or cannot be written — the caller fails closed.
   sqlite.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
-  return `backup written to ${backupPath}`;
+  return backupPath;
 }
 
 /**
@@ -143,7 +175,9 @@ function backupBeforeAuthReset(sqlite: BetterSqlite3.Database): string {
  *    We REFUSE and throw a loud, actionable error — we NEVER drop populated
  *    tables. An operator who knowingly wants to discard the old auth data can
  *    set HOARD_ALLOW_AUTH_TABLE_RESET=true, in which case a timestamped backup
- *    is taken before the reset.
+ *    is taken before the reset. That backup is a HARD precondition: if it cannot
+ *    be taken (e.g. an in-memory DB, or VACUUM INTO fails), the reset is refused
+ *    (fail closed) — populated auth data is never dropped without a backup.
  */
 export function reconcileLegacyAuthSchema(sqlite: BetterSqlite3.Database): void {
   const legacyColumn = sqlite
@@ -166,28 +200,28 @@ export function reconcileLegacyAuthSchema(sqlite: BetterSqlite3.Database): void 
   const resetAllowed = process.env[ALLOW_AUTH_TABLE_RESET_ENV] === 'true';
 
   if (!resetAllowed) {
-    throw new Error(
-      [
-        `Legacy camelCase auth schema detected (\`user.emailVerified\` present) with ` +
-          `${authRowCount} existing row(s) across ${AUTH_TABLES.join('/')}.`,
-        'Refusing to auto-drop the auth tables — that would permanently destroy user',
-        'accounts, password credentials, active sessions and verification tokens with no backup.',
-        '',
-        'Resolve one of two ways, then restart:',
-        '  1. Back up the database, then migrate the auth tables from camelCase to snake_case',
-        '     columns yourself (rename the columns, or copy the rows into fresh snake_case tables); OR',
-        `  2. To intentionally DISCARD the existing auth data, restart with ` +
-          `${ALLOW_AUTH_TABLE_RESET_ENV}=true`,
-        '     — a timestamped database backup is taken automatically before the reset.',
-      ].join('\n')
+    throw legacyAuthDataLossError(authRowCount);
+  }
+
+  // Explicit, operator-gated, destructive reset. A successful backup is a HARD
+  // precondition: if we cannot back up the data first (in-memory DB, or the
+  // VACUUM INTO fails), REFUSE the reset (fail closed) so populated auth data is
+  // never dropped unprotected — even under the override flag.
+  let backupPath: string;
+  try {
+    backupPath = backupBeforeAuthReset(sqlite);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw legacyAuthDataLossError(
+      authRowCount,
+      `${ALLOW_AUTH_TABLE_RESET_ENV}=true was set, but the required pre-reset backup ` +
+        `could not be taken (${reason}); refusing to drop populated auth data without a backup.`
     );
   }
 
-  // Explicit, operator-gated, destructive reset — back up the file first.
-  const backupResult = backupBeforeAuthReset(sqlite);
   console.warn(
     `[db] ${ALLOW_AUTH_TABLE_RESET_ENV}=true — resetting legacy auth tables; ` +
-      `${authRowCount} row(s) will be discarded (${backupResult}).`
+      `${authRowCount} row(s) will be discarded (backup written to ${backupPath}).`
   );
   recreateAuthTables(sqlite);
 }
