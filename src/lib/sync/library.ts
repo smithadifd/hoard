@@ -19,6 +19,7 @@ import {
   capturePricePaidSuggestions,
   countOwnedGames,
   getSetting,
+  insertPlaytimeSnapshot,
 } from '../db/queries';
 import { getDb } from '../db';
 import { fetchNetNewPrices } from './net-new-prices';
@@ -140,14 +141,28 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
           netNewNonWishlistIds.push(gameId);
         }
 
+        const lastPlayed =
+          steamGame.rtime_last_played > 0
+            ? new Date(steamGame.rtime_last_played * 1000).toISOString()
+            : undefined;
+
+        // Preserve playtime history BEFORE upsertUserGame overwrites
+        // user_games.playtimeMinutes. The accumulating series is the time-series
+        // the old code destroyed each sync; deduped per (game, user, day) so a
+        // same-day re-sync is a no-op. Mirrors the price_snapshots pattern.
+        insertPlaytimeSnapshot({
+          gameId,
+          userId: effectiveUserId,
+          playtimeMinutes: steamGame.playtime_forever,
+          recentMinutes: steamGame.playtime_2weeks ?? 0,
+          lastPlayed,
+        });
+
         upsertUserGame(gameId, {
           isOwned: true,
           playtimeMinutes: steamGame.playtime_forever,
           playtimeRecentMinutes: steamGame.playtime_2weeks ?? 0,
-          lastPlayed:
-            steamGame.rtime_last_played > 0
-              ? new Date(steamGame.rtime_last_played * 1000).toISOString()
-              : undefined,
+          lastPlayed,
         }, effectiveUserId);
 
         processed++;
