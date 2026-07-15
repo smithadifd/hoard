@@ -3,6 +3,8 @@ import { eq, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
 import type { TestDb } from './test-helpers';
+import { calculateValueReceived } from '../scoring/valueReceived';
+import { getEffectivePlaytimeHours } from '../scoring/engine';
 
 // Mock getDb to return our test database
 let testDb: TestDb;
@@ -1021,6 +1023,114 @@ describe('getEnrichedGames — Value Received sorts', () => {
     expect(order[0]).toBe('Exceeded');
     expect(order.indexOf('Exceeded')).toBeLessThan(order.indexOf('Unrealized'));
     expect(order.indexOf('No Baseline')).toBe(order.length - 1);
+  });
+});
+
+describe('getEnrichedGames — library default sort leads with Value Received (R14)', () => {
+  it('the /library default filters surface highest realized value first', () => {
+    // Time lens 2.0 ratio → exceeded.
+    const exceeded = seedGame(testDb, { steamAppId: 900, title: 'Got My Money Worth', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, exceeded, { isOwned: true, playtimeMinutes: 1200 });
+    // Time lens 0.1 ratio → unrealized.
+    const unrealized = seedGame(testDb, { steamAppId: 901, title: 'Barely Touched', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, unrealized, { isOwned: true, playtimeMinutes: 60 });
+
+    // Exactly the default filter object the library page builds (no URL overrides).
+    const order = getEnrichedGames(
+      { view: 'library', sortBy: 'valueReceived', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    ).games.map((g) => g.title);
+
+    expect(order.indexOf('Got My Money Worth')).toBeLessThan(order.indexOf('Barely Touched'));
+  });
+});
+
+describe('getEnrichedGames — Value Received filters (R14)', () => {
+  it('filters by rated / unrated on the user post-play rating', () => {
+    const rated = seedGame(testDb, { steamAppId: 910, title: 'Rated Game', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, rated, { isOwned: true, playtimeMinutes: 600, enjoymentRating: 5 });
+    const alsoRated = seedGame(testDb, { steamAppId: 911, title: 'Disliked Game', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, alsoRated, { isOwned: true, playtimeMinutes: 600, enjoymentRating: 2 });
+    const unrated = seedGame(testDb, { steamAppId: 912, title: 'Unrated Game', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, unrated, { isOwned: true, playtimeMinutes: 600 });
+
+    const ratedTitles = getEnrichedGames({ view: 'library', rated: true }, undefined, undefined, 'default')
+      .games.map((g) => g.title);
+    expect(ratedTitles.sort()).toEqual(['Disliked Game', 'Rated Game']);
+
+    const unratedTitles = getEnrichedGames({ view: 'library', rated: false }, undefined, undefined, 'default')
+      .games.map((g) => g.title);
+    expect(unratedTitles).toEqual(['Unrated Game']);
+  });
+
+  it('filters by Value Received tier, matching the donut bucketing exactly (incl. effective-playtime fallback)', () => {
+    // Default thresholds (no settings seeded): review 90 → veryPositive $3.00/hr target.
+    // Covers money + time lenses AND the effective-playtime path that the donut/badges use but the
+    // SQL previously ignored: HLTB-less games fall back to steam_playtime_median, and a steam_reviews
+    // basis grades off the median even when an HLTB value exists.
+    const specs = [
+      { appId: 920, title: 'MoneyExceeded',       review: 90, hltb: 10,   median: null, source: 'hltb',          price: 10,   mins: 6000 }, // $0.10/hr → exceeded (money)
+      { appId: 921, title: 'MoneyUnrealized',     review: 90, hltb: 10,   median: null, source: 'hltb',          price: 60,   mins: 60   }, // $60/hr → unrealized (money)
+      { appId: 922, title: 'TimeExceeded',        review: 90, hltb: 10,   median: null, source: 'hltb',          price: null, mins: 1200 }, // 20h/10h → exceeded (time, HLTB)
+      { appId: 923, title: 'TimeUnrealized',      review: 90, hltb: 10,   median: null, source: 'hltb',          price: null, mins: 60   }, // 1h/10h → unrealized (time, HLTB)
+      { appId: 924, title: 'MedianRealized',      review: 90, hltb: null, median: 20,   source: 'hltb',          price: null, mins: 1200 }, // HLTB NULL → median 20h; 20h/20h → realized
+      { appId: 925, title: 'SteamBasisExceeded',  review: 90, hltb: 10,   median: 5,    source: 'steam_reviews', price: null, mins: 600  }, // steam basis → median 5h; 10h/5h → exceeded (HLTB would say realized)
+      { appId: 926, title: 'NoBaseline',          review: 90, hltb: null, median: null, source: 'hltb',          price: null, mins: 600  }, // no HLTB, no median → 'none'
+    ];
+    for (const s of specs) {
+      const g = seedGame(testDb, {
+        steamAppId: s.appId,
+        title: s.title,
+        reviewScore: s.review,
+        hltbMain: s.hltb,
+        steamPlaytimeMedian: s.median,
+      });
+      seedUserGame(testDb, g, { isOwned: true, playtimeMinutes: s.mins, pricePaid: s.price, playtimeSource: s.source });
+    }
+
+    // Expected bucket per game via the DONUT's exact per-game logic (getValueReceivedOverview):
+    // effective playtime hours via getEffectivePlaytimeHours (isReleased omitted, exactly as the
+    // donut/badges call it), then calculateValueReceived → lens/tier. This pins the SQL filter to
+    // the same computation the cards + donut show, so they can never silently disagree.
+    const donutBucket = (s: (typeof specs)[number]) => {
+      const vr = calculateValueReceived({
+        playtimeMinutes: s.mins,
+        hltbMainHours: getEffectivePlaytimeHours({
+          playtimeSource: s.source,
+          hltbMain: s.hltb,
+          steamPlaytimeMedian: s.median,
+        }),
+        reviewPercent: s.review,
+        pricePaid: s.price,
+      });
+      return vr.lens === 'none' ? 'none' : vr.tier;
+    };
+
+    const expectedFor = (tier: 'exceeded' | 'realized' | 'approaching' | 'unrealized') =>
+      specs.filter((s) => donutBucket(s) === tier).map((s) => s.title).sort();
+
+    for (const tier of ['exceeded', 'realized', 'approaching', 'unrealized'] as const) {
+      const got = getEnrichedGames({ view: 'library', valueReceivedTier: tier }, undefined, undefined, 'default')
+        .games.map((g) => g.title)
+        .sort();
+      expect(got).toEqual(expectedFor(tier));
+    }
+
+    // Explicit guard for the previously-broken case: the median-fallback game is a real tier
+    // (matching its card + donut slice), not silently dropped from every filter.
+    expect(donutBucket(specs.find((s) => s.title === 'MedianRealized')!)).toBe('realized');
+    expect(
+      getEnrichedGames({ view: 'library', valueReceivedTier: 'realized' }, undefined, undefined, 'default')
+        .games.map((g) => g.title),
+    ).toContain('MedianRealized');
+
+    // The no-baseline game is bucketed 'none' and therefore appears under no tier filter.
+    const allTierMatches = (['exceeded', 'realized', 'approaching', 'unrealized'] as const).flatMap((tier) =>
+      getEnrichedGames({ view: 'library', valueReceivedTier: tier }, undefined, undefined, 'default').games.map((g) => g.title),
+    );
+    expect(allTierMatches).not.toContain('NoBaseline');
   });
 });
 

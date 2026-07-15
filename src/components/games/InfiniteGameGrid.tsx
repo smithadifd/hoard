@@ -46,6 +46,8 @@ export function InfiniteGameGrid({
       if (filters.minReview !== undefined) params.set('minReview', String(filters.minReview));
       if (filters.maxReviewCount !== undefined) params.set('maxReviewCount', String(filters.maxReviewCount));
       if (filters.minInterest !== undefined) params.set('minInterest', String(filters.minInterest));
+      if (filters.rated !== undefined) params.set('rated', String(filters.rated));
+      if (filters.valueReceivedTier) params.set('valueReceivedTier', filters.valueReceivedTier);
       if (filters.strictFilters !== undefined) params.set('strictFilters', String(filters.strictFilters));
       if (filters.requireCompleteData !== undefined) params.set('requireCompleteData', String(filters.requireCompleteData));
       if (filters.hideUnreleased !== undefined) params.set('hideUnreleased', String(filters.hideUnreleased));

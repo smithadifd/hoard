@@ -1,8 +1,12 @@
 import { redirect } from 'next/navigation';
-import { getEnrichedGames } from '@/lib/db/queries';
+import { Wallet, DollarSign } from 'lucide-react';
+import { getEnrichedGames, getValueReceivedOverview } from '@/lib/db/queries';
+import type { ValueReceivedOverview } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
 import { GameListFilters } from '@/components/filters/GameListFilters';
+import ValueReceivedChart from '@/components/dashboard/ValueReceivedChart';
+import { ValueSummaryCard } from '@/components/dashboard/ValueSummaryCard';
 import { parseGameFiltersFromParams } from '@/lib/utils/filters';
 import type { GameFilters } from '@/types';
 
@@ -20,13 +24,22 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
 
   const filters: GameFilters = {
     view: 'library',
-    sortBy: 'title',
-    sortOrder: 'asc',
+    // Lead with realized value — the library's answer to the wishlist's deal score.
+    // Any explicit ?sortBy in the URL (set by the filter controls) overrides this default.
+    sortBy: 'valueReceived',
+    sortOrder: 'desc',
     ...parseGameFiltersFromParams(params),
   };
 
   const pageSize = 24;
   const { games, total } = getEnrichedGames(filters, 1, pageSize, session.user.id);
+
+  let valueOverview: ValueReceivedOverview | null = null;
+  try {
+    valueOverview = getValueReceivedOverview(session.user.id);
+  } catch {
+    // DB not ready yet — fall back to the grid without the value rollup.
+  }
 
   return (
     <div className="space-y-6">
@@ -37,7 +50,20 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
         </p>
       </div>
 
-      <GameListFilters currentFilters={filters} />
+      {/* Lead with Value Received — the same rollup the dashboard shows, so the library
+          headlines "did I get my money's worth?" instead of an A–Z wall of titles. */}
+      {total > 0 && valueOverview && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ValueCard icon={<Wallet className="h-4 w-4" />} title="Value Received">
+            <ValueReceivedChart data={valueOverview.distribution} />
+          </ValueCard>
+          <ValueCard icon={<DollarSign className="h-4 w-4" />} title="Spending & Value">
+            <ValueSummaryCard stats={valueOverview.stats} />
+          </ValueCard>
+        </div>
+      )}
+
+      <GameListFilters currentFilters={filters} showValueFilters />
 
       <InfiniteGameGrid
         initialGames={games}
@@ -47,6 +73,19 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
         from="library"
         emptyMessage="No games found. Sync your Steam library from Settings to get started."
       />
+    </div>
+  );
+}
+
+/** Card chrome matching the dashboard's Value Received cards (rounded-xl bg-card, icon + label). */
+function ValueCard({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl bg-card p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-primary">{icon}</span>
+        <h2 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground">{title}</h2>
+      </div>
+      {children}
     </div>
   );
 }
