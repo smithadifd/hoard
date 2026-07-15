@@ -819,6 +819,14 @@ function buildGameFilterConditions(filters: GameFilters, userId: string): SQL[] 
     conditions.push(sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`);
   }
 
+  // Value Received: rated vs unrated (owned library) — a plain column check on the
+  // user's post-play enjoyment rating, no scoring involved.
+  if (filters.rated === true) {
+    conditions.push(sql`${userGames.enjoymentRating} IS NOT NULL`);
+  } else if (filters.rated === false) {
+    conditions.push(sql`${userGames.enjoymentRating} IS NULL`);
+  }
+
   if (filters.playtimeStatus === 'unplayed') {
     conditions.push(sql`(${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} = 0)`);
   } else if (filters.playtimeStatus === 'underplayed') {
@@ -1249,7 +1257,68 @@ export function getEnrichedGames(
 
   const conditions = buildGameFilterConditions(filters, userId);
 
-  // Snapshot conditions before data-quality filters so totalUnfiltered still applies search/genre/etc.
+  // Value Received tier expressions — the ONE source of truth shared by the tier FILTER
+  // (below) and the `valueReceived` SORT (in sortMap), so a game's tier can never drift
+  // between the two. Mirrors calculateValueReceived's moneyTier/timeTier bands using the
+  // user's LIVE configured $/hr thresholds. Computed in SQL so it survives pagination.
+  const { thresholds: vrThresholds } = getScoringConfig();
+  const dphT = vrThresholds.maxDollarsPerHour;
+  const hoursPlayedExpr = sql`(CAST(${userGames.playtimeMinutes} AS REAL) / 60.0)`;
+  // Per-game $/hr target, picked by review tier (mirrors getMaxDollarsPerHour).
+  const dphTargetExpr = sql`(CASE
+    WHEN ${games.reviewScore} IS NULL THEN ${dphT.positive}
+    WHEN ${games.reviewScore} >= 95 THEN ${dphT.overwhelminglyPositive}
+    WHEN ${games.reviewScore} >= 80 THEN ${dphT.veryPositive}
+    WHEN ${games.reviewScore} >= 70 THEN ${dphT.positive}
+    WHEN ${games.reviewScore} >= 40 THEN ${dphT.mixed}
+    ELSE ${dphT.negative} END)`;
+  // Effective playtime basis (hours) — mirrors resolveEffectivePlaytime / getEffectivePlaytimeHours,
+  // the SAME resolver getValueReceivedOverview (the donut) and the per-card badges use (both call it
+  // WITHOUT isReleased, so the released-game fallback below is never suppressed for them): an explicit
+  // steam_reviews preference takes the Steam-review median (then HLTB); otherwise HLTB, falling back to
+  // the median when HLTB is missing. steam_playtime_median is stored in hours, like hltb_main. Without
+  // this, a released HLTB-less game with a review median reads "Realized" on its card AND in the donut,
+  // yet fell out of every tier filter — the surfaces would silently disagree.
+  const effectiveHoursExpr = sql`(CASE
+    WHEN ${userGames.playtimeSource} = 'steam_reviews' THEN COALESCE(${games.steamPlaytimeMedian}, ${games.hltbMain})
+    WHEN ${games.hltbMain} IS NOT NULL THEN ${games.hltbMain}
+    WHEN ${games.isReleased} = 0 THEN NULL
+    ELSE ${games.steamPlaytimeMedian} END)`;
+  // Discrete Value Received tier ordinal (exceeded 4 → unrealized 1), mirroring
+  // calculateValueReceived's tier: money lens first (priced + played), then time lens graded off the
+  // EFFECTIVE playtime basis above (so it matches the donut + card badges), then never-played →
+  // unrealized. Rating does NOT enter here. NULL = no baseline to grade ('none' — excluded from filters).
+  const valueTierOrdinalExpr = sql`(CASE
+    WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
+      CASE
+        WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 0.5 THEN 4
+        WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} THEN 3
+        WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 2 THEN 2
+        ELSE 1 END
+    WHEN ${effectiveHoursExpr} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
+      CASE
+        WHEN (${hoursPlayedExpr} / ${effectiveHoursExpr}) >= 1.1 THEN 4
+        WHEN (${hoursPlayedExpr} / ${effectiveHoursExpr}) >= 0.8 THEN 3
+        WHEN (${hoursPlayedExpr} / ${effectiveHoursExpr}) >= 0.2 THEN 2
+        ELSE 1 END
+    WHEN ${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} <= 0 THEN 1
+    ELSE NULL END)`;
+
+  // Value Received tier filter — surfaces exactly the games the donut buckets into this tier
+  // (exceeded/realized/approaching/unrealized), because it reuses the shared ordinal above, which
+  // grades off the SAME effective playtime basis as the donut and the per-card badges. No new
+  // scoring — it just selects on the existing computation.
+  if (filters.valueReceivedTier) {
+    const tierOrdinal: Record<NonNullable<GameFilters['valueReceivedTier']>, number> = {
+      unrealized: 1,
+      approaching: 2,
+      realized: 3,
+      exceeded: 4,
+    };
+    conditions.push(sql`${valueTierOrdinalExpr} = ${tierOrdinal[filters.valueReceivedTier]}`);
+  }
+
+  // Snapshot conditions before data-quality filters so totalUnfiltered still applies search/genre/value/etc.
   const conditionsWithoutDataFilters = [...conditions];
 
   if (filters.requireCompleteData) {
@@ -1277,20 +1346,8 @@ export function getEnrichedGames(
   const where = and(...conditions);
 
   // Value Received sorts are computed per-game in JS (calculateValueReceived) AFTER
-  // pagination, so they must be expressed in SQL here to survive paging. The tier sort
-  // mirrors calculateValueReceived's bands using the user's LIVE configured $/hr
-  // thresholds (interpolated below), so it can't drift from the on-card badges.
-  const { thresholds: vrThresholds } = getScoringConfig();
-  const dphT = vrThresholds.maxDollarsPerHour;
-  const hoursPlayedExpr = sql`(CAST(${userGames.playtimeMinutes} AS REAL) / 60.0)`;
-  // Per-game $/hr target, picked by review tier (mirrors getMaxDollarsPerHour).
-  const dphTargetExpr = sql`(CASE
-    WHEN ${games.reviewScore} IS NULL THEN ${dphT.positive}
-    WHEN ${games.reviewScore} >= 95 THEN ${dphT.overwhelminglyPositive}
-    WHEN ${games.reviewScore} >= 80 THEN ${dphT.veryPositive}
-    WHEN ${games.reviewScore} >= 70 THEN ${dphT.positive}
-    WHEN ${games.reviewScore} >= 40 THEN ${dphT.mixed}
-    ELSE ${dphT.negative} END)`;
+  // pagination, so they must be expressed in SQL to survive paging. They reuse the shared
+  // tier expressions defined above (hoursPlayedExpr / dphTargetExpr / valueTierOrdinalExpr).
 
   // Sort mapping — includes subqueries for price/dealScore from latest snapshots.
   // Note: dealScore sort uses the cached snapshot value (can't compute weighted score in SQL).
@@ -1361,28 +1418,13 @@ export function getEnrichedGames(
       WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0
         THEN ${userGames.pricePaid} / ${hoursPlayedExpr}
       ELSE NULL END)`,
-    // Discrete tier ordinal (exceeded 4 → unrealized 1), mirroring moneyTier/timeTier.
-    // A rated game sorts by the user's own verdict (enjoymentRating 1-5) mapped onto
-    // the SAME value scale as the efficiency tiers (1-4) — so a 5★ tops everything, a
-    // 1★ "regret" sits at the bottom with unrealized, and ratings interleave with
-    // unrated games by value (intentional: a regretted game received low value and
-    // should sort low). No baseline (played, no HLTB, no price) → NULL → sorts last.
+    // The user's own verdict leads when they've rated a game (enjoymentRating 1-5, so a 5★
+    // tops everything and a 1★ "regret" sinks); otherwise fall back to the efficiency/
+    // completion tier ordinal (1-4) shared with the value-tier filter above — one source of
+    // truth, so sort order and the tier filter can never drift. NULL (no baseline) sorts last.
     valueReceived: sql`(CASE
       WHEN ${userGames.enjoymentRating} IS NOT NULL THEN ${userGames.enjoymentRating}
-      WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
-        CASE
-          WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 0.5 THEN 4
-          WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} THEN 3
-          WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 2 THEN 2
-          ELSE 1 END
-      WHEN ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
-        CASE
-          WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 1.1 THEN 4
-          WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 0.8 THEN 3
-          WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 0.2 THEN 2
-          ELSE 1 END
-      WHEN ${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} <= 0 THEN 1
-      ELSE NULL END)`,
+      ELSE ${valueTierOrdinalExpr} END)`,
   } as const;
   type SortKey = keyof typeof sortMap;
   const sortKey = (filters.sortBy && filters.sortBy in sortMap ? filters.sortBy : 'title') as SortKey;

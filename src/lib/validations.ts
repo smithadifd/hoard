@@ -58,6 +58,8 @@ export const gameFiltersSchema = z.object({
   hideUnreleased: booleanString.optional(),
   earlyAccess: booleanString.optional(),
   minInterest: z.coerce.number().int().min(1).max(5).optional(),
+  rated: booleanString.optional(),
+  valueReceivedTier: z.enum(['unrealized', 'approaching', 'realized', 'exceeded']).optional(),
   genres: z
     .string()
     .optional()
