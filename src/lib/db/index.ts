@@ -6,7 +6,193 @@ import { getConfig } from '../config';
 
 let db: ReturnType<typeof createDb> | null = null;
 
-function ensureSchema(sqlite: BetterSqlite3.Database) {
+/**
+ * Better Auth tables (snake_case columns, integer millisecond timestamps).
+ *
+ * Kept in one shared constant so the initial-create path (`ensureSchema`) and
+ * the legacy-migration recreate path (`recreateAuthTables`) use a single source
+ * of truth and can never drift apart.
+ */
+const AUTH_TABLES_DDL = `
+  CREATE TABLE IF NOT EXISTS user (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    image TEXT,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+
+  CREATE TABLE IF NOT EXISTS session (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at INTEGER NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+
+  CREATE TABLE IF NOT EXISTS account (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    access_token_expires_at INTEGER,
+    refresh_token_expires_at INTEGER,
+    scope TEXT,
+    id_token TEXT,
+    password TEXT,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+
+  CREATE TABLE IF NOT EXISTS verification (
+    id TEXT PRIMARY KEY,
+    identifier TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
+    updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
+  );
+`;
+
+/** The four Better Auth tables, ordered children-first for safe DROP. */
+const AUTH_TABLES = ['verification', 'account', 'session', 'user'] as const;
+
+/**
+ * Opt-in env flag that permits the DESTRUCTIVE reset of a legacy camelCase auth
+ * schema that still contains data. When set to `'true'`, a timestamped backup of
+ * the database file is taken before the tables are dropped. Without it, a
+ * populated legacy schema fails loud instead of silently destroying user data.
+ */
+const ALLOW_AUTH_TABLE_RESET_ENV = 'HOARD_ALLOW_AUTH_TABLE_RESET';
+
+function tableExists(sqlite: BetterSqlite3.Database, table: string): boolean {
+  const row = sqlite
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table);
+  return row !== undefined;
+}
+
+/**
+ * Total row count across all auth tables. A missing table counts as 0 rows.
+ * A genuine COUNT failure is allowed to propagate (halt) rather than be
+ * swallowed — under-counting here could mask real data and lead to a drop.
+ */
+function countAuthRows(sqlite: BetterSqlite3.Database): number {
+  let total = 0;
+  for (const table of AUTH_TABLES) {
+    if (!tableExists(sqlite, table)) continue;
+    const row = sqlite.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).get() as {
+      count: number;
+    };
+    total += row.count;
+  }
+  return total;
+}
+
+/** Drop (children-first) and recreate the auth tables with the snake_case schema. */
+function recreateAuthTables(sqlite: BetterSqlite3.Database): void {
+  for (const table of AUTH_TABLES) {
+    sqlite.exec(`DROP TABLE IF EXISTS ${table};`);
+  }
+  sqlite.exec(AUTH_TABLES_DDL);
+}
+
+/**
+ * Take a consistent, timestamped snapshot of the database file before a
+ * destructive auth-table reset. Uses `VACUUM INTO` (synchronous, WAL-safe).
+ * In-memory databases have no file to back up. Returns a human-readable
+ * description of what happened, for logging.
+ */
+function backupBeforeAuthReset(sqlite: BetterSqlite3.Database): string {
+  if (sqlite.memory) {
+    return 'in-memory database — no file backup taken';
+  }
+  const dbPath = sqlite.name;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = `${dbPath}.auth-reset-backup-${stamp}`;
+  // VACUUM INTO writes a clean, consistent copy of the live DB to a new file.
+  sqlite.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+  return `backup written to ${backupPath}`;
+}
+
+/**
+ * Reconcile the Better Auth tables when a *legacy camelCase* schema is found.
+ *
+ * SAFETY-CRITICAL. This replaces an older implementation that unconditionally
+ * dropped user/session/account/verification whenever the legacy `emailVerified`
+ * column was detected — an implicit, un-backed-up data-loss path.
+ *
+ * How the three cases are distinguished (this is the crux):
+ *
+ *  - Fresh / already-snake_case DB: `ensureSchema` created (or found) the auth
+ *    tables with snake_case columns, so `user.emailVerified` does not exist.
+ *    This function is a no-op — normal boot and fresh bootstrap are never
+ *    affected, so removing the drop cannot break a legitimate fresh DB.
+ *  - Legacy camelCase tables that are EMPTY: there is nothing to lose, so we
+ *    drop and recreate them as snake_case. This keeps a legitimate legacy
+ *    bootstrap (e.g. a dev DB that only ever held the old, empty tables) working.
+ *  - Legacy camelCase tables WITH DATA: dropping them would permanently destroy
+ *    real user accounts, password credentials, sessions and verification tokens.
+ *    We REFUSE and throw a loud, actionable error — we NEVER drop populated
+ *    tables. An operator who knowingly wants to discard the old auth data can
+ *    set HOARD_ALLOW_AUTH_TABLE_RESET=true, in which case a timestamped backup
+ *    is taken before the reset.
+ */
+export function reconcileLegacyAuthSchema(sqlite: BetterSqlite3.Database): void {
+  const legacyColumn = sqlite
+    .prepare(`SELECT name FROM pragma_table_info('user') WHERE name = 'emailVerified'`)
+    .get() as { name: string } | undefined;
+
+  if (!legacyColumn) {
+    // Snake_case (current) schema, or no user table yet — nothing to migrate.
+    return;
+  }
+
+  const authRowCount = countAuthRows(sqlite);
+
+  if (authRowCount === 0) {
+    // Empty legacy tables — safe to convert to snake_case, no data at risk.
+    recreateAuthTables(sqlite);
+    return;
+  }
+
+  const resetAllowed = process.env[ALLOW_AUTH_TABLE_RESET_ENV] === 'true';
+
+  if (!resetAllowed) {
+    throw new Error(
+      [
+        `Legacy camelCase auth schema detected (\`user.emailVerified\` present) with ` +
+          `${authRowCount} existing row(s) across ${AUTH_TABLES.join('/')}.`,
+        'Refusing to auto-drop the auth tables — that would permanently destroy user',
+        'accounts, password credentials, active sessions and verification tokens with no backup.',
+        '',
+        'Resolve one of two ways, then restart:',
+        '  1. Back up the database, then migrate the auth tables from camelCase to snake_case',
+        '     columns yourself (rename the columns, or copy the rows into fresh snake_case tables); OR',
+        `  2. To intentionally DISCARD the existing auth data, restart with ` +
+          `${ALLOW_AUTH_TABLE_RESET_ENV}=true`,
+        '     — a timestamped database backup is taken automatically before the reset.',
+      ].join('\n')
+    );
+  }
+
+  // Explicit, operator-gated, destructive reset — back up the file first.
+  const backupResult = backupBeforeAuthReset(sqlite);
+  console.warn(
+    `[db] ${ALLOW_AUTH_TABLE_RESET_ENV}=true — resetting legacy auth tables; ` +
+      `${authRowCount} row(s) will be discarded (${backupResult}).`
+  );
+  recreateAuthTables(sqlite);
+}
+
+export function ensureSchema(sqlite: BetterSqlite3.Database) {
   // Auto-create tables if they don't exist (safe for production — IF NOT EXISTS is a no-op)
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS games (
@@ -119,54 +305,11 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT
     );
-
-    -- Better Auth tables (snake_case columns, integer timestamps)
-    CREATE TABLE IF NOT EXISTS user (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      email_verified INTEGER NOT NULL DEFAULT 0,
-      image TEXT,
-      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-    );
-
-    CREATE TABLE IF NOT EXISTS session (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-      token TEXT NOT NULL UNIQUE,
-      expires_at INTEGER NOT NULL,
-      ip_address TEXT,
-      user_agent TEXT,
-      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-    );
-
-    CREATE TABLE IF NOT EXISTS account (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-      account_id TEXT NOT NULL,
-      provider_id TEXT NOT NULL,
-      access_token TEXT,
-      refresh_token TEXT,
-      access_token_expires_at INTEGER,
-      refresh_token_expires_at INTEGER,
-      scope TEXT,
-      id_token TEXT,
-      password TEXT,
-      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-    );
-
-    CREATE TABLE IF NOT EXISTS verification (
-      id TEXT PRIMARY KEY,
-      identifier TEXT NOT NULL,
-      value TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-      updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-    );
   `);
+
+  // Better Auth tables — created from the shared AUTH_TABLES_DDL source of truth
+  // so this create path and the legacy-migration recreate path can never drift.
+  sqlite.exec(AUTH_TABLES_DDL);
 
   // Schema migrations for existing databases
   try {
@@ -181,74 +324,11 @@ function ensureSchema(sqlite: BetterSqlite3.Database) {
     // Column already exists — safe to ignore
   }
 
-  // Migrate auth tables from camelCase to snake_case columns
-  // Better Auth requires snake_case column names in SQLite
-  try {
-    const row = sqlite.prepare(
-      `SELECT name FROM pragma_table_info('user') WHERE name = 'emailVerified'`
-    ).get() as { name: string } | undefined;
-    if (row) {
-      // Old camelCase schema detected — drop and recreate
-      sqlite.exec(`
-        DROP TABLE IF EXISTS verification;
-        DROP TABLE IF EXISTS account;
-        DROP TABLE IF EXISTS session;
-        DROP TABLE IF EXISTS user;
-      `);
-      // Re-run the CREATE TABLE IF NOT EXISTS statements above
-      // by calling ensureSchema again (the tables will be created fresh)
-      // Actually, we just need to re-exec the auth table DDL since the main
-      // ensureSchema already ran CREATE TABLE IF NOT EXISTS for all tables.
-      // The auth tables were skipped because they existed with old columns.
-      // After dropping them, we need to re-create them.
-      sqlite.exec(`
-        CREATE TABLE IF NOT EXISTS user (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          email TEXT NOT NULL UNIQUE,
-          email_verified INTEGER NOT NULL DEFAULT 0,
-          image TEXT,
-          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-        );
-        CREATE TABLE IF NOT EXISTS session (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-          token TEXT NOT NULL UNIQUE,
-          expires_at INTEGER NOT NULL,
-          ip_address TEXT,
-          user_agent TEXT,
-          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-        );
-        CREATE TABLE IF NOT EXISTS account (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-          account_id TEXT NOT NULL,
-          provider_id TEXT NOT NULL,
-          access_token TEXT,
-          refresh_token TEXT,
-          access_token_expires_at INTEGER,
-          refresh_token_expires_at INTEGER,
-          scope TEXT,
-          id_token TEXT,
-          password TEXT,
-          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-        );
-        CREATE TABLE IF NOT EXISTS verification (
-          id TEXT PRIMARY KEY,
-          identifier TEXT NOT NULL,
-          value TEXT NOT NULL,
-          expires_at INTEGER NOT NULL,
-          created_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)),
-          updated_at INTEGER NOT NULL DEFAULT (cast(unixepoch('subsecond') * 1000 as integer))
-        );
-      `);
-    }
-  } catch {
-    // Migration already applied or tables don't exist yet
-  }
+  // Migrate auth tables from a legacy camelCase schema to snake_case WITHOUT
+  // ever silently dropping populated auth tables. This is a data-loss guard:
+  // populated legacy tables fail loud; only empty (or explicitly-gated + backed
+  // up) tables are recreated. See reconcileLegacyAuthSchema for the full rules.
+  reconcileLegacyAuthSchema(sqlite);
 }
 
 function createDb() {
