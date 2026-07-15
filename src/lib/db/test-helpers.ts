@@ -119,6 +119,21 @@ const SCHEMA_SQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS ps_game_store_snapshot_idx
     ON price_snapshots (game_id, store, snapshot_date);
 
+  CREATE TABLE IF NOT EXISTS playtime_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL DEFAULT 'default',
+    playtime_minutes INTEGER NOT NULL,
+    recent_minutes INTEGER DEFAULT 0,
+    last_played TEXT,
+    snapshot_date TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS pts_game_snapshot_idx
+    ON playtime_snapshots (game_id, snapshot_date);
+  CREATE UNIQUE INDEX IF NOT EXISTS pts_game_user_snapshot_idx
+    ON playtime_snapshots (game_id, user_id, snapshot_date);
+
   CREATE TABLE IF NOT EXISTS price_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL DEFAULT 'default',
@@ -328,6 +343,29 @@ export function seedPriceSnapshot(
       snapshotDate: overrides.snapshotDate ?? new Date().toISOString().split('T')[0],
     })
     .returning({ id: schema.priceSnapshots.id })
+    .get();
+  return result.id;
+}
+
+/**
+ * Seed a playtime snapshot. Returns the snapshot ID.
+ */
+export function seedPlaytimeSnapshot(
+  db: TestDb,
+  gameId: number,
+  overrides: Partial<typeof schema.playtimeSnapshots.$inferInsert> = {}
+): number {
+  const result = db
+    .insert(schema.playtimeSnapshots)
+    .values({
+      gameId,
+      userId: overrides.userId ?? 'default',
+      playtimeMinutes: overrides.playtimeMinutes ?? 0,
+      recentMinutes: overrides.recentMinutes ?? 0,
+      lastPlayed: overrides.lastPlayed,
+      snapshotDate: overrides.snapshotDate ?? new Date().toISOString().split('T')[0],
+    })
+    .returning({ id: schema.playtimeSnapshots.id })
     .get();
   return result.id;
 }

@@ -308,6 +308,24 @@ export function ensureSchema(sqlite: BetterSqlite3.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS playtime_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL DEFAULT 'default',
+      playtime_minutes INTEGER NOT NULL,
+      recent_minutes INTEGER DEFAULT 0,
+      last_played TEXT,
+      snapshot_date TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS pts_game_snapshot_idx ON playtime_snapshots (game_id, snapshot_date);
+    -- Required, not just an optimization: insertPlaytimeSnapshot() uses
+    -- ON CONFLICT(game_id, user_id, snapshot_date) DO NOTHING, which SQLite
+    -- rejects without a matching unique index. Zero-config dev boots (next dev,
+    -- no migrations) rely on this line so the first library sync doesn't throw.
+    CREATE UNIQUE INDEX IF NOT EXISTS pts_game_user_snapshot_idx
+      ON playtime_snapshots (game_id, user_id, snapshot_date);
+
     CREATE TABLE IF NOT EXISTS price_alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL DEFAULT 'default',

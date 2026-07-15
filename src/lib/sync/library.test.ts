@@ -9,6 +9,7 @@ vi.mock('../steam/client', () => ({
 vi.mock('../db/queries', () => ({
   upsertGameFromSteam: vi.fn(),
   upsertUserGame: vi.fn(),
+  insertPlaytimeSnapshot: vi.fn(),
   createSyncLog: vi.fn(),
   completeSyncLog: vi.fn(),
   getFirstUserId: vi.fn(),
@@ -33,6 +34,7 @@ import { getSteamClient } from '../steam/client';
 import {
   upsertGameFromSteam,
   upsertUserGame,
+  insertPlaytimeSnapshot,
   createSyncLog,
   completeSyncLog,
   getFirstUserId,
@@ -49,6 +51,7 @@ import { fetchNetNewPrices } from './net-new-prices';
 const mockGetSteamClient = vi.mocked(getSteamClient);
 const mockUpsertGame = vi.mocked(upsertGameFromSteam);
 const mockUpsertUserGame = vi.mocked(upsertUserGame);
+const mockInsertSnapshot = vi.mocked(insertPlaytimeSnapshot);
 const mockCreateSyncLog = vi.mocked(createSyncLog);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 const mockGetFirstUserId = vi.mocked(getFirstUserId);
@@ -440,5 +443,69 @@ describe('syncLibrary', () => {
       expect.objectContaining({ playtimeRecentMinutes: 0 }),
       'user-1'
     );
+  });
+
+  describe('playtime snapshots (time-series preservation)', () => {
+    function twoOwnedGames() {
+      const games = [
+        makeSteamGame(440, 'TF2', 100, 10, 1700000000),
+        makeSteamGame(570, 'Dota 2', 200, 0, 0),
+      ];
+      mockGetSteamClient.mockReturnValue({
+        getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
+      } as ReturnType<typeof getSteamClient>);
+      mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
+      mockGetExisting.mockReturnValue(new Map([
+        [440, { id: 10, title: 'TF2' }],
+        [570, { id: 20, title: 'Dota 2' }],
+      ]));
+      mockGetPreOwnership.mockReturnValue([
+        { gameId: 10, wasOwned: true, wasWishlisted: false },
+        { gameId: 20, wasOwned: true, wasWishlisted: false },
+      ]);
+    }
+
+    it('writes one snapshot per game with the incoming Steam totals', async () => {
+      twoOwnedGames();
+
+      await syncLibrary();
+
+      expect(mockInsertSnapshot).toHaveBeenCalledTimes(2);
+      expect(mockInsertSnapshot).toHaveBeenNthCalledWith(1, {
+        gameId: 10,
+        userId: 'user-1',
+        playtimeMinutes: 100,
+        recentMinutes: 10,
+        lastPlayed: new Date(1700000000 * 1000).toISOString(),
+      });
+      expect(mockInsertSnapshot).toHaveBeenNthCalledWith(2, {
+        gameId: 20,
+        userId: 'user-1',
+        playtimeMinutes: 200,
+        recentMinutes: 0,
+        lastPlayed: undefined, // never played → no lastPlayed
+      });
+    });
+
+    it('snapshots BEFORE overwriting user_games for every game (history preserved)', async () => {
+      twoOwnedGames();
+
+      await syncLibrary();
+
+      const snapshotOrder = mockInsertSnapshot.mock.invocationCallOrder;
+      const overwriteOrder = mockUpsertUserGame.mock.invocationCallOrder;
+      expect(snapshotOrder).toHaveLength(2);
+      expect(overwriteOrder).toHaveLength(2);
+
+      // Per game, the snapshot is captured before the upsert that overwrites it —
+      // this is what stops the sync from destroying the prior total.
+      expect(snapshotOrder[0]).toBeLessThan(overwriteOrder[0]);
+      expect(snapshotOrder[1]).toBeLessThan(overwriteOrder[1]);
+
+      // And the snapshot records exactly the total the upsert then writes.
+      expect(mockInsertSnapshot.mock.calls[0][0].playtimeMinutes).toBe(
+        mockUpsertUserGame.mock.calls[0][1].playtimeMinutes,
+      );
+    });
   });
 });

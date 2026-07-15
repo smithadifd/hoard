@@ -153,6 +153,30 @@ export const priceSnapshots = sqliteTable('price_snapshots', {
 }));
 
 // ===========================================
+// Playtime Snapshots - Historical playtime time-series
+// ===========================================
+// One row per (game, user, day). Steam library-sync OVERWRITES
+// user_games.playtimeMinutes each run, destroying the prior total; this table
+// preserves the series so Hoard can derive hours-this-week/month, value-accrual
+// ($/hr improving as hours grow), and momentum (playing/dormant). Mirrors the
+// price_snapshots pattern: current value captured per sync, deduped per day,
+// pruned on the same retention window.
+export const playtimeSnapshots = sqliteTable('playtime_snapshots', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  gameId: integer('game_id').references(() => games.id, { onDelete: 'cascade' }).notNull(),
+  userId: text('user_id').notNull().default('default'),
+  playtimeMinutes: integer('playtime_minutes').notNull(), // cumulative total (Steam playtime_forever) as of snapshotDate
+  recentMinutes: integer('recent_minutes').default(0), // Steam rolling 2-week (playtime_2weeks) at capture
+  lastPlayed: text('last_played'), // ISO date from Steam rtime_last_played; NULL when never played
+  snapshotDate: text('snapshot_date').notNull(), // ISO date (YYYY-MM-DD)
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  gameSnapshotIdx: index('pts_game_snapshot_idx').on(table.gameId, table.snapshotDate),
+  gameUserSnapshotIdx: uniqueIndex('pts_game_user_snapshot_idx')
+    .on(table.gameId, table.userId, table.snapshotDate),
+}));
+
+// ===========================================
 // Price Alerts - Watchlist configuration
 // ===========================================
 export const priceAlerts = sqliteTable('price_alerts', {
