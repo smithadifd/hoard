@@ -38,6 +38,13 @@ export function parseGameFiltersFromParams(
     filters.minInterest = Number(params.minInterest);
   }
 
+  // Owned-library value filters (only meaningful for the library page's owned games).
+  if (typeof params.rated === 'string') filters.rated = params.rated === 'true';
+  const VALUE_TIERS = ['unrealized', 'approaching', 'realized', 'exceeded'];
+  if (typeof params.valueReceivedTier === 'string' && VALUE_TIERS.includes(params.valueReceivedTier)) {
+    filters.valueReceivedTier = params.valueReceivedTier as GameFilters['valueReceivedTier'];
+  }
+
   if (typeof params.days === 'string') {
     const n = Number(params.days);
     if (Number.isFinite(n) && n >= 1 && n <= 365) filters.daysBack = Math.floor(n);

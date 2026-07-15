@@ -153,6 +153,10 @@ export interface GameFilters {
   requireCompleteData?: boolean;
   hideUnreleased?: boolean;
   earlyAccess?: boolean;
+  /** Owned-library value filter: true = only games the user has rated, false = only unrated. */
+  rated?: boolean;
+  /** Owned-library value filter: only games in this Value Received tier (matches the donut buckets). */
+  valueReceivedTier?: ValueReceivedTier;
   sortBy?: 'title' | 'playtime' | 'review' | 'price' | 'dealScore' | 'hltbMain' | 'releaseDate' | 'lastPlayed' | 'atlHitDate' | 'discount' | 'belowAvgPercent' | 'valueWaiting' | 'pricePaid' | 'completionRatio' | 'realizedDollarsPerHour' | 'valueReceived';
   sortOrder?: 'asc' | 'desc';
 }

@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
 import type { TestDb } from './test-helpers';
+import { calculateValueReceived } from '../scoring/valueReceived';
 
 // Mock getDb to return our test database
 let testDb: TestDb;
@@ -1021,6 +1022,89 @@ describe('getEnrichedGames — Value Received sorts', () => {
     expect(order[0]).toBe('Exceeded');
     expect(order.indexOf('Exceeded')).toBeLessThan(order.indexOf('Unrealized'));
     expect(order.indexOf('No Baseline')).toBe(order.length - 1);
+  });
+});
+
+describe('getEnrichedGames — library default sort leads with Value Received (R14)', () => {
+  it('the /library default filters surface highest realized value first', () => {
+    // Time lens 2.0 ratio → exceeded.
+    const exceeded = seedGame(testDb, { steamAppId: 900, title: 'Got My Money Worth', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, exceeded, { isOwned: true, playtimeMinutes: 1200 });
+    // Time lens 0.1 ratio → unrealized.
+    const unrealized = seedGame(testDb, { steamAppId: 901, title: 'Barely Touched', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, unrealized, { isOwned: true, playtimeMinutes: 60 });
+
+    // Exactly the default filter object the library page builds (no URL overrides).
+    const order = getEnrichedGames(
+      { view: 'library', sortBy: 'valueReceived', sortOrder: 'desc' },
+      undefined,
+      undefined,
+      'default'
+    ).games.map((g) => g.title);
+
+    expect(order.indexOf('Got My Money Worth')).toBeLessThan(order.indexOf('Barely Touched'));
+  });
+});
+
+describe('getEnrichedGames — Value Received filters (R14)', () => {
+  it('filters by rated / unrated on the user post-play rating', () => {
+    const rated = seedGame(testDb, { steamAppId: 910, title: 'Rated Game', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, rated, { isOwned: true, playtimeMinutes: 600, enjoymentRating: 5 });
+    const alsoRated = seedGame(testDb, { steamAppId: 911, title: 'Disliked Game', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, alsoRated, { isOwned: true, playtimeMinutes: 600, enjoymentRating: 2 });
+    const unrated = seedGame(testDb, { steamAppId: 912, title: 'Unrated Game', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, unrated, { isOwned: true, playtimeMinutes: 600 });
+
+    const ratedTitles = getEnrichedGames({ view: 'library', rated: true }, undefined, undefined, 'default')
+      .games.map((g) => g.title);
+    expect(ratedTitles.sort()).toEqual(['Disliked Game', 'Rated Game']);
+
+    const unratedTitles = getEnrichedGames({ view: 'library', rated: false }, undefined, undefined, 'default')
+      .games.map((g) => g.title);
+    expect(unratedTitles).toEqual(['Unrated Game']);
+  });
+
+  it('filters by Value Received tier, matching calculateValueReceived exactly (no drift)', () => {
+    // Default thresholds (no settings seeded): review 90 → veryPositive $3.00/hr target.
+    const specs = [
+      { appId: 920, title: 'MoneyExceeded', review: 90, hltb: 10, price: 10, mins: 6000 },   // $0.10/hr → exceeded
+      { appId: 921, title: 'MoneyUnrealized', review: 90, hltb: 10, price: 60, mins: 60 },    // $60/hr → unrealized
+      { appId: 922, title: 'TimeExceeded', review: 90, hltb: 10, price: null, mins: 1200 },   // ratio 2.0 → exceeded
+      { appId: 923, title: 'TimeUnrealized', review: 90, hltb: 10, price: null, mins: 60 },   // ratio 0.1 → unrealized
+      { appId: 924, title: 'NoBaseline', review: 90, hltb: null, price: null, mins: 600 },    // no HLTB/price → 'none'
+    ];
+    for (const s of specs) {
+      const g = seedGame(testDb, { steamAppId: s.appId, title: s.title, reviewScore: s.review, hltbMain: s.hltb });
+      seedUserGame(testDb, g, { isOwned: true, playtimeMinutes: s.mins, pricePaid: s.price });
+    }
+
+    // Independently compute each game's tier via the canonical scorer (default thresholds).
+    const expectedFor = (tier: 'exceeded' | 'realized' | 'approaching' | 'unrealized') =>
+      specs
+        .filter((s) => {
+          const vr = calculateValueReceived({
+            playtimeMinutes: s.mins,
+            hltbMainHours: s.hltb,
+            reviewPercent: s.review,
+            pricePaid: s.price,
+          });
+          return vr.lens !== 'none' && vr.tier === tier;
+        })
+        .map((s) => s.title)
+        .sort();
+
+    for (const tier of ['exceeded', 'realized', 'approaching', 'unrealized'] as const) {
+      const got = getEnrichedGames({ view: 'library', valueReceivedTier: tier }, undefined, undefined, 'default')
+        .games.map((g) => g.title)
+        .sort();
+      expect(got).toEqual(expectedFor(tier));
+    }
+
+    // The no-baseline game is bucketed 'none' and therefore appears under no tier filter.
+    const allTierMatches = (['exceeded', 'realized', 'approaching', 'unrealized'] as const).flatMap((tier) =>
+      getEnrichedGames({ view: 'library', valueReceivedTier: tier }, undefined, undefined, 'default').games.map((g) => g.title),
+    );
+    expect(allTierMatches).not.toContain('NoBaseline');
   });
 });
 

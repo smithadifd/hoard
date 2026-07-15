@@ -3,13 +3,16 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback } from 'react';
 import { GameFilters, LIBRARY_SORT_OPTIONS } from './GameFilters';
+import { LibraryValueFilters } from './LibraryValueFilters';
 import type { GameFilters as GameFiltersType } from '@/types';
 
 interface GameListFiltersProps {
   currentFilters: GameFiltersType;
+  /** Library-only: render the Value Received filter row (rated/unrated, tier, realized $/hr). */
+  showValueFilters?: boolean;
 }
 
-export function GameListFilters({ currentFilters }: GameListFiltersProps) {
+export function GameListFilters({ currentFilters, showValueFilters = false }: GameListFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -28,6 +31,8 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
       if (newFilters.genres?.length) params.set('genres', newFilters.genres.join(','));
       if (newFilters.minReview !== undefined) params.set('minReview', String(newFilters.minReview));
       if (newFilters.minInterest !== undefined) params.set('minInterest', String(newFilters.minInterest));
+      if (newFilters.rated !== undefined) params.set('rated', String(newFilters.rated));
+      if (newFilters.valueReceivedTier) params.set('valueReceivedTier', newFilters.valueReceivedTier);
       if (newFilters.requireCompleteData === false) params.set('showAll', 'true');
       if (newFilters.hideUnreleased === false) params.set('showUnreleased', 'true');
       if (newFilters.earlyAccess !== undefined) params.set('earlyAccess', String(newFilters.earlyAccess));
@@ -53,5 +58,12 @@ export function GameListFilters({ currentFilters }: GameListFiltersProps) {
     [navigate, currentFilters.search]
   );
 
-  return <GameFilters filters={currentFilters} onFiltersChange={handleFiltersChange} sortOptions={LIBRARY_SORT_OPTIONS} />;
+  return (
+    <div className="space-y-3">
+      {showValueFilters && (
+        <LibraryValueFilters filters={currentFilters} onChange={handleFiltersChange} />
+      )}
+      <GameFilters filters={currentFilters} onFiltersChange={handleFiltersChange} sortOptions={LIBRARY_SORT_OPTIONS} />
+    </div>
+  );
 }
