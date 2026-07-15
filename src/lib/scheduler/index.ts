@@ -39,7 +39,27 @@ function taskToSource(name: string): string {
   return TASK_TO_SOURCE[name] ?? name;
 }
 
-const tasks = new Map<string, ScheduledTask>();
+// The task registry must survive Next.js standalone module duplication.
+// `instrumentation.ts` registers the cron tasks once on boot; route handlers
+// (notably `/api/health`) read them back through `getTaskStatus()`. In
+// standalone output those two entry points can resolve to *separate* module
+// instances of this file, each with its own module-level state — so a plain
+// `const tasks = new Map()` leaves the health route reading an empty Map and
+// reporting `scheduler:false` -> `status:degraded` on every deploy (#179).
+//
+// `globalThis` is the one object shared across every module instance in the
+// single Node process, and `Symbol.for()` resolves to the same registry key
+// from any of them, so hoisting the Map here gives all instances one shared
+// registry. (Uses the global symbol registry rather than a plain property so
+// the key can't collide with an unrelated global.)
+const SCHEDULER_TASKS_KEY = Symbol.for('hoard.scheduler.tasks');
+const globalRegistry = globalThis as unknown as Record<
+  symbol,
+  Map<string, ScheduledTask> | undefined
+>;
+const tasks: Map<string, ScheduledTask> =
+  globalRegistry[SCHEDULER_TASKS_KEY] ??
+  (globalRegistry[SCHEDULER_TASKS_KEY] = new Map<string, ScheduledTask>());
 
 /**
  * Register a scheduled task.

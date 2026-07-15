@@ -37,9 +37,12 @@ export async function GET() {
     checks.stuckSyncs = stuckResult?.count ?? 0;
 
     const healthy = checks.database && checks.scheduler && checks.stuckSyncs === 0;
-    // Always return 200 if the database is reachable — scheduler state
-    // may report false due to module isolation in server components.
-    // Docker healthcheck and deploy script rely on this endpoint.
+    // Always return 200 while the database is reachable: the Docker healthcheck
+    // and deploy script gate on this endpoint, and a scheduler or stuck-sync
+    // issue shouldn't pull the container out of rotation. The scheduler registry
+    // is now shared across module instances via a global symbol (see
+    // src/lib/scheduler), so `checks.scheduler` reflects the real scheduler
+    // state rather than a Next.js module-isolation artifact (#179).
     return NextResponse.json(
       { status: healthy ? 'healthy' : 'degraded', checks },
       { status: checks.database ? 200 : 503 }
