@@ -1272,10 +1272,22 @@ export function getEnrichedGames(
     WHEN ${games.reviewScore} >= 70 THEN ${dphT.positive}
     WHEN ${games.reviewScore} >= 40 THEN ${dphT.mixed}
     ELSE ${dphT.negative} END)`;
+  // Effective playtime basis (hours) — mirrors resolveEffectivePlaytime / getEffectivePlaytimeHours,
+  // the SAME resolver getValueReceivedOverview (the donut) and the per-card badges use (both call it
+  // WITHOUT isReleased, so the released-game fallback below is never suppressed for them): an explicit
+  // steam_reviews preference takes the Steam-review median (then HLTB); otherwise HLTB, falling back to
+  // the median when HLTB is missing. steam_playtime_median is stored in hours, like hltb_main. Without
+  // this, a released HLTB-less game with a review median reads "Realized" on its card AND in the donut,
+  // yet fell out of every tier filter — the surfaces would silently disagree.
+  const effectiveHoursExpr = sql`(CASE
+    WHEN ${userGames.playtimeSource} = 'steam_reviews' THEN COALESCE(${games.steamPlaytimeMedian}, ${games.hltbMain})
+    WHEN ${games.hltbMain} IS NOT NULL THEN ${games.hltbMain}
+    WHEN ${games.isReleased} = 0 THEN NULL
+    ELSE ${games.steamPlaytimeMedian} END)`;
   // Discrete Value Received tier ordinal (exceeded 4 → unrealized 1), mirroring
-  // calculateValueReceived's tier: money lens first (priced + played), then time lens
-  // (HLTB + played), then never-played → unrealized. Rating does NOT enter here — this is
-  // the efficiency/completion tier the donut buckets by. NULL = no baseline to grade ('none').
+  // calculateValueReceived's tier: money lens first (priced + played), then time lens graded off the
+  // EFFECTIVE playtime basis above (so it matches the donut + card badges), then never-played →
+  // unrealized. Rating does NOT enter here. NULL = no baseline to grade ('none' — excluded from filters).
   const valueTierOrdinalExpr = sql`(CASE
     WHEN ${userGames.pricePaid} IS NOT NULL AND ${userGames.pricePaid} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
       CASE
@@ -1283,18 +1295,19 @@ export function getEnrichedGames(
         WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} THEN 3
         WHEN (${userGames.pricePaid} / ${hoursPlayedExpr}) <= ${dphTargetExpr} * 2 THEN 2
         ELSE 1 END
-    WHEN ${games.hltbMain} IS NOT NULL AND ${games.hltbMain} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
+    WHEN ${effectiveHoursExpr} > 0 AND ${userGames.playtimeMinutes} > 0 THEN
       CASE
-        WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 1.1 THEN 4
-        WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 0.8 THEN 3
-        WHEN (${hoursPlayedExpr} / ${games.hltbMain}) >= 0.2 THEN 2
+        WHEN (${hoursPlayedExpr} / ${effectiveHoursExpr}) >= 1.1 THEN 4
+        WHEN (${hoursPlayedExpr} / ${effectiveHoursExpr}) >= 0.8 THEN 3
+        WHEN (${hoursPlayedExpr} / ${effectiveHoursExpr}) >= 0.2 THEN 2
         ELSE 1 END
     WHEN ${userGames.playtimeMinutes} IS NULL OR ${userGames.playtimeMinutes} <= 0 THEN 1
     ELSE NULL END)`;
 
-  // Value Received tier filter — surfaces exactly the games the donut buckets into this
-  // tier (exceeded/realized/approaching/unrealized). Reuses the shared ordinal above, so
-  // it introduces no new scoring; it just selects on the existing computation.
+  // Value Received tier filter — surfaces exactly the games the donut buckets into this tier
+  // (exceeded/realized/approaching/unrealized), because it reuses the shared ordinal above, which
+  // grades off the SAME effective playtime basis as the donut and the per-card badges. No new
+  // scoring — it just selects on the existing computation.
   if (filters.valueReceivedTier) {
     const tierOrdinal: Record<NonNullable<GameFilters['valueReceivedTier']>, number> = {
       unrealized: 1,
