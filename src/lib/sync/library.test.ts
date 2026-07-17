@@ -272,6 +272,38 @@ describe('syncLibrary', () => {
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0, 0);
   });
 
+  it('does NOT reconcile a truncated-but-successful owned response (bug b completeness guard)', async () => {
+    // Steam claims game_count=5 but only returned 2 games (pagination bug /
+    // partial success). Reconciling here would unown the 3 missing REAL games.
+    const games = [makeSteamGame(440, 'TF2', 100), makeSteamGame(570, 'Dota 2', 50)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 5, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
+
+    await syncLibrary();
+
+    // total (2) < game_count (5) → not provably complete → reconcile skipped.
+    expect(mockReconcile).not.toHaveBeenCalled();
+    // The upserts still ran; the sync succeeds — it just doesn't mass-unown.
+    expect(mockUpsertUserGame).toHaveBeenCalledTimes(2);
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 2, undefined, 2, 0, 0);
+  });
+
+  it('does NOT reconcile when game_count is absent (cannot prove completeness)', async () => {
+    // No game_count field → completeness is unprovable → skip rather than trust
+    // a possibly-truncated list.
+    const games = [makeSteamGame(440, 'TF2', 100)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValue(10);
+
+    await syncLibrary();
+
+    expect(mockReconcile).not.toHaveBeenCalled();
+  });
+
   it('records lastPlayed when rtime_last_played > 0', async () => {
     const games = [makeSteamGame(440, 'TF2', 100, 10, 1700000000)];
     mockGetSteamClient.mockReturnValue({

@@ -197,11 +197,30 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
       }
 
       // Reconcile ownership: previously-owned games ABSENT from this run's owned
-      // response are set unowned (refunds/revocations). GUARD: only on a run that
-      // completed (not cancelled) over a genuine, NON-EMPTY owned response — a
-      // transient empty/failed Steam response must never mass-unown the library.
+      // response are set unowned (refunds/revocations). This is the one
+      // destructive mass-write path, so a wrong fire is worse than the bug — it
+      // requires ALL of:
+      //   1. not cancelled — a partial run never saw the full owned set;
+      //   2. non-empty — a transient `[]` is never trusted as "you own nothing";
+      //   3. PROVABLY COMPLETE — Steam's `game_count` is authoritative for
+      //      library size (the codebase already trusts it in
+      //      api/onboarding/validate-steam), so require the returned list to
+      //      cover it (`total >= game_count`). A truncated-but-successful
+      //      response (e.g. `game_count:100, games:[30]`) would otherwise unown
+      //      the 70 missing REAL games. If `game_count` is absent we cannot prove
+      //      completeness → skip (never trust a possibly-truncated list).
+      // A further sanity cap (>50% of the library) lives inside reconcileOwnership.
+      const claimedCount: number | undefined = response.game_count;
+      const listComplete = claimedCount != null && total >= claimedCount;
       if (!cancelled && total > 0) {
-        reconciledUnowned = reconcileOwnership(Array.from(processedGameIds), effectiveUserId);
+        if (listComplete) {
+          reconciledUnowned = reconcileOwnership(Array.from(processedGameIds), effectiveUserId);
+        } else {
+          console.warn(
+            `[LibrarySync] Skipping ownership reconcile — owned list not provably complete ` +
+            `(received ${total} of game_count=${claimedCount ?? 'unknown'}); a truncated sync must not mass-unown`,
+          );
+        }
       }
 
       // Hand the net-new non-wishlist owned adds out of the txn (scoped to
