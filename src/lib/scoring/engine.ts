@@ -17,6 +17,7 @@ import type {
   DealScore,
 } from './types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from './types';
+import { maxDollarsPerHourFor } from './reviewTierLadder';
 import type { PlaytimeSource } from '@/lib/playtimeSource';
 
 export type { PlaytimeSource };
@@ -183,12 +184,9 @@ function calculateInterestScore(interest: number): number {
 }
 
 export function getMaxDollarsPerHour(reviewPercent: number | null, thresholds: ScoringThresholds): number {
-  if (reviewPercent === null) return thresholds.maxDollarsPerHour.positive;
-  if (reviewPercent >= 95) return thresholds.maxDollarsPerHour.overwhelminglyPositive;
-  if (reviewPercent >= 80) return thresholds.maxDollarsPerHour.veryPositive;
-  if (reviewPercent >= 70) return thresholds.maxDollarsPerHour.positive;
-  if (reviewPercent >= 40) return thresholds.maxDollarsPerHour.mixed;
-  return thresholds.maxDollarsPerHour.negative;
+  // The review-tier → $/hr ladder lives in ONE place (reviewTierLadder.ts); the SQL
+  // filter in db/queries.ts builds its CASE from the same ladder. See that module.
+  return maxDollarsPerHourFor(reviewPercent, thresholds);
 }
 
 function getScoreRating(score: number): DealScore['rating'] {
