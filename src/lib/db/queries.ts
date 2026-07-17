@@ -51,6 +51,17 @@ import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 import type { NotificationPreferences, ChannelRouting, NotificationCategory } from '@/lib/notifications/preferences';
 import { DEFAULT_PREFERENCES, NOTIFICATION_CATEGORIES } from '@/lib/notifications/preferences';
 import { curateDisplayTags } from '@/lib/utils/tags';
+import { SECRET_SETTING_KEYS } from '@/lib/validations';
+import { encryptSecret, decryptSecret } from '@/lib/settings/secrets';
+
+// Secret-valued setting keys are encrypted at rest (field-level, versioned —
+// see src/lib/settings/secrets.ts). Non-secret keys (scoring weights, etc.) are
+// stored/read verbatim. Encryption is gated on the key membership so reads and
+// writes of every other setting are untouched.
+const SECRET_KEY_SET: ReadonlySet<string> = new Set(SECRET_SETTING_KEYS);
+function isSecretSettingKey(key: string): boolean {
+  return SECRET_KEY_SET.has(key);
+}
 
 // ============================================
 // Auth Helpers
@@ -74,17 +85,22 @@ export function getFirstUserId(): string {
 export function getSetting(key: string): string | null {
   const db = getDb();
   const row = db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
-  return row?.value ?? null;
+  const raw = row?.value ?? null;
+  if (raw === null) return null;
+  // Secret keys are decrypted transparently (legacy plaintext reads verbatim).
+  return isSecretSettingKey(key) ? decryptSecret(raw) : raw;
 }
 
 export function setSetting(key: string, value: string, description?: string): void {
   const db = getDb();
   const now = new Date().toISOString();
+  // Secret keys are encrypted at rest; everything else stored verbatim.
+  const storedValue = isSecretSettingKey(key) ? encryptSecret(value) : value;
   db.insert(settings)
-    .values({ key, value, description, updatedAt: now })
+    .values({ key, value: storedValue, description, updatedAt: now })
     .onConflictDoUpdate({
       target: settings.key,
-      set: { value, updatedAt: now, ...(description !== undefined && { description }) },
+      set: { value: storedValue, updatedAt: now, ...(description !== undefined && { description }) },
     })
     .run();
 }
@@ -94,7 +110,8 @@ export function getAllSettings(): Record<string, string> {
   const rows = db.select({ key: settings.key, value: settings.value }).from(settings).all();
   const result: Record<string, string> = {};
   for (const row of rows) {
-    result[row.key] = row.value;
+    // Decrypt secret keys transparently; legacy plaintext reads verbatim.
+    result[row.key] = isSecretSettingKey(row.key) ? decryptSecret(row.value) : row.value;
   }
   return result;
 }

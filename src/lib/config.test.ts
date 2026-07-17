@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { decryptSecret } from './settings/secrets';
 
 // Must use dynamic imports to reset module-level cache between tests
 async function loadConfig() {
@@ -6,6 +7,16 @@ async function loadConfig() {
   // Mock the DB queries module to avoid requiring a real database
   vi.doMock('./db/queries', () => ({
     getAllSettings: vi.fn(() => ({})),
+  }));
+  return import('./config');
+}
+
+// Variant that lets a test inject the DB-settings map getEffectiveConfig reads.
+async function loadConfigWithSettings(settings: Record<string, string>) {
+  vi.resetModules();
+  vi.doMock('./db/queries', () => ({
+    getAllSettings: vi.fn(() => settings),
+    getNotificationPreferences: vi.fn(() => ({ frequency: { throttleHours: 24, digestHour: 12 } })),
   }));
   return import('./config');
 }
@@ -153,5 +164,33 @@ describe('validateConfig', () => {
     expect(result.missing).toContain('STEAM_API_KEY');
     expect(result.missing).toContain('STEAM_USER_ID');
     expect(result.missing).toHaveLength(2);
+  });
+});
+
+describe('getEffectiveConfig — undecryptable secret fails closed to the env-var fallback', () => {
+  beforeEach(() => {
+    delete process.env.STEAM_API_KEY;
+    delete process.env.HOARD_SECRETS_KEY;
+    delete process.env.SETTINGS_ENCRYPTION_KEY;
+  });
+
+  it('an undecryptable stored secret decrypts to "" so the env var wins (never the ciphertext)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // No HOARD_SECRETS_KEY set → the real decryptSecret fails closed to '' for an
+    // enc:v1: value (the disaster-recovery scenario: key lost/rotated/corrupt).
+    const dbSettings = {
+      steam_api_key: decryptSecret('enc:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=='),
+    };
+    expect(dbSettings.steam_api_key).toBe(''); // real helper produced the absent value
+
+    process.env.STEAM_API_KEY = 'ENV-FALLBACK-STEAM-KEY';
+    const { getEffectiveConfig } = await loadConfigWithSettings(dbSettings);
+    const cfg = getEffectiveConfig();
+
+    // config.ts merge is `dbSettings[key] || envConfig.x` — '' is falsy, so the
+    // env var wins. Had decrypt returned the raw ciphertext, it would have won here.
+    expect(cfg.steamApiKey).toBe('ENV-FALLBACK-STEAM-KEY');
+    expect(cfg.steamApiKey).not.toContain('enc:v1:');
+    warn.mockRestore();
   });
 });
