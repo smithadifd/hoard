@@ -95,10 +95,16 @@ const SCHEMA_SQL = `
     price_paid_at TEXT,
     price_paid_suggested REAL,
     price_paid_suggestion_dismissed_at TEXT,
+    completion_status TEXT NOT NULL DEFAULT 'unplayed',
+    backlog_state TEXT,
+    priority INTEGER,
+    started_at TEXT,
+    abandoned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE UNIQUE INDEX IF NOT EXISTS user_game_idx ON user_games (user_id, game_id);
+  CREATE INDEX IF NOT EXISTS ug_completion_idx ON user_games (user_id, completion_status);
 
   CREATE TABLE IF NOT EXISTS price_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -313,6 +319,11 @@ export function seedUserGame(
       interestRatedAt: overrides.interestRatedAt,
       enjoymentRating: overrides.enjoymentRating,
       enjoymentRatedAt: overrides.enjoymentRatedAt,
+      completionStatus: overrides.completionStatus ?? 'unplayed',
+      backlogState: overrides.backlogState,
+      priority: overrides.priority,
+      startedAt: overrides.startedAt,
+      abandonedAt: overrides.abandonedAt,
     })
     .returning({ id: schema.userGames.id })
     .get();

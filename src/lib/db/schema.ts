@@ -118,6 +118,23 @@ export const userGames = sqliteTable('user_games', {
   // Price-paid suggestion (Phase 3) — system estimate captured at purchase detection; never auto-applied
   pricePaidSuggested: real('price_paid_suggested'), // USD, nullable — proposed at wishlist→owned flip; user confirms/edits/dismisses
   pricePaidSuggestionDismissedAt: text('price_paid_suggestion_dismissed_at'), // ISO; non-null = dismissed, don't re-surface
+  // Backlog lifecycle (issue #12) — where the user is with an owned game.
+  // 'unplayed' (default) | 'playing' | 'beaten' | 'completed' | 'abandoned'.
+  // Distinct from raw playtime: lets the backlog hide finished games and the
+  // recommender skip games the user has consciously closed out.
+  completionStatus: text('completion_status').notNull().default('unplayed'),
+  // Explicit Up-Next queue intent that OVERRIDES the derived bucket. NULL = derive
+  // from signals; 'shortlisted' = pin to Up Next; 'snoozed' = hide for now;
+  // 'dropped' = removed from the queue by the user (distinct from the 'abandoned'
+  // completion outcome — a dropped game can still be revisited later).
+  backlogState: text('backlog_state'),
+  // User-assigned play priority; higher = wants to play sooner. NULL = unset
+  // (the common case — the picker is meant to work with zero manual triage).
+  priority: integer('priority'),
+  // When the game first transitioned to a played state (ISO). NULL until started.
+  startedAt: text('started_at'),
+  // When the game was marked 'abandoned' (ISO). NULL unless currently abandoned.
+  abandonedAt: text('abandoned_at'),
   // Timestamps
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
@@ -127,6 +144,7 @@ export const userGames = sqliteTable('user_games', {
   ownedIdx: index('ug_owned_idx').on(table.userId, table.isOwned),
   wishlistedIdx: index('ug_wishlisted_idx').on(table.userId, table.isWishlisted),
   watchlistedIdx: index('ug_watchlisted_idx').on(table.userId, table.isWatchlisted),
+  completionIdx: index('ug_completion_idx').on(table.userId, table.completionStatus),
 }));
 
 // ===========================================

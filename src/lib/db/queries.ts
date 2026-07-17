@@ -22,6 +22,15 @@ import {
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore, getEffectivePlaytimeHours } from '@/lib/scoring/engine';
+import {
+  applyCompletionTransition,
+  canTransition,
+  isCompletionStatus,
+  isBacklogState,
+  type CompletionStatus,
+  type BacklogState,
+  type LifecycleState,
+} from '@/lib/backlog/lifecycle';
 import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playtimeSource';
 
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
@@ -497,6 +506,116 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
   if (data.personalInterest !== undefined) recomputeLatestSnapshotDealScore(gameId);
 }
 
+export interface SetCompletionStatusResult {
+  ok: boolean;
+  reason?: string;
+  state?: LifecycleState;
+}
+
+/**
+ * Move an owned game to a new lifecycle status (issue #12), applying the
+ * `startedAt`/`abandonedAt` side effects from the pure state machine. Rejects
+ * transitions the state machine forbids (e.g. completed→abandoned) so callers
+ * get a clear signal rather than a silently-wrong write. Creates the user_games
+ * row if the game has never been tracked (an owned game marked straight to
+ * 'playing').
+ */
+export function setCompletionStatus(
+  gameId: number,
+  status: CompletionStatus,
+  userId: string,
+): SetCompletionStatusResult {
+  if (!isCompletionStatus(status)) return { ok: false, reason: 'invalid-status' };
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const existing = db
+    .select({
+      completionStatus: userGames.completionStatus,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
+    })
+    .from(userGames)
+    .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+    .get();
+
+  const prev: LifecycleState = {
+    completionStatus: isCompletionStatus(existing?.completionStatus)
+      ? existing!.completionStatus
+      : 'unplayed',
+    startedAt: existing?.startedAt ?? null,
+    abandonedAt: existing?.abandonedAt ?? null,
+  };
+
+  if (!canTransition(prev.completionStatus, status)) {
+    return { ok: false, reason: `illegal-transition:${prev.completionStatus}->${status}` };
+  }
+
+  const next = applyCompletionTransition(prev, status, now);
+
+  db.insert(userGames)
+    .values({
+      userId,
+      gameId,
+      isOwned: true,
+      completionStatus: next.completionStatus,
+      startedAt: next.startedAt,
+      abandonedAt: next.abandonedAt,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [userGames.userId, userGames.gameId],
+      set: {
+        completionStatus: next.completionStatus,
+        startedAt: next.startedAt,
+        abandonedAt: next.abandonedAt,
+        updatedAt: now,
+      },
+    })
+    .run();
+
+  return { ok: true, state: next };
+}
+
+/**
+ * Set (or clear, with `null`) a game's explicit Up-Next queue intent — the
+ * user override that beats the derived bucket. Creates the row if needed.
+ */
+export function setBacklogState(
+  gameId: number,
+  state: BacklogState | null,
+  userId: string,
+): boolean {
+  if (state !== null && !isBacklogState(state)) return false;
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.insert(userGames)
+    .values({ userId, gameId, isOwned: true, backlogState: state, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [userGames.userId, userGames.gameId],
+      set: { backlogState: state, updatedAt: now },
+    })
+    .run();
+  return true;
+}
+
+/**
+ * Set (or clear, with `null`) a game's manual play priority (higher = sooner).
+ */
+export function setPriority(gameId: number, priority: number | null, userId: string): boolean {
+  if (priority !== null && (!Number.isFinite(priority) || priority < 0)) return false;
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.insert(userGames)
+    .values({ userId, gameId, isOwned: true, priority, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [userGames.userId, userGames.gameId],
+      set: { priority, updatedAt: now },
+    })
+    .run();
+  return true;
+}
+
 /**
  * Returns gameIds for the given user where the user_games row currently has
  * isOwned=false (or no row at all). Used by library sync to detect ownership
@@ -869,6 +988,27 @@ function buildGameFilterConditions(filters: GameFilters, userId: string): SQL[] 
     conditions.push(sql`(${userGames.isIgnored} IS NULL OR ${userGames.isIgnored} = 0)`);
   }
 
+  // Lifecycle (issue #12). A missing user_games row (or NULL status) is treated
+  // as 'unplayed' so catalog games and never-tracked owned games pass naturally.
+  if (filters.completionStatus !== undefined) {
+    const wanted = Array.isArray(filters.completionStatus)
+      ? filters.completionStatus
+      : [filters.completionStatus];
+    if (wanted.length > 0) {
+      conditions.push(
+        sql`COALESCE(${userGames.completionStatus}, 'unplayed') IN (${sql.join(
+          wanted.map((s) => sql`${s}`),
+          sql`, `,
+        )})`,
+      );
+    }
+  }
+  if (filters.excludeFinished === true) {
+    conditions.push(
+      sql`COALESCE(${userGames.completionStatus}, 'unplayed') NOT IN ('beaten', 'completed', 'abandoned')`,
+    );
+  }
+
   if (filters.genres && filters.genres.length > 0) {
     conditions.push(
       sql`${games.id} IN (
@@ -999,6 +1139,11 @@ interface BaseEnrichedRow {
   playtimeMinutes: number | null;
   personalInterest: number | null;
   lastPlayed: string | null;
+  completionStatus: string | null;
+  backlogState: string | null;
+  priority: number | null;
+  startedAt: string | null;
+  abandonedAt: string | null;
   isCoop: boolean | null;
   isMultiplayer: boolean | null;
   isReleased: boolean | null;
@@ -1038,6 +1183,11 @@ function mapBaseEnrichedGame(r: BaseEnrichedRow, bucket: TagBucket): EnrichedGam
     playtimeMinutes: r.playtimeMinutes ?? 0,
     personalInterest: r.personalInterest ?? 3,
     lastPlayed: r.lastPlayed ?? undefined,
+    completionStatus: isCompletionStatus(r.completionStatus) ? r.completionStatus : 'unplayed',
+    backlogState: isBacklogState(r.backlogState) ? r.backlogState : undefined,
+    priority: r.priority ?? undefined,
+    startedAt: r.startedAt ?? undefined,
+    abandonedAt: r.abandonedAt ?? undefined,
     tags: bucket.tags,
     genres: bucket.genres,
     isCoop: r.isCoop ?? false,
@@ -1474,6 +1624,11 @@ export function getEnrichedGames(
       pricePaid: userGames.pricePaid,
       pricePaidSuggested: userGames.pricePaidSuggested,
       pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
       atlHitDate:
         filters.view === 'recent-deals'
           ? sql<string | null>`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`
@@ -1667,6 +1822,11 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       pricePaid: userGames.pricePaid,
       pricePaidSuggested: userGames.pricePaidSuggested,
       pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
       notes: userGames.notes,
     })
     .from(games)
@@ -3365,6 +3525,11 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       personalInterest: userGames.personalInterest,
       playtimeSource: userGames.playtimeSource,
       lastPlayed: userGames.lastPlayed,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
