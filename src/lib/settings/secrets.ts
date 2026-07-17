@@ -36,8 +36,26 @@
  *     so a deploy that has not yet set the key does not crash — it simply keeps
  *     writing plaintext, exactly like today.
  *   - `decryptSecret` returns legacy plaintext verbatim; if it encounters an
- *     already-encrypted value it cannot read, it returns the stored value
- *     unchanged (loud warning) rather than throwing.
+ *     already-encrypted value it *cannot* read (no key, wrong key, or corrupt
+ *     ciphertext), it FAILS CLOSED — returns the empty "absent" string (loud
+ *     one-time warning) rather than the raw ciphertext, and never throws.
+ *
+ * ## Fail-closed on undecryptable ciphertext (why empty, not the ciphertext)
+ *
+ * Returning the raw `enc:v1:` ciphertext on a decrypt failure would leak a
+ * garbage credential into live consumers: `config.ts` merges `dbSettings[key] ||
+ * envConfig.x`, and a truthy ciphertext string would WIN over the env-var
+ * fallback — defeating the one recovery path (env var) in the exact disaster
+ * (key lost/rotated/corrupt). Steam/ITAD would then auth with junk and Discord
+ * would `fetch('enc:v1:…')`. So an undecryptable secret returns `''`, which is
+ * falsy: `config.ts`'s `|| envConfig` falls through to the env var, and the
+ * `_secrets` truthiness check reports it not-usable.
+ *
+ * Negligible tradeoff: a *legacy plaintext* value that literally starts with
+ * `enc:v1:` would, on the no-key branch, be treated as ciphertext and return `''`
+ * instead of verbatim. Real secret values (https:// webhook URLs, hex/opaque API
+ * keys) never start with `enc:v1:`, and such a value is anyway indistinguishable
+ * from corrupt ciphertext — fail-closed is the correct call.
  *
  * Nothing here ever generates a key on boot — that would make ciphertext written
  * this boot unreadable next boot.
@@ -112,27 +130,35 @@ export function encryptSecret(plaintext: string): string {
   return `${ENC_PREFIX}${packed}`;
 }
 
+// The "absent" value returned when an encrypted secret cannot be recovered. It
+// is falsy so config.ts's `dbSettings[key] || envConfig.x` falls through to the
+// env-var fallback, and the `_secrets` truthiness check reports it not-usable.
+// Deliberately NOT the raw ciphertext — see the fail-closed note in the header.
+const UNRECOVERABLE_SECRET = '';
+
 /**
  * Decrypt a stored secret value.
  * - Unprefixed value (legacy plaintext, or written key-less): returned verbatim.
  * - `enc:v1:` value with a key configured: decrypted and authenticated.
- * - `enc:v1:` value with NO key, or a decrypt/auth failure: returns the stored
- *   value unchanged (loud warning) — never throws, so a misconfiguration cannot
- *   brick reads.
+ * - `enc:v1:` value with NO key, or a decrypt/auth failure: FAILS CLOSED —
+ *   returns the empty "absent" string (loud one-time warning), never the raw
+ *   ciphertext, and never throws. This lets config.ts's env-var fallback take
+ *   over instead of feeding junk ciphertext to Steam/ITAD/Discord.
  */
 export function decryptSecret(stored: string): string {
-  if (!isEncrypted(stored)) return stored; // legacy plaintext → verbatim
+  if (!isEncrypted(stored)) return stored; // legacy plaintext → verbatim (unchanged)
 
   const key = getKey();
   if (!key) {
     if (!warnedDecryptNoKey) {
       console.warn(
         '[settings-crypto] Found an encrypted secret but HOARD_SECRETS_KEY is not set — ' +
-          'cannot decrypt; returning the stored value unchanged. Restore HOARD_SECRETS_KEY.',
+          'cannot decrypt; treating it as absent so the env-var fallback applies. ' +
+          'Restore HOARD_SECRETS_KEY.',
       );
       warnedDecryptNoKey = true;
     }
-    return stored;
+    return UNRECOVERABLE_SECRET;
   }
 
   try {
@@ -147,10 +173,10 @@ export function decryptSecret(stored: string): string {
   } catch (err) {
     console.error(
       '[settings-crypto] Failed to decrypt a secret setting (wrong key or corrupt value); ' +
-        'returning the stored value unchanged.',
+        'treating it as absent so the env-var fallback applies.',
       err,
     );
-    return stored;
+    return UNRECOVERABLE_SECRET;
   }
 }
 

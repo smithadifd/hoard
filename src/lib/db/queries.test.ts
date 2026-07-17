@@ -194,6 +194,25 @@ describe('settings secret encryption (non-bricking)', () => {
       expect(getSetting(key)).toBe(value);
     }
   });
+
+  it('FAILS CLOSED at the helper: a WRONG-KEY secret reads back as absent (empty), not ciphertext', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Written under one key…
+    process.env.HOARD_SECRETS_KEY = 'key-A';
+    __resetSecretsCryptoStateForTests();
+    setSetting('steam_api_key', 'REAL-STEAM-KEY');
+    const ciphertext = rawStored('steam_api_key');
+    expect(ciphertext?.startsWith('enc:v1:')).toBe(true);
+
+    // …read under a different key → cannot decrypt → helper returns '' (fail-closed).
+    process.env.HOARD_SECRETS_KEY = 'key-B';
+    __resetSecretsCryptoStateForTests();
+    expect(getSetting('steam_api_key')).toBe('');
+    expect(getAllSettings()['steam_api_key']).toBe('');
+    // The raw ciphertext is untouched on disk (a supervised re-key can still recover it).
+    expect(rawStored('steam_api_key')).toBe(ciphertext);
+    err.mockRestore();
+  });
 });
 
 // ============================================

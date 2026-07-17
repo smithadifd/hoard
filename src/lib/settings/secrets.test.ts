@@ -116,7 +116,7 @@ describe('encrypted-at-rest', () => {
 // Failure modes must never throw (non-bricking safety net)
 // ============================================================================
 describe('failure modes degrade safely (never throw)', () => {
-  it('tampered ciphertext fails auth → returns stored value unchanged + logs error', () => {
+  it('tampered ciphertext fails auth → FAILS CLOSED to empty (not ciphertext, not plaintext) + logs error', () => {
     withKey();
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const stored = encryptSecret('authentic-value');
@@ -126,11 +126,13 @@ describe('failure modes degrade safely (never throw)', () => {
     const tampered = ENC_PREFIX + body.slice(0, 10) + flipped + body.slice(11);
 
     expect(() => decryptSecret(tampered)).not.toThrow();
-    expect(decryptSecret(tampered)).toBe(tampered); // unchanged, not plaintext
+    // Fail-closed: returns '' so config.ts's env-var fallback engages, NOT the
+    // raw ciphertext (which is truthy and would defeat the fallback).
+    expect(decryptSecret(tampered)).toBe('');
     expect(err).toHaveBeenCalled();
   });
 
-  it('an encrypted value with the key REMOVED returns the stored ciphertext unchanged (no crash)', () => {
+  it('an encrypted value with the key REMOVED FAILS CLOSED to empty (not ciphertext) + warns (no crash)', () => {
     withKey();
     const stored = encryptSecret('value-encrypted-while-keyed');
     __resetSecretsCryptoStateForTests();
@@ -138,7 +140,7 @@ describe('failure modes degrade safely (never throw)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     expect(() => decryptSecret(stored)).not.toThrow();
-    expect(decryptSecret(stored)).toBe(stored);
+    expect(decryptSecret(stored)).toBe(''); // absent, not the ciphertext
     expect(warn).toHaveBeenCalled();
   });
 
