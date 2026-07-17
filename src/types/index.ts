@@ -5,6 +5,9 @@
 // Re-export database schema types for convenience
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import type { ValueReceivedTier, ValueReceivedLens, BetPayoff } from '@/lib/scoring/valueReceived';
+import type { CompletionStatus, BacklogState } from '@/lib/backlog/lifecycle';
+
+export type { CompletionStatus, BacklogState } from '@/lib/backlog/lifecycle';
 
 /**
  * A game with all enriched data, ready for display.
@@ -50,6 +53,18 @@ export interface EnrichedGame {
   playtimeMinutes: number;
   personalInterest: number;
   lastPlayed?: string;
+
+  // Backlog lifecycle (issue #12)
+  /** Where the user is with an owned game. Defaults to 'unplayed'. */
+  completionStatus?: CompletionStatus;
+  /** Explicit Up-Next intent that overrides the derived bucket; undefined = derive. */
+  backlogState?: BacklogState;
+  /** User-assigned play priority (higher = sooner); undefined = unset. */
+  priority?: number;
+  /** ISO date the game first entered a played state. */
+  startedAt?: string;
+  /** ISO date the game was marked abandoned. */
+  abandonedAt?: string;
 
   // Tags
   tags: string[];
@@ -137,6 +152,10 @@ export interface GameFilters {
   owned?: boolean;
   played?: boolean; // Has any playtime
   playtimeStatus?: 'unplayed' | 'underplayed' | 'backlog' | 'play-again'; // unplayed=0min, underplayed=1-60min, backlog=unplayed OR barely started (<X% of HLTB), play-again=played significantly + dormant
+  /** Lifecycle filter (issue #12). A single status, or an array to match any of several. */
+  completionStatus?: CompletionStatus | CompletionStatus[];
+  /** When true, exclude finished/closed-out games (beaten/completed/abandoned) — the backlog default. */
+  excludeFinished?: boolean;
   maxHours?: number; // Max HLTB main hours
   minHours?: number;
   genres?: string[];

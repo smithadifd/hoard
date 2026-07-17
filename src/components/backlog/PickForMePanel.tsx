@@ -3,50 +3,22 @@
 import { useState, useCallback, useRef } from 'react';
 import { Shuffle, Coffee, Swords, Crown, Sparkles, TreePalm, Loader2 } from 'lucide-react';
 import type { EnrichedGame, GameFilters } from '@/types';
+import { PICK_MOODS, type BacklogPick } from '@/lib/backlog/presets';
 
-interface PickMood {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  filters: Partial<GameFilters>;
-  excludeTags?: string[];
-}
+type PickMood = BacklogPick;
 
-const MOODS: PickMood[] = [
-  { id: 'any', label: 'Any', icon: <Shuffle className="h-3.5 w-3.5" />, filters: {} },
-  {
-    id: 'chill',
-    label: 'Chill',
-    icon: <Coffee className="h-3.5 w-3.5" />,
-    filters: { maxHours: 5 },
-    excludeTags: ['Souls-like', 'Difficult'],
-  },
-  {
-    id: 'relaxing',
-    label: 'Relaxing',
-    icon: <TreePalm className="h-3.5 w-3.5" />,
-    filters: { maxHours: 20 },
-    excludeTags: ['Souls-like', 'Difficult', 'Horror', 'Survival Horror'],
-  },
-  {
-    id: 'short-sweet',
-    label: 'Short & Sweet',
-    icon: <Sparkles className="h-3.5 w-3.5" />,
-    filters: { maxHours: 2, minReview: 80 },
-  },
-  {
-    id: 'challenge',
-    label: 'Challenge',
-    icon: <Swords className="h-3.5 w-3.5" />,
-    filters: { minReview: 80 },
-  },
-  {
-    id: 'epic',
-    label: 'Epic',
-    icon: <Crown className="h-3.5 w-3.5" />,
-    filters: { minHours: 20, minReview: 80 },
-  },
-];
+// The single source of truth for moods now lives in @/lib/backlog/presets
+// (merged with the server presets). Map its lucide icon keys to components.
+const MOOD_ICONS: Record<string, React.ReactNode> = {
+  shuffle: <Shuffle className="h-3.5 w-3.5" />,
+  coffee: <Coffee className="h-3.5 w-3.5" />,
+  'tree-palm': <TreePalm className="h-3.5 w-3.5" />,
+  sparkles: <Sparkles className="h-3.5 w-3.5" />,
+  swords: <Swords className="h-3.5 w-3.5" />,
+  crown: <Crown className="h-3.5 w-3.5" />,
+};
+
+const MOODS: PickMood[] = PICK_MOODS;
 
 const TIME_OPTIONS = [
   { id: 'any', label: 'Any', value: undefined },
@@ -221,7 +193,7 @@ export function PickForMePanel({ baseFilters, totalCount, onPick }: PickForMePan
                     : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                 }`}
               >
-                {m.icon}
+                {MOOD_ICONS[m.icon]}
                 {m.label}
               </button>
             ))}

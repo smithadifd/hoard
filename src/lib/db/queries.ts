@@ -19,9 +19,27 @@ import {
   settings,
   syncLog,
   user,
+  recommendationEvents,
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore, getEffectivePlaytimeHours } from '@/lib/scoring/engine';
+import {
+  applyCompletionTransition,
+  canTransition,
+  isCompletionStatus,
+  isBacklogState,
+  type CompletionStatus,
+  type BacklogState,
+  type LifecycleState,
+} from '@/lib/backlog/lifecycle';
+import {
+  buildUpNextQueue,
+  MEANINGFUL_MINUTES,
+  type Momentum,
+  type UpNextBucket,
+  type UpNextCandidate,
+} from '@/lib/backlog/upNext';
+import { scoreCandidate, genreAffinityForTags, type RankingSignals } from '@/lib/backlog/ranking';
 import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playtimeSource';
 
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
@@ -498,6 +516,116 @@ export function upsertUserGame(gameId: number, data: UpsertUserGameData, userId:
   if (data.personalInterest !== undefined) recomputeLatestSnapshotDealScore(gameId);
 }
 
+export interface SetCompletionStatusResult {
+  ok: boolean;
+  reason?: string;
+  state?: LifecycleState;
+}
+
+/**
+ * Move an owned game to a new lifecycle status (issue #12), applying the
+ * `startedAt`/`abandonedAt` side effects from the pure state machine. Rejects
+ * transitions the state machine forbids (e.g. completed→abandoned) so callers
+ * get a clear signal rather than a silently-wrong write. Creates the user_games
+ * row if the game has never been tracked (an owned game marked straight to
+ * 'playing').
+ */
+export function setCompletionStatus(
+  gameId: number,
+  status: CompletionStatus,
+  userId: string,
+): SetCompletionStatusResult {
+  if (!isCompletionStatus(status)) return { ok: false, reason: 'invalid-status' };
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const existing = db
+    .select({
+      completionStatus: userGames.completionStatus,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
+    })
+    .from(userGames)
+    .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+    .get();
+
+  const prev: LifecycleState = {
+    completionStatus: isCompletionStatus(existing?.completionStatus)
+      ? existing!.completionStatus
+      : 'unplayed',
+    startedAt: existing?.startedAt ?? null,
+    abandonedAt: existing?.abandonedAt ?? null,
+  };
+
+  if (!canTransition(prev.completionStatus, status)) {
+    return { ok: false, reason: `illegal-transition:${prev.completionStatus}->${status}` };
+  }
+
+  const next = applyCompletionTransition(prev, status, now);
+
+  db.insert(userGames)
+    .values({
+      userId,
+      gameId,
+      isOwned: true,
+      completionStatus: next.completionStatus,
+      startedAt: next.startedAt,
+      abandonedAt: next.abandonedAt,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [userGames.userId, userGames.gameId],
+      set: {
+        completionStatus: next.completionStatus,
+        startedAt: next.startedAt,
+        abandonedAt: next.abandonedAt,
+        updatedAt: now,
+      },
+    })
+    .run();
+
+  return { ok: true, state: next };
+}
+
+/**
+ * Set (or clear, with `null`) a game's explicit Up-Next queue intent — the
+ * user override that beats the derived bucket. Creates the row if needed.
+ */
+export function setBacklogState(
+  gameId: number,
+  state: BacklogState | null,
+  userId: string,
+): boolean {
+  if (state !== null && !isBacklogState(state)) return false;
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.insert(userGames)
+    .values({ userId, gameId, isOwned: true, backlogState: state, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [userGames.userId, userGames.gameId],
+      set: { backlogState: state, updatedAt: now },
+    })
+    .run();
+  return true;
+}
+
+/**
+ * Set (or clear, with `null`) a game's manual play priority (higher = sooner).
+ */
+export function setPriority(gameId: number, priority: number | null, userId: string): boolean {
+  if (priority !== null && (!Number.isFinite(priority) || priority < 0)) return false;
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.insert(userGames)
+    .values({ userId, gameId, isOwned: true, priority, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [userGames.userId, userGames.gameId],
+      set: { priority, updatedAt: now },
+    })
+    .run();
+  return true;
+}
+
 /**
  * Returns gameIds for the given user where the user_games row currently has
  * isOwned=false (or no row at all). Used by library sync to detect ownership
@@ -945,6 +1073,27 @@ function buildGameFilterConditions(filters: GameFilters, userId: string): SQL[] 
     conditions.push(sql`(${userGames.isIgnored} IS NULL OR ${userGames.isIgnored} = 0)`);
   }
 
+  // Lifecycle (issue #12). A missing user_games row (or NULL status) is treated
+  // as 'unplayed' so catalog games and never-tracked owned games pass naturally.
+  if (filters.completionStatus !== undefined) {
+    const wanted = Array.isArray(filters.completionStatus)
+      ? filters.completionStatus
+      : [filters.completionStatus];
+    if (wanted.length > 0) {
+      conditions.push(
+        sql`COALESCE(${userGames.completionStatus}, 'unplayed') IN (${sql.join(
+          wanted.map((s) => sql`${s}`),
+          sql`, `,
+        )})`,
+      );
+    }
+  }
+  if (filters.excludeFinished === true) {
+    conditions.push(
+      sql`COALESCE(${userGames.completionStatus}, 'unplayed') NOT IN ('beaten', 'completed', 'abandoned')`,
+    );
+  }
+
   if (filters.genres && filters.genres.length > 0) {
     conditions.push(
       sql`${games.id} IN (
@@ -1075,6 +1224,11 @@ interface BaseEnrichedRow {
   playtimeMinutes: number | null;
   personalInterest: number | null;
   lastPlayed: string | null;
+  completionStatus: string | null;
+  backlogState: string | null;
+  priority: number | null;
+  startedAt: string | null;
+  abandonedAt: string | null;
   isCoop: boolean | null;
   isMultiplayer: boolean | null;
   isReleased: boolean | null;
@@ -1114,6 +1268,11 @@ function mapBaseEnrichedGame(r: BaseEnrichedRow, bucket: TagBucket): EnrichedGam
     playtimeMinutes: r.playtimeMinutes ?? 0,
     personalInterest: r.personalInterest ?? 3,
     lastPlayed: r.lastPlayed ?? undefined,
+    completionStatus: isCompletionStatus(r.completionStatus) ? r.completionStatus : 'unplayed',
+    backlogState: isBacklogState(r.backlogState) ? r.backlogState : undefined,
+    priority: r.priority ?? undefined,
+    startedAt: r.startedAt ?? undefined,
+    abandonedAt: r.abandonedAt ?? undefined,
     tags: bucket.tags,
     genres: bucket.genres,
     isCoop: r.isCoop ?? false,
@@ -1546,6 +1705,11 @@ export function getEnrichedGames(
       pricePaid: userGames.pricePaid,
       pricePaidSuggested: userGames.pricePaidSuggested,
       pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
       atlHitDate:
         filters.view === 'recent-deals'
           ? sql<string | null>`(SELECT MAX(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id} AND ps.is_historical_low = 1)`
@@ -1739,6 +1903,11 @@ export function getEnrichedGameById(gameId: number, userId: string): EnrichedGam
       pricePaid: userGames.pricePaid,
       pricePaidSuggested: userGames.pricePaidSuggested,
       pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
       notes: userGames.notes,
     })
     .from(games)
@@ -3195,6 +3364,449 @@ export function pruneOldPlaytimeSnapshots(retainDays = 180): number {
   return result.changes;
 }
 
+// ============================================
+// Up Next — the small "what should I play now?" queue (Queue S S9 · issue #12/#13)
+// ============================================
+
+export interface UpNextQueueEntry {
+  gameId: number;
+  steamAppId: number;
+  title: string;
+  headerImageUrl?: string;
+  bucket: UpNextBucket;
+  reason: string;
+  score: number;
+}
+
+/**
+ * Momentum for an owned game, cheaply. Steam's rolling 2-week counter settles
+ * 'playing' with no snapshot lookup; only invested-but-quiet games pay for the
+ * playtime-snapshot window queries that separate cooling from dormant.
+ */
+function momentumForOwnedGame(
+  gameId: number,
+  userId: string,
+  totalMinutes: number,
+  recentMinutes: number,
+): { momentum: Momentum; gainedThisWeek: number; gainedThisMonth: number } {
+  if (recentMinutes > 0) {
+    return { momentum: 'playing', gainedThisWeek: 0, gainedThisMonth: 0 };
+  }
+  if (totalMinutes < MEANINGFUL_MINUTES) {
+    return { momentum: 'untouched', gainedThisWeek: 0, gainedThisMonth: 0 };
+  }
+  const week = getPlaytimeWindow(gameId, userId, daysAgoDate(PLAYTIME_WEEK_DAYS));
+  const month = getPlaytimeWindow(gameId, userId, daysAgoDate(PLAYTIME_MONTH_DAYS));
+  const gainedThisWeek = week?.gainedMinutes ?? 0;
+  const gainedThisMonth = month?.gainedMinutes ?? 0;
+  return {
+    momentum: classifyPlaytimeMomentum({ gainedThisWeek, gainedThisMonth, totalMinutes, recentMinutes }),
+    gainedThisWeek,
+    gainedThisMonth,
+  };
+}
+
+interface UpNextRow {
+  id: number;
+  steamAppId: number;
+  title: string;
+  headerImageUrl: string | null;
+  reviewScore: number | null;
+  hltbMain: number | null;
+  steamPlaytimeMedian: number | null;
+  isReleased: boolean | null;
+  playtimeSource: string | null;
+  playtimeMinutes: number | null;
+  playtimeRecentMinutes: number | null;
+  personalInterest: number | null;
+  completionStatus: string | null;
+  backlogState: string | null;
+  priority: number | null;
+  lastPlayed: string | null;
+}
+
+export interface UpNextComputed {
+  candidate: UpNextCandidate;
+  row: UpNextRow;
+  momentum: Momentum;
+  invested: boolean;
+  gainedThisWeek: number;
+  gainedThisMonth: number;
+  effectiveHours: number | null;
+  lastPlayedDaysAgo: number | null;
+}
+
+/**
+ * Assemble the per-game facts the Up-Next surface needs: effective playtime
+ * basis (R14 — never raw hltbMain), snapshot-derived momentum + recency deltas,
+ * and dormancy. Score is filled in by the caller so both the baseline (step b)
+ * and the learned ranker (step c) can reuse this exact candidate assembly.
+ */
+function computeUpNextFacts(userId: string): UpNextComputed[] {
+  const db = getDb();
+  const rows = db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+      headerImageUrl: games.headerImageUrl,
+      reviewScore: games.reviewScore,
+      hltbMain: games.hltbMain,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      isReleased: games.isReleased,
+      playtimeSource: userGames.playtimeSource,
+      playtimeMinutes: userGames.playtimeMinutes,
+      playtimeRecentMinutes: userGames.playtimeRecentMinutes,
+      personalInterest: userGames.personalInterest,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      lastPlayed: userGames.lastPlayed,
+    })
+    .from(games)
+    .innerJoin(userGames, and(eq(games.id, userGames.gameId), eq(userGames.userId, userId)))
+    .where(and(eq(userGames.isOwned, true), or(isNull(userGames.isIgnored), eq(userGames.isIgnored, false))))
+    .all();
+
+  const nowMs = Date.now();
+  const out: UpNextComputed[] = [];
+
+  for (const r of rows) {
+    const completionStatus: CompletionStatus = isCompletionStatus(r.completionStatus)
+      ? r.completionStatus
+      : 'unplayed';
+    // Cheap pre-filter — skip games that can never surface before doing snapshot work.
+    if (
+      completionStatus === 'beaten' ||
+      completionStatus === 'completed' ||
+      completionStatus === 'abandoned'
+    ) {
+      continue;
+    }
+    const backlogState = isBacklogState(r.backlogState) ? r.backlogState : null;
+    if (backlogState === 'dropped' || backlogState === 'snoozed') continue;
+
+    const totalMinutes = r.playtimeMinutes ?? 0;
+    const recentMinutes = r.playtimeRecentMinutes ?? 0;
+    const invested = totalMinutes >= MEANINGFUL_MINUTES;
+    const { momentum, gainedThisWeek, gainedThisMonth } = momentumForOwnedGame(
+      r.id,
+      userId,
+      totalMinutes,
+      recentMinutes,
+    );
+    const effectiveHours = getEffectivePlaytimeHours({
+      playtimeSource: r.playtimeSource,
+      hltbMain: r.hltbMain,
+      steamPlaytimeMedian: r.steamPlaytimeMedian,
+      isReleased: r.isReleased,
+    });
+    // Guard against a malformed lastPlayed: an unparseable date yields NaN,
+    // which would otherwise flow into the ranker and poison the whole score.
+    const parsedLastPlayed = r.lastPlayed ? Date.parse(r.lastPlayed) : NaN;
+    const lastPlayedDaysAgo = Number.isFinite(parsedLastPlayed)
+      ? Math.max(0, Math.floor((nowMs - parsedLastPlayed) / 86_400_000))
+      : null;
+    const personalInterest = r.personalInterest ?? 3;
+
+    out.push({
+      row: r,
+      momentum,
+      invested,
+      gainedThisWeek,
+      gainedThisMonth,
+      effectiveHours,
+      lastPlayedDaysAgo,
+      candidate: {
+        gameId: r.id,
+        title: r.title,
+        completionStatus,
+        backlogState,
+        priority: r.priority ?? null,
+        playtimeMinutes: totalMinutes,
+        effectiveHours,
+        reviewScore: r.reviewScore ?? null,
+        personalInterest,
+        momentum,
+        lastPlayedDaysAgo,
+        score: 0, // set by the caller
+      },
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Implicit genre affinity from where the user actually spends hours: each
+ * genre's share of total played minutes across the owned library, normalised to
+ * 0..1 against the top genre. Zero-triage personalisation — no ratings needed.
+ */
+export function computeGenreAffinity(userId: string): Map<string, number> {
+  const db = getDb();
+  const rows = db
+    .select({
+      genre: tags.name,
+      total: sql<number>`SUM(${userGames.playtimeMinutes})`,
+    })
+    .from(userGames)
+    .innerJoin(gameTags, eq(gameTags.gameId, userGames.gameId))
+    .innerJoin(tags, eq(tags.id, gameTags.tagId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        eq(tags.type, 'genre'),
+        sql`${userGames.playtimeMinutes} > 0`,
+      ),
+    )
+    .groupBy(tags.name)
+    .all();
+
+  const map = new Map<string, number>();
+  let max = 0;
+  for (const r of rows) {
+    const total = r.total ?? 0;
+    if (total > max) max = total;
+  }
+  if (max <= 0) return map;
+  for (const r of rows) {
+    map.set(r.genre.toLowerCase(), (r.total ?? 0) / max);
+  }
+  return map;
+}
+
+/** Genres (lower-cased type='genre' tags) for a set of games, batched. */
+function getGenresForGames(gameIds: number[]): Map<number, string[]> {
+  const map = new Map<number, string[]>();
+  if (gameIds.length === 0) return map;
+  const db = getDb();
+  const rows = db
+    .select({ gameId: gameTags.gameId, name: tags.name })
+    .from(gameTags)
+    .innerJoin(tags, eq(tags.id, gameTags.tagId))
+    .where(and(inArray(gameTags.gameId, gameIds), eq(tags.type, 'genre')))
+    .all();
+  for (const r of rows) {
+    const list = map.get(r.gameId) ?? [];
+    list.push(r.name);
+    map.set(r.gameId, list);
+  }
+  return map;
+}
+
+export interface RecommendationStat {
+  dismissalCount: number;
+  daysSinceLastDismissal: number | null;
+}
+
+/**
+ * Per-game dismissal signal for the cooldown term: how many times the user has
+ * dismissed each game's recommendation and how long ago the last one was.
+ */
+export function getRecommendationStats(userId: string): Map<number, RecommendationStat> {
+  const db = getDb();
+  const rows = db
+    .select({
+      gameId: recommendationEvents.gameId,
+      dismissals: sql<number>`COUNT(*)`,
+      lastDismissed: sql<string | null>`MAX(${recommendationEvents.dismissedAt})`,
+    })
+    .from(recommendationEvents)
+    .where(and(eq(recommendationEvents.userId, userId), sql`${recommendationEvents.dismissedAt} IS NOT NULL`))
+    .groupBy(recommendationEvents.gameId)
+    .all();
+
+  const nowMs = Date.now();
+  const map = new Map<number, RecommendationStat>();
+  for (const r of rows) {
+    const parsedLastDismissed = r.lastDismissed ? Date.parse(r.lastDismissed) : NaN;
+    const daysSince = Number.isFinite(parsedLastDismissed)
+      ? Math.max(0, Math.floor((nowMs - parsedLastDismissed) / 86_400_000))
+      : null;
+    map.set(r.gameId, { dismissalCount: r.dismissals ?? 0, daysSinceLastDismissal: daysSince });
+  }
+  return map;
+}
+
+/**
+ * The Up Next queue: a diverse 3–5 game surface (Continue / Finish-Soon /
+ * Start-Fresh / Drop) over the user's owned library, each pick with one concrete
+ * reason, ranked by the learned ranker over implicit signals (review quality,
+ * played-genre affinity, playtime-snapshot recency deltas, dismissal cooldowns).
+ * Read-only — recording that picks were shown is the separate write path
+ * (recordRecommendationShown) so a plain render never mutates.
+ */
+export function getUpNextQueue(userId: string, opts: { maxItems?: number } = {}): UpNextQueueEntry[] {
+  const facts = computeUpNextFacts(userId);
+  if (facts.length === 0) return [];
+
+  const gameIds = facts.map((f) => f.candidate.gameId);
+  const affinityByGenre = computeGenreAffinity(userId);
+  const genresByGame = getGenresForGames(gameIds);
+  const statsByGame = getRecommendationStats(userId);
+  const display = new Map<number, { steamAppId: number; headerImageUrl: string | null }>();
+
+  const candidates: UpNextCandidate[] = facts.map((f) => {
+    display.set(f.candidate.gameId, { steamAppId: f.row.steamAppId, headerImageUrl: f.row.headerImageUrl });
+    const genres = genresByGame.get(f.candidate.gameId) ?? [];
+    const stat = statsByGame.get(f.candidate.gameId);
+    const signals: RankingSignals = {
+      personalInterest: f.candidate.personalInterest,
+      reviewScore: f.candidate.reviewScore,
+      effectiveHours: f.effectiveHours,
+      playtimeMinutes: f.candidate.playtimeMinutes,
+      completionStatus: f.candidate.completionStatus,
+      momentum: f.momentum,
+      gainedThisWeekMinutes: f.gainedThisWeek,
+      gainedThisMonthMinutes: f.gainedThisMonth,
+      lastPlayedDaysAgo: f.lastPlayedDaysAgo,
+      priority: f.candidate.priority,
+      genreAffinity: genreAffinityForTags(genres, affinityByGenre),
+      dismissalCount: stat?.dismissalCount ?? 0,
+      daysSinceLastDismissal: stat?.daysSinceLastDismissal ?? null,
+    };
+    return { ...f.candidate, score: scoreCandidate(signals).score };
+  });
+
+  return buildUpNextQueue(candidates, { maxItems: opts.maxItems }).map((it) => {
+    const d = display.get(it.gameId);
+    return {
+      gameId: it.gameId,
+      steamAppId: d?.steamAppId ?? 0,
+      title: it.title,
+      headerImageUrl: d?.headerImageUrl ?? undefined,
+      bucket: it.bucket,
+      reason: it.reason,
+      score: it.score,
+    };
+  });
+}
+
+// ============================================
+// Recommendation events — the implicit learning write path (Queue S S9 step c)
+// ============================================
+
+/**
+ * Of the given gameIds, which does this user actually own? Used to reject
+ * recommendation-event writes for games not in the user's library, so a client
+ * can't pollute its own learning history with games it doesn't own.
+ */
+export function getOwnedGameIdSet(userId: string, gameIds: number[]): Set<number> {
+  const set = new Set<number>();
+  if (gameIds.length === 0) return set;
+  const db = getDb();
+  const rows = db
+    .select({ gameId: userGames.gameId })
+    .from(userGames)
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        inArray(userGames.gameId, gameIds),
+      ),
+    )
+    .all();
+  for (const r of rows) set.add(r.gameId);
+  return set;
+}
+
+export interface RecordRecommendationInput {
+  userId: string;
+  gameId: number;
+  bucket: UpNextBucket;
+  reason: string;
+  score?: number;
+}
+
+/**
+ * Record that a pick was SHOWN. Deduped to one open (un-acted) event per game
+ * per day so re-renders don't inflate the signal. Returns the event id.
+ */
+export function recordRecommendationShown(input: RecordRecommendationInput): number {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
+
+  const existing = db
+    .select({ id: recommendationEvents.id })
+    .from(recommendationEvents)
+    .where(
+      and(
+        eq(recommendationEvents.userId, input.userId),
+        eq(recommendationEvents.gameId, input.gameId),
+        isNull(recommendationEvents.acceptedAt),
+        isNull(recommendationEvents.dismissedAt),
+        sql`${recommendationEvents.shownAt} >= ${today}`,
+      ),
+    )
+    .get();
+  if (existing) return existing.id;
+
+  const row = db
+    .insert(recommendationEvents)
+    .values({
+      userId: input.userId,
+      gameId: input.gameId,
+      bucket: input.bucket,
+      reason: input.reason,
+      score: input.score ?? null,
+      shownAt: now,
+    })
+    .returning({ id: recommendationEvents.id })
+    .get();
+  return row.id;
+}
+
+/** Record every pick in a freshly-built queue as shown, in one pass. */
+export function recordRecommendationsShown(
+  userId: string,
+  entries: { gameId: number; bucket: UpNextBucket; reason: string; score?: number }[],
+): void {
+  for (const e of entries) {
+    recordRecommendationShown({ userId, gameId: e.gameId, bucket: e.bucket, reason: e.reason, score: e.score });
+  }
+}
+
+function markLatestOpenEvent(
+  userId: string,
+  gameId: number,
+  field: 'acceptedAt' | 'dismissedAt',
+): boolean {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const latest = db
+    .select({ id: recommendationEvents.id })
+    .from(recommendationEvents)
+    .where(
+      and(
+        eq(recommendationEvents.userId, userId),
+        eq(recommendationEvents.gameId, gameId),
+        isNull(recommendationEvents.acceptedAt),
+        isNull(recommendationEvents.dismissedAt),
+      ),
+    )
+    .orderBy(desc(recommendationEvents.shownAt))
+    .limit(1)
+    .get();
+  if (!latest) return false;
+  db.update(recommendationEvents)
+    .set(field === 'acceptedAt' ? { acceptedAt: now } : { dismissedAt: now })
+    .where(eq(recommendationEvents.id, latest.id))
+    .run();
+  return true;
+}
+
+/** The user opened/started a surfaced pick — a positive implicit signal. */
+export function recordRecommendationAccepted(userId: string, gameId: number): boolean {
+  return markLatestOpenEvent(userId, gameId, 'acceptedAt');
+}
+
+/** The user dismissed a surfaced pick — feeds the ranker's dismissal cooldown. */
+export function recordRecommendationDismissed(userId: string, gameId: number): boolean {
+  return markLatestOpenEvent(userId, gameId, 'dismissedAt');
+}
+
 export function getDealsCount(): number {
   const db = getDb();
   const row = db
@@ -3437,6 +4049,11 @@ export function getUnreleasedWishlistGames(userId: string): EnrichedGame[] {
       personalInterest: userGames.personalInterest,
       playtimeSource: userGames.playtimeSource,
       lastPlayed: userGames.lastPlayed,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      startedAt: userGames.startedAt,
+      abandonedAt: userGames.abandonedAt,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
