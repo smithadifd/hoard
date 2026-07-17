@@ -3429,8 +3429,11 @@ function computeUpNextFacts(userId: string): UpNextComputed[] {
       steamPlaytimeMedian: r.steamPlaytimeMedian,
       isReleased: r.isReleased,
     });
-    const lastPlayedDaysAgo = r.lastPlayed
-      ? Math.max(0, Math.floor((nowMs - Date.parse(r.lastPlayed)) / 86_400_000))
+    // Guard against a malformed lastPlayed: an unparseable date yields NaN,
+    // which would otherwise flow into the ranker and poison the whole score.
+    const parsedLastPlayed = r.lastPlayed ? Date.parse(r.lastPlayed) : NaN;
+    const lastPlayedDaysAgo = Number.isFinite(parsedLastPlayed)
+      ? Math.max(0, Math.floor((nowMs - parsedLastPlayed) / 86_400_000))
       : null;
     const personalInterest = r.personalInterest ?? 3;
 
@@ -3545,8 +3548,9 @@ export function getRecommendationStats(userId: string): Map<number, Recommendati
   const nowMs = Date.now();
   const map = new Map<number, RecommendationStat>();
   for (const r of rows) {
-    const daysSince = r.lastDismissed
-      ? Math.max(0, Math.floor((nowMs - Date.parse(r.lastDismissed)) / 86_400_000))
+    const parsedLastDismissed = r.lastDismissed ? Date.parse(r.lastDismissed) : NaN;
+    const daysSince = Number.isFinite(parsedLastDismissed)
+      ? Math.max(0, Math.floor((nowMs - parsedLastDismissed) / 86_400_000))
       : null;
     map.set(r.gameId, { dismissalCount: r.dismissals ?? 0, daysSinceLastDismissal: daysSince });
   }
@@ -3610,6 +3614,30 @@ export function getUpNextQueue(userId: string, opts: { maxItems?: number } = {})
 // ============================================
 // Recommendation events — the implicit learning write path (Queue S S9 step c)
 // ============================================
+
+/**
+ * Of the given gameIds, which does this user actually own? Used to reject
+ * recommendation-event writes for games not in the user's library, so a client
+ * can't pollute its own learning history with games it doesn't own.
+ */
+export function getOwnedGameIdSet(userId: string, gameIds: number[]): Set<number> {
+  const set = new Set<number>();
+  if (gameIds.length === 0) return set;
+  const db = getDb();
+  const rows = db
+    .select({ gameId: userGames.gameId })
+    .from(userGames)
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        inArray(userGames.gameId, gameIds),
+      ),
+    )
+    .all();
+  for (const r of rows) set.add(r.gameId);
+  return set;
+}
 
 export interface RecordRecommendationInput {
   userId: string;

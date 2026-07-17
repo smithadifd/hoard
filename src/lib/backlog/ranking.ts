@@ -72,8 +72,15 @@ const ACTIVE_FULL_WEEK_HOURS = 2;
 const COOLING_FULL_MONTH_HOURS = 4;
 const FORGOTTEN_FULL_DAYS = 180;
 const MEANINGFUL_MINUTES = 60;
+/** Manual priority is clamped to this many steps so it can't dwarf the implicit
+ *  signals (max contribution = W.priority * MAX_PRIORITY_STEPS, on par with the
+ *  other bounded terms). */
+const MAX_PRIORITY_STEPS = 5;
 
+/** NaN-safe clamp: a NaN input (e.g. an unparseable date leaking in) collapses
+ *  to the low bound rather than poisoning the whole score with NaN. */
 function clamp(v: number, lo: number, hi: number): number {
+  if (!Number.isFinite(v)) return lo;
   return Math.max(lo, Math.min(hi, v));
 }
 
@@ -110,15 +117,21 @@ export function scoreCandidate(s: RankingSignals): RankResult {
   }
 
   // Forgotten favourite (#13): invested, gone dormant, still worth it. Scaled by
-  // how long it's been — a longer silence is a stronger resurface.
+  // how long it's been — a longer silence is a stronger resurface. A non-finite
+  // lastPlayedDaysAgo (unparseable date) falls back to the full-dormancy default
+  // rather than corrupting the score.
   let forgotten = 0;
   if (s.momentum === 'dormant' && invested && worthReturn) {
-    const dormancy = clamp((s.lastPlayedDaysAgo ?? FORGOTTEN_FULL_DAYS) / FORGOTTEN_FULL_DAYS, 0.3, 1);
+    const days = Number.isFinite(s.lastPlayedDaysAgo as number)
+      ? (s.lastPlayedDaysAgo as number)
+      : FORGOTTEN_FULL_DAYS;
+    const dormancy = clamp(days / FORGOTTEN_FULL_DAYS, 0.3, 1);
     forgotten = W.forgotten * dormancy;
   }
 
   const finish = ratio != null && ratio >= 0.6 && ratio < 1 ? W.finish * clamp(ratio, 0.6, 0.99) : 0;
-  const priority = W.priority * (s.priority ?? 0);
+  // Bounded so a large manual priority can't dominate the implicit signals.
+  const priority = W.priority * clamp(s.priority ?? 0, 0, MAX_PRIORITY_STEPS);
 
   const cooldownDecay =
     s.daysSinceLastDismissal == null ? 1 : clamp(1 - s.daysSinceLastDismissal / COOLDOWN_DAYS, 0, 1);

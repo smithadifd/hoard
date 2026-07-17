@@ -89,6 +89,31 @@ describe('scoreCandidate — dismissal cooldown', () => {
   });
 });
 
+describe('scoreCandidate — robustness', () => {
+  it('never returns NaN when lastPlayedDaysAgo is NaN (unparseable date leaked in)', () => {
+    const r = scoreCandidate(
+      signals({
+        playtimeMinutes: 480,
+        momentum: 'dormant',
+        reviewScore: 90,
+        personalInterest: 5,
+        lastPlayedDaysAgo: NaN,
+      }),
+    );
+    expect(Number.isFinite(r.score)).toBe(true);
+    // The forgotten term still fires (falls back to full dormancy), just finite.
+    expect(Number.isFinite(r.contributions.forgotten)).toBe(true);
+    expect(r.contributions.forgotten).toBeGreaterThan(0);
+  });
+
+  it('clamps a runaway manual priority so it cannot dominate every other signal', () => {
+    const huge = scoreCandidate(signals({ priority: 100000 }));
+    const capped = scoreCandidate(signals({ priority: 5 }));
+    expect(huge.contributions.priority).toBe(capped.contributions.priority);
+    expect(Number.isFinite(huge.score)).toBe(true);
+  });
+});
+
 describe('scoreCandidate — interest neutrality', () => {
   it('a default interest of 3 contributes nothing (avoids the static-sort collapse)', () => {
     const r = scoreCandidate(signals({ personalInterest: 3 }));

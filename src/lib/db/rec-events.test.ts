@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { eq, and } from 'drizzle-orm';
-import { createTestDb, seedGame, seedUserGame } from './test-helpers';
+import { createTestDb, seedGame, seedUserGame, seedPlaytimeSnapshot } from './test-helpers';
 import type { TestDb } from './test-helpers';
 import { recommendationEvents } from './schema';
 
@@ -17,6 +17,7 @@ import {
   recordRecommendationAccepted,
   recordRecommendationDismissed,
   getRecommendationStats,
+  getOwnedGameIdSet,
   getUpNextQueue,
   computeGenreAffinity,
 } from './queries';
@@ -114,6 +115,41 @@ describe('dismissal cooldown moves the Up Next ranking', () => {
     const aAfter = after.find((e) => e.gameId === a)!;
     const bAfter = after.find((e) => e.gameId === b)!;
     expect(bAfter.score).toBeLessThan(aAfter.score);
+  });
+});
+
+describe('getOwnedGameIdSet — ownership guard for the shown write path', () => {
+  it('returns only the games the user actually owns', () => {
+    const owned = seedGame(testDb, { steamAppId: 40, title: 'Owned' });
+    seedUserGame(testDb, owned, { isOwned: true });
+    const notOwned = seedGame(testDb, { steamAppId: 41, title: 'NotOwned' });
+    seedUserGame(testDb, notOwned, { isOwned: false });
+    const noRow = seedGame(testDb, { steamAppId: 42, title: 'NoUserRow' });
+
+    const set = getOwnedGameIdSet('default', [owned, notOwned, noRow, 99999]);
+    expect(set.has(owned)).toBe(true);
+    expect(set.has(notOwned)).toBe(false);
+    expect(set.has(noRow)).toBe(false);
+    expect(set.has(99999)).toBe(false);
+  });
+});
+
+describe('malformed last_played does not corrupt the ranking', () => {
+  it('a garbage lastPlayed still yields a finite score (no NaN poisoning)', () => {
+    const g = seedGame(testDb, { steamAppId: 50, title: 'Garbage', hltbMain: 40, reviewScore: 90 });
+    seedUserGame(testDb, g, {
+      isOwned: true,
+      completionStatus: 'playing',
+      playtimeMinutes: 600,
+      personalInterest: 5,
+      lastPlayed: 'not-a-date',
+    });
+    seedPlaytimeSnapshot(testDb, g, { playtimeMinutes: 600, snapshotDate: '2000-01-01' });
+
+    const q = getUpNextQueue('default');
+    const entry = q.find((e) => e.gameId === g);
+    expect(entry).toBeTruthy();
+    expect(Number.isFinite(entry!.score)).toBe(true);
   });
 });
 

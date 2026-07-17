@@ -5,6 +5,7 @@ import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib
 import { formatZodError } from '@/lib/validations';
 import {
   getUpNextQueue,
+  getOwnedGameIdSet,
   recordRecommendationsShown,
   recordRecommendationAccepted,
   recordRecommendationDismissed,
@@ -85,6 +86,14 @@ export async function POST(request: NextRequest) {
   try {
     const data = parsed.data;
     if (data.action === 'shown') {
+      // Only record events for games the user actually owns — a client can't
+      // seed its learning history with games outside its library.
+      const requested = data.items.map((i) => i.gameId);
+      const owned = getOwnedGameIdSet(userId, requested);
+      const notOwned = requested.filter((id) => !owned.has(id));
+      if (notOwned.length > 0) {
+        return apiValidationError(`Not in your library: ${notOwned.join(', ')}`);
+      }
       recordRecommendationsShown(userId, data.items);
       return apiSuccess({ recorded: data.items.length });
     }
