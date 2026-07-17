@@ -14,6 +14,27 @@ function isDemoMode(): boolean {
   return process.env.DEMO_MODE === 'true';
 }
 
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * `/api/auth` is DENY-BY-DEFAULT in demo mode: the Better Auth catch-all
+ * (`/api/auth/[...all]`) mounts many mutations on one route handler — `sign-up`,
+ * `update-user`, `change-password`, `change-email`, `revoke-sessions`, … — so an
+ * allow-list of individual blocked paths would silently leak every mutation it
+ * doesn't happen to enumerate (and each Better Auth upgrade can add more). Since
+ * the demo credentials are public (`src/lib/demo.ts`), we instead REFUSE every
+ * mutating `/api/auth` request except the few the demo legitimately needs below.
+ * Non-mutating auth calls (GET get-session, etc.) are unaffected.
+ */
+const DEMO_AUTH_ALLOWED_PREFIXES = [
+  '/api/auth/sign-in',  // the demo account has to be able to log in
+  '/api/auth/sign-out', // …and log back out
+];
+
+function isDemoAllowedAuthPath(pathname: string): boolean {
+  return DEMO_AUTH_ALLOWED_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'));
+}
+
 /**
  * Endpoints blocked in demo mode (method + path prefix).
  *
@@ -22,16 +43,12 @@ function isDemoMode(): boolean {
  * cannot write to the DB or proxy authenticated third-party requests. GET reads
  * are intentionally left open so the demo UI still renders. `proxy.test.ts`
  * reflects over every mutation route export and fails if one isn't covered here.
+ * (`/api/auth` is handled separately, deny-by-default — see above.)
  *
  * Matching is method + path-prefix (startsWith), so a namespace prefix like
  * `/api/onboarding` covers all of its sub-routes.
  */
 const DEMO_BLOCKED: { method: string; prefix: string }[] = [
-  // Account creation: block the Better Auth signup path so a demo visitor can't
-  // register on the public instance. Sign-in / sign-out stay open (the demo
-  // account still needs to log in), so we scope this to the sign-up sub-path
-  // rather than the whole `/api/auth` namespace.
-  { method: 'POST', prefix: '/api/auth/sign-up' },
   { method: 'POST', prefix: '/api/sync' },
   { method: 'POST', prefix: '/api/steam' },
   // Note: there is no `/api/prices` route — price-history mutation is
@@ -239,12 +256,22 @@ export function proxy(request: NextRequest) {
   // Block mutations in demo mode
   if (isDemoMode()) {
     const method = request.method;
+
+    const demoBlocked = NextResponse.json(
+      { error: 'This action is disabled in demo mode.' },
+      { status: 403 }
+    );
+
+    // `/api/auth`: deny-by-default. Refuse every mutating auth request except the
+    // explicit allow-list, so future Better Auth mutations can't leak (see
+    // DEMO_AUTH_ALLOWED_PREFIXES above).
+    if (pathname.startsWith('/api/auth') && MUTATING_METHODS.has(method)) {
+      if (!isDemoAllowedAuthPath(pathname)) return demoBlocked;
+    }
+
     for (const rule of DEMO_BLOCKED) {
       if (method === rule.method && pathname.startsWith(rule.prefix)) {
-        return NextResponse.json(
-          { error: 'This action is disabled in demo mode.' },
-          { status: 403 }
-        );
+        return demoBlocked;
       }
     }
   }

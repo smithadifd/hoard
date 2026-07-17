@@ -14,6 +14,16 @@ import { user } from './db/schema';
  * setup too), so we enforce it dynamically here: the create hook runs for every
  * signup — server-side (`/setup`) or via `/api/auth/sign-up` — and rejects it
  * once any user row exists. Idempotent and cheap (one indexed COUNT).
+ *
+ * Accepted residual (TOCTOU): the COUNT here and Better Auth's later INSERT are
+ * not one transaction — the `before` hook doesn't expose the adapter's tx — so
+ * two truly-simultaneous FIRST-EVER signups (distinct emails) could both read
+ * count=0 and both insert. This is reachable ONLY in the one-time bootstrap
+ * window before any user exists and is permanently closed once the first row
+ * lands; making it atomic would need a DB-level "at most one user" constraint
+ * (a migration that would also fight the userId-parameterised multi-user model).
+ * Not worth that trade for a fresh-install-only race, so it's documented and
+ * left. The `/api/setup` route applies the same count check as a second gate.
  */
 export function assertSignUpAllowed(): void {
   const row = getDb().select({ count: sql<number>`count(*)` }).from(user).get();

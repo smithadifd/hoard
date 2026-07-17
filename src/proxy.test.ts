@@ -50,11 +50,25 @@ function exportedMutationMethods(source: string): string[] {
       new RegExp(`export\\s+(?:async\\s+)?function\\s+${m}\\b`), // export function POST(
       new RegExp(`export\\s+const\\s+${m}\\b`),                   // export const POST =
       new RegExp(`export\\s+const\\s*\\{[^}]*\\b${m}\\b[^}]*\\}`), // export const { GET, POST } =
+      new RegExp(`export\\s*\\{[^}]*\\b${m}\\b[^}]*\\}`),          // export { POST } / export { POST } from '…'
     ];
     if (patterns.some(p => p.test(source))) found.push(m);
   }
   return found;
 }
+
+// Better Auth mounts many mutations on the single `/api/auth/[...all]` handler.
+// The demo block is deny-by-default under `/api/auth`, so these must ALL 403 —
+// the last entry is a canary standing in for any future auth mutation, proving
+// deny-by-default (not an enumerated block-list) is what protects them.
+const AUTH_MUTATIONS_MUST_BLOCK = [
+  '/api/auth/sign-up/email',
+  '/api/auth/update-user',
+  '/api/auth/change-password',
+  '/api/auth/change-email',
+  '/api/auth/revoke-sessions',
+  '/api/auth/some-future-auth-mutation', // canary: unknown → still blocked
+];
 
 interface RouteCase {
   file: string;
@@ -83,10 +97,13 @@ function discoverMutationRoutes(): RouteCase[] {
     const authCatchAll = isCatchAll && routePath.startsWith('/api/auth');
     for (const method of methods) {
       if (authCatchAll) {
-        // The only mutation surface of the Better Auth catch-all that MUST be
-        // demo-blocked is signup — sign-in/out stay open (see the dedicated
-        // negative-control test below).
-        cases.push({ file, method, path: '/api/auth/sign-up/email', note: 'auth signup' });
+        // The Better Auth catch-all is deny-by-default in demo mode: every
+        // mutation on it (signup, update-user, change-password, …) must 403,
+        // and the allow-list (sign-in/out) must NOT — see the dedicated tests.
+        // We fan the discovered POST out over each known auth mutation + a canary.
+        for (const authPath of AUTH_MUTATIONS_MUST_BLOCK) {
+          cases.push({ file, method, path: authPath, note: 'auth mutation' });
+        }
       } else if (routePath.includes('__CATCHALL__')) {
         cases.push({ file, method, path: routePath.replace(/__CATCHALL__/g, 'x'), note: 'catch-all' });
       } else {
@@ -115,19 +132,36 @@ describe('DEMO_BLOCKED reflection — every mutation route export is blocked in 
   }
 });
 
-describe('demo mode — auth signup vs sign-in', () => {
-  it('blocks POST /api/auth/sign-up/email', () => {
-    vi.stubEnv('DEMO_MODE', 'true');
-    expect(proxy(makeRequest('POST', '/api/auth/sign-up/email')).status).toBe(403);
-  });
+describe('demo mode — /api/auth is deny-by-default', () => {
+  beforeEach(() => vi.stubEnv('DEMO_MODE', 'true'));
+
+  // Every known Better Auth mutation (+ the canary) must be refused.
+  for (const authPath of AUTH_MUTATIONS_MUST_BLOCK) {
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+      it(`blocks ${method} ${authPath}`, () => {
+        expect(proxy(makeRequest(method, authPath)).status).toBe(403);
+      });
+    }
+  }
 
   it('does NOT block POST /api/auth/sign-in/email (demo account must log in)', () => {
-    vi.stubEnv('DEMO_MODE', 'true');
     expect(proxy(makeRequest('POST', '/api/auth/sign-in/email')).status).not.toBe(403);
   });
 
+  it('does NOT block POST /api/auth/sign-out', () => {
+    expect(proxy(makeRequest('POST', '/api/auth/sign-out')).status).not.toBe(403);
+  });
+
+  it('does NOT block a "sign-in"-adjacent path that only shares a prefix', () => {
+    // Guard against a prefix-bypass in the allow-list matcher.
+    expect(proxy(makeRequest('POST', '/api/auth/sign-in-evil')).status).toBe(403);
+  });
+
+  it('leaves GET auth reads (e.g. get-session) open', () => {
+    expect(proxy(makeRequest('GET', '/api/auth/get-session')).status).not.toBe(403);
+  });
+
   it('leaves GET reads open so the demo UI renders', () => {
-    vi.stubEnv('DEMO_MODE', 'true');
     // /api/notifications GET is a read the demo bell needs.
     expect(proxy(makeRequest('GET', '/api/notifications')).status).not.toBe(403);
   });
