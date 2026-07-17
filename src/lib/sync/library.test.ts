@@ -16,6 +16,7 @@ vi.mock('../db/queries', () => ({
   getExistingGamesByAppIds: vi.fn(),
   getPreOwnershipState: vi.fn(),
   cascadePurchaseCleanup: vi.fn(),
+  reconcileOwnership: vi.fn(),
   capturePricePaidSuggestions: vi.fn(),
   countOwnedGames: vi.fn(),
   getSetting: vi.fn(),
@@ -41,6 +42,7 @@ import {
   getExistingGamesByAppIds,
   getPreOwnershipState,
   cascadePurchaseCleanup,
+  reconcileOwnership,
   capturePricePaidSuggestions,
   countOwnedGames,
   getSetting,
@@ -58,6 +60,7 @@ const mockGetFirstUserId = vi.mocked(getFirstUserId);
 const mockGetExisting = vi.mocked(getExistingGamesByAppIds);
 const mockGetPreOwnership = vi.mocked(getPreOwnershipState);
 const mockCascadePurchase = vi.mocked(cascadePurchaseCleanup);
+const mockReconcile = vi.mocked(reconcileOwnership);
 const mockCapture = vi.mocked(capturePricePaidSuggestions);
 const mockCountOwned = vi.mocked(countOwnedGames);
 const mockGetSetting = vi.mocked(getSetting);
@@ -83,6 +86,7 @@ describe('syncLibrary', () => {
     mockUpsertGame.mockReturnValue(1);
     mockGetExisting.mockReturnValue(new Map());
     mockGetPreOwnership.mockReturnValue([]);
+    mockReconcile.mockReturnValue(0);
     mockCapture.mockReturnValue([]);
     // Default: library already has owned games (past the initial import), so the
     // net-new price-fetch lane is eligible. Tests that assert first-import behavior
@@ -176,7 +180,96 @@ describe('syncLibrary', () => {
 
     // Should only process the first game (abort checked at top of loop iteration 2)
     expect(result.stats.succeeded).toBe(1);
-    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 1, undefined, 3, 0, 0);
+    // Cancellation is recorded as 'partial' (never 'success'), with the unprocessed
+    // remainder reported as skipped.
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(
+      42,
+      'partial',
+      1,
+      'Cancelled after 1 of 3 games',
+      3,
+      0,
+      0,
+    );
+    expect(result.stats).toEqual({ attempted: 3, succeeded: 1, failed: 0, skipped: 2 });
+    // A cancelled run must not reconcile ownership — it never saw the full owned set.
+    expect(mockReconcile).not.toHaveBeenCalled();
+  });
+
+  it('does NOT run purchase cleanup for precomputed-but-unprocessed games on cancel (bug a)', async () => {
+    const controller = new AbortController();
+    const games = [
+      makeSteamGame(1, 'Processed'),
+      makeSteamGame(2, 'Unprocessed'),
+      makeSteamGame(3, 'Unprocessed 2'),
+    ];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 3, games }),
+    } as ReturnType<typeof getSteamClient>);
+    // All three are known games that just flipped wishlist→owned (would be cleaned up).
+    mockGetExisting.mockReturnValue(new Map([
+      [1, { id: 10, title: 'Processed' }],
+      [2, { id: 20, title: 'Unprocessed' }],
+      [3, { id: 30, title: 'Unprocessed 2' }],
+    ]));
+    mockGetPreOwnership.mockReturnValue([
+      { gameId: 10, wasOwned: false, wasWishlisted: true },
+      { gameId: 20, wasOwned: false, wasWishlisted: true },
+      { gameId: 30, wasOwned: false, wasWishlisted: true },
+    ]);
+    // Abort while processing the first game → only game id 10 is processed.
+    mockUpsertGame.mockImplementation(() => {
+      controller.abort();
+      return 10;
+    });
+
+    await syncLibrary(undefined, controller.signal);
+
+    // Cleanup runs ONLY for the processed purchase (id 10), never the precomputed
+    // set [10, 20, 30]. On main this asserts fail: cleanup runs over the full set.
+    expect(mockCascadePurchase).toHaveBeenCalledTimes(1);
+    expect(mockCascadePurchase).toHaveBeenCalledWith([10], 'user-1');
+    // And the run is recorded partial, not success.
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(
+      42,
+      'partial',
+      1,
+      expect.stringContaining('Cancelled'),
+      3,
+      0,
+      0,
+    );
+  });
+
+  it('reconciles ownership for a genuine, non-empty owned response (bug b)', async () => {
+    const games = [makeSteamGame(440, 'TF2', 100), makeSteamGame(570, 'Dota 2', 50)];
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
+    } as ReturnType<typeof getSteamClient>);
+    mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
+    mockReconcile.mockReturnValue(1); // one previously-owned game absent → unowned
+
+    await syncLibrary();
+
+    // Reconcile is handed exactly the gameIds confirmed owned this run.
+    expect(mockReconcile).toHaveBeenCalledTimes(1);
+    expect(mockReconcile).toHaveBeenCalledWith([10, 20], 'user-1');
+    // A successful, non-cancelled run is still recorded success.
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 2, undefined, 2, 0, 0);
+  });
+
+  it('does NOT reconcile ownership on a transient empty owned response (bug b guard)', async () => {
+    // Steam returned a 200 with an empty games array — a hiccup, NOT "you own
+    // nothing". Reconciling here would wipe the whole library.
+    mockGetSteamClient.mockReturnValue({
+      getOwnedGames: vi.fn().mockResolvedValue({ game_count: 0, games: [] }),
+    } as ReturnType<typeof getSteamClient>);
+
+    await syncLibrary();
+
+    expect(mockReconcile).not.toHaveBeenCalled();
+    // The sync still completes normally — it just doesn't touch ownership.
+    expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0, 0);
   });
 
   it('records lastPlayed when rtime_last_played > 0', async () => {

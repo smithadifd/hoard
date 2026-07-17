@@ -16,6 +16,7 @@ import {
   getExistingGamesByAppIds,
   getPreOwnershipState,
   cascadePurchaseCleanup,
+  reconcileOwnership,
   capturePricePaidSuggestions,
   countOwnedGames,
   getSetting,
@@ -78,6 +79,13 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
     const total = response.games.length;
     let processed = 0;
     let newlyPurchasedCount = 0;
+    // Set true if the run was cancelled mid-loop (AbortSignal). A cancelled run
+    // must NOT clean up / reconcile over the full precomputed set, and is recorded
+    // as 'partial', never 'success'.
+    let cancelled = false;
+    // Count of previously-owned games reconciled to unowned this run (absent from
+    // a genuine, non-empty owned response).
+    let reconciledUnowned = 0;
     // Price-paid suggestions captured this run (written in-txn, notified after commit).
     let capturedSuggestions: PricePaidCapture[] = [];
     // Net-new owned adds that were NEVER wishlisted (part 2). These have no
@@ -119,9 +127,15 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
         }
       }
 
+      // gameIds actually upserted-as-owned this run. All post-loop mutations
+      // (purchase cleanup, net-new price lane, ownership reconcile) are scoped to
+      // this set so a cancelled run never touches games it didn't process.
+      const processedGameIds = new Set<number>();
+
       for (const steamGame of response.games) {
         if (signal?.aborted) {
           console.log(`[LibrarySync] Cancelled after ${processed} games`);
+          cancelled = true;
           break;
         }
 
@@ -165,27 +179,47 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
           lastPlayed,
         }, effectiveUserId);
 
+        processedGameIds.add(gameId);
         processed++;
         onProgress?.(processed, total, { gameName: steamGame.name });
       }
 
-      if (newlyPurchasedIds.length > 0) {
-        cascadePurchaseCleanup(newlyPurchasedIds, effectiveUserId);
+      // Scope purchase cleanup to games actually processed this run. On a full
+      // run this is a no-op (every returned game is processed); on a cancelled
+      // run it prevents cleaning up alerts/wishlist for games we never touched.
+      const processedPurchasedIds = newlyPurchasedIds.filter((id) => processedGameIds.has(id));
+      if (processedPurchasedIds.length > 0) {
+        cascadePurchaseCleanup(processedPurchasedIds, effectiveUserId);
         if (suggestPrices) {
-          capturedSuggestions = capturePricePaidSuggestions(newlyPurchasedIds, effectiveUserId);
+          capturedSuggestions = capturePricePaidSuggestions(processedPurchasedIds, effectiveUserId);
         }
-        newlyPurchasedCount = newlyPurchasedIds.length;
+        newlyPurchasedCount = processedPurchasedIds.length;
       }
 
-      // Hand the net-new non-wishlist owned adds out of the txn. Their price
-      // fetch + suggestion capture happens post-commit (needs async ITAD calls).
-      if (suggestPrices) netNewOwnedIds = netNewNonWishlistIds;
+      // Reconcile ownership: previously-owned games ABSENT from this run's owned
+      // response are set unowned (refunds/revocations). GUARD: only on a run that
+      // completed (not cancelled) over a genuine, NON-EMPTY owned response — a
+      // transient empty/failed Steam response must never mass-unown the library.
+      if (!cancelled && total > 0) {
+        reconciledUnowned = reconcileOwnership(Array.from(processedGameIds), effectiveUserId);
+      }
+
+      // Hand the net-new non-wishlist owned adds out of the txn (scoped to
+      // processed games). Their price fetch + suggestion capture happens
+      // post-commit (needs async ITAD calls).
+      if (suggestPrices) netNewOwnedIds = netNewNonWishlistIds.filter((id) => processedGameIds.has(id));
     });
     runSync();
 
     if (newlyPurchasedCount > 0) {
       console.log(
         `[LibrarySync] Detected ${newlyPurchasedCount} purchase(s) — deactivated alerts, removed from wishlist`,
+      );
+    }
+
+    if (reconciledUnowned > 0) {
+      console.log(
+        `[LibrarySync] Reconciled ${reconciledUnowned} game(s) absent from Steam to unowned`,
       );
     }
 
@@ -229,8 +263,21 @@ export async function syncLibrary(onProgress?: ProgressCallback, signal?: AbortS
       });
     }
 
-    completeSyncLog(syncLogId, 'success', processed, undefined, total, 0, getAndResetSteamApiCalls());
-    return { stats: { attempted: total, succeeded: processed, failed: 0, skipped: 0 }, syncLogId };
+    // A cancelled run is recorded as 'partial' (never 'success'); the unprocessed
+    // remainder is reported as skipped, not failed.
+    completeSyncLog(
+      syncLogId,
+      cancelled ? 'partial' : 'success',
+      processed,
+      cancelled ? `Cancelled after ${processed} of ${total} games` : undefined,
+      total,
+      0,
+      getAndResetSteamApiCalls(),
+    );
+    return {
+      stats: { attempted: total, succeeded: processed, failed: 0, skipped: cancelled ? total - processed : 0 },
+      syncLogId,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     completeSyncLog(syncLogId, 'error', 0, message, undefined, undefined, getAndResetSteamApiCalls());

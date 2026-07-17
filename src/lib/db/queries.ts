@@ -567,6 +567,50 @@ export function cascadePurchaseCleanup(gameIds: number[], userId: string): void 
 }
 
 /**
+ * Reconcile ownership after a library sync: any game the user currently owns
+ * that is ABSENT from the freshly-synced owned set is set `isOwned=false`
+ * (refund, revoked license, family-share change). `ownedGameIds` is the set of
+ * gameIds confirmed owned by THIS sync run.
+ *
+ * CALLER GUARD (load-bearing): only call this for a genuine, successful,
+ * NON-EMPTY owned response from a run that completed (not cancelled). A
+ * transient empty/failed Steam response must never reach here — otherwise a
+ * one-off API hiccup returning `[]` would wipe the entire library.
+ *
+ * Diffs currently-owned rows against the confirmed set in JS and unmarks only
+ * the absent ones (batched by 500 like getExistingGamesByAppIds — avoids a giant
+ * NOT IN and its SQLite variable-limit hazard). Returns the count unmarked.
+ * Pure synchronous DB writes — safe inside the syncLibrary transaction.
+ */
+export function reconcileOwnership(ownedGameIds: number[], userId: string): number {
+  // Defense-in-depth for the load-bearing guard: an empty confirmed set is never
+  // trusted to mean "you own nothing" — refuse to unmark anything. Callers must
+  // still gate on a genuine, non-empty owned response (see syncLibrary).
+  if (ownedGameIds.length === 0) return 0;
+
+  const db = getDb();
+  const ownedSet = new Set(ownedGameIds);
+  const currentlyOwned = db
+    .select({ gameId: userGames.gameId })
+    .from(userGames)
+    .where(and(eq(userGames.userId, userId), eq(userGames.isOwned, true)))
+    .all()
+    .map((r) => r.gameId);
+  const toUnown = currentlyOwned.filter((id) => !ownedSet.has(id));
+  if (toUnown.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  for (let i = 0; i < toUnown.length; i += 500) {
+    const batch = toUnown.slice(i, i + 500);
+    db.update(userGames)
+      .set({ isOwned: false, updatedAt: now })
+      .where(and(eq(userGames.userId, userId), inArray(userGames.gameId, batch)))
+      .run();
+  }
+  return toUnown.length;
+}
+
+/**
  * Capture a price-paid *suggestion* for newly-purchased games (Phase 3).
  *
  * Called at wishlist→owned detection (see syncLibrary) for the games that just

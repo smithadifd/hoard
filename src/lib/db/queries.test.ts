@@ -58,6 +58,7 @@ import {
   getGamesForPriceSync,
   getGamesByIdsForPriceFetch,
   countOwnedGames,
+  reconcileOwnership,
   getRecentSyncStats,
   getLastSuccessfulSyncBySource,
   getFirstUserId,
@@ -1608,6 +1609,53 @@ describe('sync-related queries', () => {
       const g1 = seedGame(testDb, { steamAppId: 100, title: 'Wishlisted' });
       seedUserGame(testDb, g1, { isOwned: false, isWishlisted: true });
       expect(countOwnedGames('default')).toBe(0);
+    });
+  });
+
+  describe('reconcileOwnership', () => {
+    it('unmarks a previously-owned game that is absent from the confirmed owned set', () => {
+      const kept = seedGame(testDb, { steamAppId: 100, title: 'Still Owned' });
+      const absent = seedGame(testDb, { steamAppId: 200, title: 'Refunded' });
+      const keptId = seedUserGame(testDb, kept, { isOwned: true });
+      const absentId = seedUserGame(testDb, absent, { isOwned: true });
+
+      // Confirmed owned set from this sync contains only the kept game.
+      const unmarked = reconcileOwnership([kept], 'default');
+
+      expect(unmarked).toBe(1);
+      const rows = testDb.select().from(schema.userGames).all();
+      const keptRow = rows.find((r) => r.id === keptId);
+      const absentRow = rows.find((r) => r.id === absentId);
+      expect(keptRow?.isOwned).toBe(true); // present in the owned set → stays owned
+      expect(absentRow?.isOwned).toBe(false); // absent → reconciled to unowned
+    });
+
+    it('does NOT unmark anything when the confirmed owned set is empty (transient-empty guard)', () => {
+      const g1 = seedGame(testDb, { steamAppId: 100, title: 'Owned A' });
+      const g2 = seedGame(testDb, { steamAppId: 200, title: 'Owned B' });
+      seedUserGame(testDb, g1, { isOwned: true });
+      seedUserGame(testDb, g2, { isOwned: true });
+
+      // An empty set (a Steam hiccup returning []) must never wipe the library.
+      const unmarked = reconcileOwnership([], 'default');
+
+      expect(unmarked).toBe(0);
+      expect(countOwnedGames('default')).toBe(2);
+    });
+
+    it('scopes reconciliation to the given user', () => {
+      seedUser(testDb, { id: 'other' });
+      const mine = seedGame(testDb, { steamAppId: 100, title: 'Mine' });
+      const theirs = seedGame(testDb, { steamAppId: 200, title: 'Theirs' });
+      seedUserGame(testDb, mine, { isOwned: true, userId: 'default' });
+      seedUserGame(testDb, theirs, { isOwned: true, userId: 'other' });
+
+      // 'default' synced an owned set that includes none of their games — the
+      // other user's ownership must be untouched.
+      reconcileOwnership([mine], 'default');
+
+      expect(countOwnedGames('default')).toBe(1);
+      expect(countOwnedGames('other')).toBe(1);
     });
   });
 
