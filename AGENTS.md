@@ -221,7 +221,11 @@ Config is read in `src/lib/config.ts` (`validateConfig()` logs missing required 
 `.env.example` → `.env.local` (dev) or `.env.production` (prod); both are gitignored. Required:
 `STEAM_API_KEY`, `STEAM_USER_ID`, `BETTER_AUTH_SECRET`. Recommended: `ITAD_API_KEY` (prices),
 `DISCORD_WEBHOOK_URL` (alerts), `NEXT_PUBLIC_APP_URL` (must be set at **Docker build time** — it's
-inlined by Next.js). `DEMO_MODE` / `NEXT_PUBLIC_DEMO_MODE` gate the public demo. Full reference:
+inlined by Next.js). `HOARD_SECRETS_KEY` (optional, recommended) enables field-level encryption of
+the secret values in the `settings` table (Steam/ITAD keys + both Discord webhooks) — see
+`src/lib/settings/secrets.ts`: new writes are `enc:v1:`-tagged AES-256-GCM, existing plaintext rows
+stay readable, and an unset key degrades to plaintext with a logged warning (non-bricking). `DEMO_MODE`
+/ `NEXT_PUBLIC_DEMO_MODE` gate the public demo. Full reference:
 [`docs/.../self-hosting/configuration.md`](docs/src/content/docs/self-hosting/configuration.md).
 
 ## Deeper reference (`docs/`)
