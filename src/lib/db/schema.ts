@@ -308,3 +308,27 @@ export const notifications = sqliteTable('notifications', {
   userUnreadIdx: index('notif_user_unread_idx').on(t.userId, t.readAt),
   userCreatedIdx: index('notif_user_created_idx').on(t.userId, t.createdAt),
 }));
+
+// ===========================================
+// Recommendation Events - implicit learning signal for the Up Next picker
+// ===========================================
+// One append-only row per surfaced pick. `shownAt` is stamped when the picker
+// shows a game; `acceptedAt` / `dismissedAt` record what the user did with it.
+// These implicit signals feed the ranker (dismissal cooldowns, accept-rate) so
+// the queue personalises with ZERO manual triage — honest engagement, not a
+// growth metric. `reason` stores the one concrete explanation that was shown.
+export const recommendationEvents = sqliteTable('recommendation_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().default('default'),
+  gameId: integer('game_id').references(() => games.id, { onDelete: 'cascade' }).notNull(),
+  bucket: text('bucket').notNull(), // 'continue' | 'finish-soon' | 'start-fresh' | 'drop'
+  reason: text('reason').notNull(), // the concrete explanation shown to the user
+  score: real('score'), // ranking score at surfacing time (for tuning/audit)
+  shownAt: text('shown_at').notNull().default(sql`(datetime('now'))`), // ISO
+  acceptedAt: text('accepted_at'), // user opened/started the pick
+  dismissedAt: text('dismissed_at'), // user dismissed/snoozed the pick
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => ({
+  userGameIdx: index('re_user_game_idx').on(t.userId, t.gameId),
+  userShownIdx: index('re_user_shown_idx').on(t.userId, t.shownAt),
+}));

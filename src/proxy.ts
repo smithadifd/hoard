@@ -50,6 +50,8 @@ const DEMO_BLOCKED: { method: string; prefix: string }[] = [
   { method: 'PATCH', prefix: '/api/notifications' },
   // HLTB search drives an outbound HowLongToBeat request.
   { method: 'POST', prefix: '/api/hltb' },
+  // Backlog Up-Next: POST records recommendation events (shown/accepted/dismissed).
+  { method: 'POST', prefix: '/api/backlog' },
 ];
 
 // --- Public paths that bypass auth ---

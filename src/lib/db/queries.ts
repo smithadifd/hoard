@@ -19,6 +19,7 @@ import {
   settings,
   syncLog,
   user,
+  recommendationEvents,
 } from './schema';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { calculateDealScore, getEffectivePlaytimeHours } from '@/lib/scoring/engine';
@@ -38,6 +39,7 @@ import {
   type UpNextBucket,
   type UpNextCandidate,
 } from '@/lib/backlog/upNext';
+import { scoreCandidate, genreAffinityForTags, type RankingSignals } from '@/lib/backlog/ranking';
 import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playtimeSource';
 
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
@@ -3332,26 +3334,6 @@ function momentumForOwnedGame(
   };
 }
 
-/**
- * Baseline Up-Next ordering used before the learned ranker (Queue S S9 step c)
- * takes over. Leans on review quality, explicit interest/priority, and coarse
- * momentum so the queue is already sensible with zero triage.
- */
-function baselineUpNextScore(input: {
-  reviewScore: number | null;
-  personalInterest: number;
-  priority: number | null;
-  momentum: Momentum;
-  invested: boolean;
-}): number {
-  let score = (input.reviewScore ?? 60) * 0.5;
-  score += (input.personalInterest - 3) * 8;
-  if (input.momentum === 'playing') score += 30;
-  else if (input.momentum === 'dormant' && input.invested) score += 12; // gentle forgotten-favourite nudge
-  score += (input.priority ?? 0) * 5;
-  return score;
-}
-
 interface UpNextRow {
   id: number;
   steamAppId: number;
@@ -3481,26 +3463,134 @@ function computeUpNextFacts(userId: string): UpNextComputed[] {
 }
 
 /**
+ * Implicit genre affinity from where the user actually spends hours: each
+ * genre's share of total played minutes across the owned library, normalised to
+ * 0..1 against the top genre. Zero-triage personalisation — no ratings needed.
+ */
+export function computeGenreAffinity(userId: string): Map<string, number> {
+  const db = getDb();
+  const rows = db
+    .select({
+      genre: tags.name,
+      total: sql<number>`SUM(${userGames.playtimeMinutes})`,
+    })
+    .from(userGames)
+    .innerJoin(gameTags, eq(gameTags.gameId, userGames.gameId))
+    .innerJoin(tags, eq(tags.id, gameTags.tagId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        eq(tags.type, 'genre'),
+        sql`${userGames.playtimeMinutes} > 0`,
+      ),
+    )
+    .groupBy(tags.name)
+    .all();
+
+  const map = new Map<string, number>();
+  let max = 0;
+  for (const r of rows) {
+    const total = r.total ?? 0;
+    if (total > max) max = total;
+  }
+  if (max <= 0) return map;
+  for (const r of rows) {
+    map.set(r.genre.toLowerCase(), (r.total ?? 0) / max);
+  }
+  return map;
+}
+
+/** Genres (lower-cased type='genre' tags) for a set of games, batched. */
+function getGenresForGames(gameIds: number[]): Map<number, string[]> {
+  const map = new Map<number, string[]>();
+  if (gameIds.length === 0) return map;
+  const db = getDb();
+  const rows = db
+    .select({ gameId: gameTags.gameId, name: tags.name })
+    .from(gameTags)
+    .innerJoin(tags, eq(tags.id, gameTags.tagId))
+    .where(and(inArray(gameTags.gameId, gameIds), eq(tags.type, 'genre')))
+    .all();
+  for (const r of rows) {
+    const list = map.get(r.gameId) ?? [];
+    list.push(r.name);
+    map.set(r.gameId, list);
+  }
+  return map;
+}
+
+export interface RecommendationStat {
+  dismissalCount: number;
+  daysSinceLastDismissal: number | null;
+}
+
+/**
+ * Per-game dismissal signal for the cooldown term: how many times the user has
+ * dismissed each game's recommendation and how long ago the last one was.
+ */
+export function getRecommendationStats(userId: string): Map<number, RecommendationStat> {
+  const db = getDb();
+  const rows = db
+    .select({
+      gameId: recommendationEvents.gameId,
+      dismissals: sql<number>`COUNT(*)`,
+      lastDismissed: sql<string | null>`MAX(${recommendationEvents.dismissedAt})`,
+    })
+    .from(recommendationEvents)
+    .where(and(eq(recommendationEvents.userId, userId), sql`${recommendationEvents.dismissedAt} IS NOT NULL`))
+    .groupBy(recommendationEvents.gameId)
+    .all();
+
+  const nowMs = Date.now();
+  const map = new Map<number, RecommendationStat>();
+  for (const r of rows) {
+    const daysSince = r.lastDismissed
+      ? Math.max(0, Math.floor((nowMs - Date.parse(r.lastDismissed)) / 86_400_000))
+      : null;
+    map.set(r.gameId, { dismissalCount: r.dismissals ?? 0, daysSinceLastDismissal: daysSince });
+  }
+  return map;
+}
+
+/**
  * The Up Next queue: a diverse 3–5 game surface (Continue / Finish-Soon /
  * Start-Fresh / Drop) over the user's owned library, each pick with one concrete
- * reason. Read-only — recording that picks were shown is a separate write path
- * (step c) so a plain render never mutates.
+ * reason, ranked by the learned ranker over implicit signals (review quality,
+ * played-genre affinity, playtime-snapshot recency deltas, dismissal cooldowns).
+ * Read-only — recording that picks were shown is the separate write path
+ * (recordRecommendationShown) so a plain render never mutates.
  */
 export function getUpNextQueue(userId: string, opts: { maxItems?: number } = {}): UpNextQueueEntry[] {
   const facts = computeUpNextFacts(userId);
+  if (facts.length === 0) return [];
+
+  const gameIds = facts.map((f) => f.candidate.gameId);
+  const affinityByGenre = computeGenreAffinity(userId);
+  const genresByGame = getGenresForGames(gameIds);
+  const statsByGame = getRecommendationStats(userId);
   const display = new Map<number, { steamAppId: number; headerImageUrl: string | null }>();
-  const candidates = facts.map((f) => {
+
+  const candidates: UpNextCandidate[] = facts.map((f) => {
     display.set(f.candidate.gameId, { steamAppId: f.row.steamAppId, headerImageUrl: f.row.headerImageUrl });
-    return {
-      ...f.candidate,
-      score: baselineUpNextScore({
-        reviewScore: f.candidate.reviewScore,
-        personalInterest: f.candidate.personalInterest,
-        priority: f.candidate.priority,
-        momentum: f.momentum,
-        invested: f.invested,
-      }),
+    const genres = genresByGame.get(f.candidate.gameId) ?? [];
+    const stat = statsByGame.get(f.candidate.gameId);
+    const signals: RankingSignals = {
+      personalInterest: f.candidate.personalInterest,
+      reviewScore: f.candidate.reviewScore,
+      effectiveHours: f.effectiveHours,
+      playtimeMinutes: f.candidate.playtimeMinutes,
+      completionStatus: f.candidate.completionStatus,
+      momentum: f.momentum,
+      gainedThisWeekMinutes: f.gainedThisWeek,
+      gainedThisMonthMinutes: f.gainedThisMonth,
+      lastPlayedDaysAgo: f.lastPlayedDaysAgo,
+      priority: f.candidate.priority,
+      genreAffinity: genreAffinityForTags(genres, affinityByGenre),
+      dismissalCount: stat?.dismissalCount ?? 0,
+      daysSinceLastDismissal: stat?.daysSinceLastDismissal ?? null,
     };
+    return { ...f.candidate, score: scoreCandidate(signals).score };
   });
 
   return buildUpNextQueue(candidates, { maxItems: opts.maxItems }).map((it) => {
@@ -3515,6 +3605,106 @@ export function getUpNextQueue(userId: string, opts: { maxItems?: number } = {})
       score: it.score,
     };
   });
+}
+
+// ============================================
+// Recommendation events — the implicit learning write path (Queue S S9 step c)
+// ============================================
+
+export interface RecordRecommendationInput {
+  userId: string;
+  gameId: number;
+  bucket: UpNextBucket;
+  reason: string;
+  score?: number;
+}
+
+/**
+ * Record that a pick was SHOWN. Deduped to one open (un-acted) event per game
+ * per day so re-renders don't inflate the signal. Returns the event id.
+ */
+export function recordRecommendationShown(input: RecordRecommendationInput): number {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
+
+  const existing = db
+    .select({ id: recommendationEvents.id })
+    .from(recommendationEvents)
+    .where(
+      and(
+        eq(recommendationEvents.userId, input.userId),
+        eq(recommendationEvents.gameId, input.gameId),
+        isNull(recommendationEvents.acceptedAt),
+        isNull(recommendationEvents.dismissedAt),
+        sql`${recommendationEvents.shownAt} >= ${today}`,
+      ),
+    )
+    .get();
+  if (existing) return existing.id;
+
+  const row = db
+    .insert(recommendationEvents)
+    .values({
+      userId: input.userId,
+      gameId: input.gameId,
+      bucket: input.bucket,
+      reason: input.reason,
+      score: input.score ?? null,
+      shownAt: now,
+    })
+    .returning({ id: recommendationEvents.id })
+    .get();
+  return row.id;
+}
+
+/** Record every pick in a freshly-built queue as shown, in one pass. */
+export function recordRecommendationsShown(
+  userId: string,
+  entries: { gameId: number; bucket: UpNextBucket; reason: string; score?: number }[],
+): void {
+  for (const e of entries) {
+    recordRecommendationShown({ userId, gameId: e.gameId, bucket: e.bucket, reason: e.reason, score: e.score });
+  }
+}
+
+function markLatestOpenEvent(
+  userId: string,
+  gameId: number,
+  field: 'acceptedAt' | 'dismissedAt',
+): boolean {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const latest = db
+    .select({ id: recommendationEvents.id })
+    .from(recommendationEvents)
+    .where(
+      and(
+        eq(recommendationEvents.userId, userId),
+        eq(recommendationEvents.gameId, gameId),
+        isNull(recommendationEvents.acceptedAt),
+        isNull(recommendationEvents.dismissedAt),
+      ),
+    )
+    .orderBy(desc(recommendationEvents.shownAt))
+    .limit(1)
+    .get();
+  if (!latest) return false;
+  db.update(recommendationEvents)
+    .set(field === 'acceptedAt' ? { acceptedAt: now } : { dismissedAt: now })
+    .where(eq(recommendationEvents.id, latest.id))
+    .run();
+  return true;
+}
+
+/** The user opened/started a surfaced pick — a positive implicit signal. */
+export function recordRecommendationAccepted(userId: string, gameId: number): boolean {
+  return markLatestOpenEvent(userId, gameId, 'acceptedAt');
+}
+
+/** The user dismissed a surfaced pick — feeds the ranker's dismissal cooldown. */
+export function recordRecommendationDismissed(userId: string, gameId: number): boolean {
+  return markLatestOpenEvent(userId, gameId, 'dismissedAt');
 }
 
 export function getDealsCount(): number {

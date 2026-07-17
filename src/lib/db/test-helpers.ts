@@ -233,6 +233,21 @@ const SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS notif_user_unread_idx ON notifications (user_id, read_at);
   CREATE INDEX IF NOT EXISTS notif_user_created_idx ON notifications (user_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS recommendation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL DEFAULT 'default',
+    game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    bucket TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    score REAL,
+    shown_at TEXT NOT NULL DEFAULT (datetime('now')),
+    accepted_at TEXT,
+    dismissed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS re_user_game_idx ON recommendation_events (user_id, game_id);
+  CREATE INDEX IF NOT EXISTS re_user_shown_idx ON recommendation_events (user_id, shown_at);
 `;
 
 export type TestDb = ReturnType<typeof drizzle>;
