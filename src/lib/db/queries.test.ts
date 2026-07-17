@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, vi, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, afterAll } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
 import type { TestDb } from './test-helpers';
+import { SECRET_SETTING_KEYS } from '@/lib/validations';
+import { __resetSecretsCryptoStateForTests } from '@/lib/settings/secrets';
 import { calculateValueReceived } from '../scoring/valueReceived';
 import { getEffectivePlaytimeHours } from '../scoring/engine';
 
@@ -113,6 +115,104 @@ describe('settings', () => {
 
   it('getAllSettings returns empty object when no settings', () => {
     expect(getAllSettings()).toEqual({});
+  });
+});
+
+// ============================================
+// Settings — secret encryption at rest (Queue S · S12 · MC-3)
+// ============================================
+describe('settings secret encryption (non-bricking)', () => {
+  // Read the raw on-disk value, bypassing the decrypt in getSetting.
+  function rawStored(key: string): string | undefined {
+    return testDb
+      .select({ value: schema.settings.value })
+      .from(schema.settings)
+      .where(eq(schema.settings.key, key))
+      .get()?.value;
+  }
+
+  afterEach(() => {
+    __resetSecretsCryptoStateForTests();
+    delete process.env.HOARD_SECRETS_KEY;
+    delete process.env.SETTINGS_ENCRYPTION_KEY;
+  });
+
+  it('with a key set: secret keys are stored as enc:v1: ciphertext but read back decrypted', () => {
+    process.env.HOARD_SECRETS_KEY = 'integration-test-key';
+    __resetSecretsCryptoStateForTests();
+
+    setSetting('steam_api_key', 'MY-REAL-STEAM-KEY');
+
+    const stored = rawStored('steam_api_key');
+    expect(stored?.startsWith('enc:v1:')).toBe(true); // encrypted at rest
+    expect(stored).not.toContain('MY-REAL-STEAM-KEY'); // no plaintext on disk
+    expect(getSetting('steam_api_key')).toBe('MY-REAL-STEAM-KEY'); // decrypts on read
+    expect(getAllSettings()['steam_api_key']).toBe('MY-REAL-STEAM-KEY');
+  });
+
+  it('reads a LEGACY PLAINTEXT secret row verbatim (pre-encryption data)', () => {
+    process.env.HOARD_SECRETS_KEY = 'integration-test-key';
+    __resetSecretsCryptoStateForTests();
+
+    // Simulate an existing plaintext row written before this feature shipped.
+    seedSetting(testDb, 'itad_api_key', 'legacy-plaintext-itad-key');
+
+    expect(rawStored('itad_api_key')).toBe('legacy-plaintext-itad-key');
+    expect(getSetting('itad_api_key')).toBe('legacy-plaintext-itad-key');
+    expect(getAllSettings()['itad_api_key']).toBe('legacy-plaintext-itad-key');
+  });
+
+  it('NON-secret keys are never encrypted (stored verbatim)', () => {
+    process.env.HOARD_SECRETS_KEY = 'integration-test-key';
+    __resetSecretsCryptoStateForTests();
+
+    setSetting('scoring_weights', '{"priceWeight":0.5}');
+    expect(rawStored('scoring_weights')).toBe('{"priceWeight":0.5}');
+    expect(getSetting('scoring_weights')).toBe('{"priceWeight":0.5}');
+  });
+
+  it('with NO key: secret writes degrade to plaintext (transition-safe, no crash)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    delete process.env.HOARD_SECRETS_KEY;
+    delete process.env.SETTINGS_ENCRYPTION_KEY;
+    __resetSecretsCryptoStateForTests();
+
+    setSetting('discord_webhook_url', 'https://discord.com/api/webhooks/1/tok');
+    expect(rawStored('discord_webhook_url')).toBe('https://discord.com/api/webhooks/1/tok');
+    expect(getSetting('discord_webhook_url')).toBe('https://discord.com/api/webhooks/1/tok');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('every SECRET_SETTING_KEYS entry round-trips through encryption', () => {
+    process.env.HOARD_SECRETS_KEY = 'integration-test-key';
+    __resetSecretsCryptoStateForTests();
+
+    for (const key of SECRET_SETTING_KEYS) {
+      const value = `secret-value-for-${key}`;
+      setSetting(key, value);
+      expect(rawStored(key)?.startsWith('enc:v1:')).toBe(true);
+      expect(getSetting(key)).toBe(value);
+    }
+  });
+
+  it('FAILS CLOSED at the helper: a WRONG-KEY secret reads back as absent (empty), not ciphertext', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Written under one key…
+    process.env.HOARD_SECRETS_KEY = 'key-A';
+    __resetSecretsCryptoStateForTests();
+    setSetting('steam_api_key', 'REAL-STEAM-KEY');
+    const ciphertext = rawStored('steam_api_key');
+    expect(ciphertext?.startsWith('enc:v1:')).toBe(true);
+
+    // …read under a different key → cannot decrypt → helper returns '' (fail-closed).
+    process.env.HOARD_SECRETS_KEY = 'key-B';
+    __resetSecretsCryptoStateForTests();
+    expect(getSetting('steam_api_key')).toBe('');
+    expect(getAllSettings()['steam_api_key']).toBe('');
+    // The raw ciphertext is untouched on disk (a supervised re-key can still recover it).
+    expect(rawStored('steam_api_key')).toBe(ciphertext);
+    err.mockRestore();
   });
 });
 
