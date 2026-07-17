@@ -204,7 +204,11 @@ pass.
 
 - **Demo mode blocking.** When you add a **mutation endpoint**, also add its method + path prefix to
   `DEMO_BLOCKED` in `src/proxy.ts` — otherwise it leaks into the public demo. The proxy returns 403
-  for matching requests when `DEMO_MODE=true`.
+  for matching requests when `DEMO_MODE=true`. This is enforced: `src/proxy.test.ts` reflects over
+  every `POST/PUT/PATCH/DELETE` route export under `src/app/api` and fails if one isn't demo-blocked
+  (the Better Auth catch-all is special-cased — only `sign-up` is blocked; `sign-in`/`sign-out` stay
+  open). The two outbound-triggering GETs (`/api/search`, `/api/games/[id]/itad-overview`) are
+  rate-limited even though they're reads; all other GETs are unlimited.
 - **Migrations run on container boot** via `scripts/start.mjs` (tracked in `__drizzle_migrations`).
   **Never pre-apply a schema change manually on prod** — `start.mjs` will then fail with "duplicate
   column" and crash-loop. Trust the container's migration runner.

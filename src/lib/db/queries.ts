@@ -27,6 +27,7 @@ import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playti
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
 export { STEAM_PLAYTIME_GIVE_UP_MISSES };
 import { calculateValueReceived, type ValueReceivedTier } from '@/lib/scoring/valueReceived';
+import { buildDphTargetSql } from '@/lib/scoring/reviewTierLadder';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
 import type { NotificationPreferences, ChannelRouting, NotificationCategory } from '@/lib/notifications/preferences';
@@ -1340,14 +1341,10 @@ export function getEnrichedGames(
   const { thresholds: vrThresholds } = getScoringConfig();
   const dphT = vrThresholds.maxDollarsPerHour;
   const hoursPlayedExpr = sql`(CAST(${userGames.playtimeMinutes} AS REAL) / 60.0)`;
-  // Per-game $/hr target, picked by review tier (mirrors getMaxDollarsPerHour).
-  const dphTargetExpr = sql`(CASE
-    WHEN ${games.reviewScore} IS NULL THEN ${dphT.positive}
-    WHEN ${games.reviewScore} >= 95 THEN ${dphT.overwhelminglyPositive}
-    WHEN ${games.reviewScore} >= 80 THEN ${dphT.veryPositive}
-    WHEN ${games.reviewScore} >= 70 THEN ${dphT.positive}
-    WHEN ${games.reviewScore} >= 40 THEN ${dphT.mixed}
-    ELSE ${dphT.negative} END)`;
+  // Per-game $/hr target, picked by review tier. Generated from the SHARED
+  // REVIEW_TIER_LADDER (src/lib/scoring/reviewTierLadder.ts) so this SQL and the TS
+  // getMaxDollarsPerHour can never drift — reviewTierLadder.test.ts pins them together.
+  const dphTargetExpr = buildDphTargetSql(games.reviewScore, dphT);
   // Effective playtime basis (hours) — mirrors resolveEffectivePlaytime / getEffectivePlaytimeHours,
   // the SAME resolver getValueReceivedOverview (the donut) and the per-card badges use (both call it
   // WITHOUT isReleased, so the released-game fallback below is never suppressed for them): an explicit
