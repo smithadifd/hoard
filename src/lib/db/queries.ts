@@ -31,6 +31,13 @@ import {
   type BacklogState,
   type LifecycleState,
 } from '@/lib/backlog/lifecycle';
+import {
+  buildUpNextQueue,
+  MEANINGFUL_MINUTES,
+  type Momentum,
+  type UpNextBucket,
+  type UpNextCandidate,
+} from '@/lib/backlog/upNext';
 import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playtimeSource';
 
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
@@ -3281,6 +3288,233 @@ export function pruneOldPlaytimeSnapshots(retainDays = 180): number {
     .where(sql`${playtimeSnapshots.snapshotDate} < ${cutoff}`)
     .run();
   return result.changes;
+}
+
+// ============================================
+// Up Next — the small "what should I play now?" queue (Queue S S9 · issue #12/#13)
+// ============================================
+
+export interface UpNextQueueEntry {
+  gameId: number;
+  steamAppId: number;
+  title: string;
+  headerImageUrl?: string;
+  bucket: UpNextBucket;
+  reason: string;
+  score: number;
+}
+
+/**
+ * Momentum for an owned game, cheaply. Steam's rolling 2-week counter settles
+ * 'playing' with no snapshot lookup; only invested-but-quiet games pay for the
+ * playtime-snapshot window queries that separate cooling from dormant.
+ */
+function momentumForOwnedGame(
+  gameId: number,
+  userId: string,
+  totalMinutes: number,
+  recentMinutes: number,
+): { momentum: Momentum; gainedThisWeek: number; gainedThisMonth: number } {
+  if (recentMinutes > 0) {
+    return { momentum: 'playing', gainedThisWeek: 0, gainedThisMonth: 0 };
+  }
+  if (totalMinutes < MEANINGFUL_MINUTES) {
+    return { momentum: 'untouched', gainedThisWeek: 0, gainedThisMonth: 0 };
+  }
+  const week = getPlaytimeWindow(gameId, userId, daysAgoDate(PLAYTIME_WEEK_DAYS));
+  const month = getPlaytimeWindow(gameId, userId, daysAgoDate(PLAYTIME_MONTH_DAYS));
+  const gainedThisWeek = week?.gainedMinutes ?? 0;
+  const gainedThisMonth = month?.gainedMinutes ?? 0;
+  return {
+    momentum: classifyPlaytimeMomentum({ gainedThisWeek, gainedThisMonth, totalMinutes, recentMinutes }),
+    gainedThisWeek,
+    gainedThisMonth,
+  };
+}
+
+/**
+ * Baseline Up-Next ordering used before the learned ranker (Queue S S9 step c)
+ * takes over. Leans on review quality, explicit interest/priority, and coarse
+ * momentum so the queue is already sensible with zero triage.
+ */
+function baselineUpNextScore(input: {
+  reviewScore: number | null;
+  personalInterest: number;
+  priority: number | null;
+  momentum: Momentum;
+  invested: boolean;
+}): number {
+  let score = (input.reviewScore ?? 60) * 0.5;
+  score += (input.personalInterest - 3) * 8;
+  if (input.momentum === 'playing') score += 30;
+  else if (input.momentum === 'dormant' && input.invested) score += 12; // gentle forgotten-favourite nudge
+  score += (input.priority ?? 0) * 5;
+  return score;
+}
+
+interface UpNextRow {
+  id: number;
+  steamAppId: number;
+  title: string;
+  headerImageUrl: string | null;
+  reviewScore: number | null;
+  hltbMain: number | null;
+  steamPlaytimeMedian: number | null;
+  isReleased: boolean | null;
+  playtimeSource: string | null;
+  playtimeMinutes: number | null;
+  playtimeRecentMinutes: number | null;
+  personalInterest: number | null;
+  completionStatus: string | null;
+  backlogState: string | null;
+  priority: number | null;
+  lastPlayed: string | null;
+}
+
+export interface UpNextComputed {
+  candidate: UpNextCandidate;
+  row: UpNextRow;
+  momentum: Momentum;
+  invested: boolean;
+  gainedThisWeek: number;
+  gainedThisMonth: number;
+  effectiveHours: number | null;
+  lastPlayedDaysAgo: number | null;
+}
+
+/**
+ * Assemble the per-game facts the Up-Next surface needs: effective playtime
+ * basis (R14 — never raw hltbMain), snapshot-derived momentum + recency deltas,
+ * and dormancy. Score is filled in by the caller so both the baseline (step b)
+ * and the learned ranker (step c) can reuse this exact candidate assembly.
+ */
+function computeUpNextFacts(userId: string): UpNextComputed[] {
+  const db = getDb();
+  const rows = db
+    .select({
+      id: games.id,
+      steamAppId: games.steamAppId,
+      title: games.title,
+      headerImageUrl: games.headerImageUrl,
+      reviewScore: games.reviewScore,
+      hltbMain: games.hltbMain,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      isReleased: games.isReleased,
+      playtimeSource: userGames.playtimeSource,
+      playtimeMinutes: userGames.playtimeMinutes,
+      playtimeRecentMinutes: userGames.playtimeRecentMinutes,
+      personalInterest: userGames.personalInterest,
+      completionStatus: userGames.completionStatus,
+      backlogState: userGames.backlogState,
+      priority: userGames.priority,
+      lastPlayed: userGames.lastPlayed,
+    })
+    .from(games)
+    .innerJoin(userGames, and(eq(games.id, userGames.gameId), eq(userGames.userId, userId)))
+    .where(and(eq(userGames.isOwned, true), or(isNull(userGames.isIgnored), eq(userGames.isIgnored, false))))
+    .all();
+
+  const nowMs = Date.now();
+  const out: UpNextComputed[] = [];
+
+  for (const r of rows) {
+    const completionStatus: CompletionStatus = isCompletionStatus(r.completionStatus)
+      ? r.completionStatus
+      : 'unplayed';
+    // Cheap pre-filter — skip games that can never surface before doing snapshot work.
+    if (
+      completionStatus === 'beaten' ||
+      completionStatus === 'completed' ||
+      completionStatus === 'abandoned'
+    ) {
+      continue;
+    }
+    const backlogState = isBacklogState(r.backlogState) ? r.backlogState : null;
+    if (backlogState === 'dropped' || backlogState === 'snoozed') continue;
+
+    const totalMinutes = r.playtimeMinutes ?? 0;
+    const recentMinutes = r.playtimeRecentMinutes ?? 0;
+    const invested = totalMinutes >= MEANINGFUL_MINUTES;
+    const { momentum, gainedThisWeek, gainedThisMonth } = momentumForOwnedGame(
+      r.id,
+      userId,
+      totalMinutes,
+      recentMinutes,
+    );
+    const effectiveHours = getEffectivePlaytimeHours({
+      playtimeSource: r.playtimeSource,
+      hltbMain: r.hltbMain,
+      steamPlaytimeMedian: r.steamPlaytimeMedian,
+      isReleased: r.isReleased,
+    });
+    const lastPlayedDaysAgo = r.lastPlayed
+      ? Math.max(0, Math.floor((nowMs - Date.parse(r.lastPlayed)) / 86_400_000))
+      : null;
+    const personalInterest = r.personalInterest ?? 3;
+
+    out.push({
+      row: r,
+      momentum,
+      invested,
+      gainedThisWeek,
+      gainedThisMonth,
+      effectiveHours,
+      lastPlayedDaysAgo,
+      candidate: {
+        gameId: r.id,
+        title: r.title,
+        completionStatus,
+        backlogState,
+        priority: r.priority ?? null,
+        playtimeMinutes: totalMinutes,
+        effectiveHours,
+        reviewScore: r.reviewScore ?? null,
+        personalInterest,
+        momentum,
+        lastPlayedDaysAgo,
+        score: 0, // set by the caller
+      },
+    });
+  }
+
+  return out;
+}
+
+/**
+ * The Up Next queue: a diverse 3–5 game surface (Continue / Finish-Soon /
+ * Start-Fresh / Drop) over the user's owned library, each pick with one concrete
+ * reason. Read-only — recording that picks were shown is a separate write path
+ * (step c) so a plain render never mutates.
+ */
+export function getUpNextQueue(userId: string, opts: { maxItems?: number } = {}): UpNextQueueEntry[] {
+  const facts = computeUpNextFacts(userId);
+  const display = new Map<number, { steamAppId: number; headerImageUrl: string | null }>();
+  const candidates = facts.map((f) => {
+    display.set(f.candidate.gameId, { steamAppId: f.row.steamAppId, headerImageUrl: f.row.headerImageUrl });
+    return {
+      ...f.candidate,
+      score: baselineUpNextScore({
+        reviewScore: f.candidate.reviewScore,
+        personalInterest: f.candidate.personalInterest,
+        priority: f.candidate.priority,
+        momentum: f.momentum,
+        invested: f.invested,
+      }),
+    };
+  });
+
+  return buildUpNextQueue(candidates, { maxItems: opts.maxItems }).map((it) => {
+    const d = display.get(it.gameId);
+    return {
+      gameId: it.gameId,
+      steamAppId: d?.steamAppId ?? 0,
+      title: it.title,
+      headerImageUrl: d?.headerImageUrl ?? undefined,
+      bucket: it.bucket,
+      reason: it.reason,
+      score: it.score,
+    };
+  });
 }
 
 export function getDealsCount(): number {
