@@ -195,7 +195,7 @@ JSON strings.
 
 ## Testing
 
-Vitest. Tests are co-located as `*.test.ts` / `*.test.tsx` next to the code (≈86 files today). Match
+Vitest. Tests are co-located as `*.test.ts` / `*.test.tsx` next to the code (≈56 files today). Match
 the nearest existing test's structure. Cover business logic (scoring, sync, queries) and route
 input/output. `npm test` must be green before a PR; `npm run lint` and `npm run build` must also
 pass.
