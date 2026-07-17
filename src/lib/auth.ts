@@ -1,7 +1,28 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
+import { APIError } from 'better-auth/api';
+import { sql } from 'drizzle-orm';
 import { getDb } from './db';
+import { user } from './db/schema';
+
+/**
+ * Hoard is single-user (one household, one install). The first account is
+ * created through the `/setup` flow; every account after that must be refused,
+ * so an exposed instance can't have strangers self-registering. Better Auth's
+ * static `disableSignUp` can't express "after the first user" (it would block
+ * setup too), so we enforce it dynamically here: the create hook runs for every
+ * signup — server-side (`/setup`) or via `/api/auth/sign-up` — and rejects it
+ * once any user row exists. Idempotent and cheap (one indexed COUNT).
+ */
+export function assertSignUpAllowed(): void {
+  const row = getDb().select({ count: sql<number>`count(*)` }).from(user).get();
+  if ((row?.count ?? 0) > 0) {
+    throw new APIError('FORBIDDEN', {
+      message: 'Sign-ups are disabled: this Hoard instance already has an account.',
+    });
+  }
+}
 
 function getTrustedOrigins(): string[] {
   const origins = ['http://localhost:3000'];
@@ -25,6 +46,19 @@ function createAuth() {
       enabled: true,
       minPasswordLength: 8,
       autoSignIn: true,
+    },
+
+    databaseHooks: {
+      user: {
+        create: {
+          // Enforce single-user signup lockdown: allow the first account,
+          // refuse every one after it. See assertSignUpAllowed above.
+          before: async (userData) => {
+            assertSignUpAllowed();
+            return { data: userData };
+          },
+        },
+      },
     },
 
     session: {

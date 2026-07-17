@@ -10,7 +10,9 @@ import { getSessionCookie } from 'better-auth/cookies';
  * - Blocks mutations in demo mode
  */
 
-const DEMO_MODE = process.env.DEMO_MODE === 'true';
+function isDemoMode(): boolean {
+  return process.env.DEMO_MODE === 'true';
+}
 
 /**
  * Endpoints blocked in demo mode (method + path prefix).
@@ -18,12 +20,18 @@ const DEMO_MODE = process.env.DEMO_MODE === 'true';
  * Invariant (see AGENTS.md): every mutation endpoint AND every endpoint that
  * drives an outbound external call must appear here, so a public demo visitor
  * cannot write to the DB or proxy authenticated third-party requests. GET reads
- * are intentionally left open so the demo UI still renders.
+ * are intentionally left open so the demo UI still renders. `proxy.test.ts`
+ * reflects over every mutation route export and fails if one isn't covered here.
  *
  * Matching is method + path-prefix (startsWith), so a namespace prefix like
  * `/api/onboarding` covers all of its sub-routes.
  */
 const DEMO_BLOCKED: { method: string; prefix: string }[] = [
+  // Account creation: block the Better Auth signup path so a demo visitor can't
+  // register on the public instance. Sign-in / sign-out stay open (the demo
+  // account still needs to log in), so we scope this to the sign-up sub-path
+  // rather than the whole `/api/auth` namespace.
+  { method: 'POST', prefix: '/api/auth/sign-up' },
   { method: 'POST', prefix: '/api/sync' },
   { method: 'POST', prefix: '/api/steam' },
   // Note: there is no `/api/prices` route — price-history mutation is
@@ -74,6 +82,23 @@ function isPublicPath(pathname: string): boolean {
 
 type RateLimitTier = { tokensPerMinute: number; burst: number };
 
+/**
+ * GET endpoints that trigger an outbound third-party call (Steam store search,
+ * ITAD pricing) and so must be rate-limited despite being reads — otherwise a
+ * scripted client can hammer the upstream through us for free. Every other GET
+ * stays unlimited so the read UI is never throttled. Limits are generous enough
+ * for the debounced search box (250ms) and per-page ITAD card (1h-cached), while
+ * still bounding abuse. Keep these paths in sync with the RATE_LIMITS tiers below.
+ */
+const RATE_LIMITED_GET_PATTERNS: RegExp[] = [
+  /^\/api\/search(?:$|[/?])/,
+  /^\/api\/games\/[^/]+\/itad-overview(?:$|[/?])/,
+];
+
+function isRateLimitedGet(pathname: string): boolean {
+  return RATE_LIMITED_GET_PATTERNS.some(p => p.test(pathname));
+}
+
 const RATE_LIMITS: { pattern: RegExp; tier: RateLimitTier }[] = [
   { pattern: /^\/api\/alerts\/test/, tier: { tokensPerMinute: 3, burst: 3 } },
   { pattern: /^\/api\/sync/, tier: { tokensPerMinute: 5, burst: 5 } },
@@ -81,6 +106,9 @@ const RATE_LIMITS: { pattern: RegExp; tier: RateLimitTier }[] = [
   { pattern: /^\/api\/prices/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/backup/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/hltb/, tier: { tokensPerMinute: 5, burst: 5 } },
+  // Outbound-triggering GETs (see RATE_LIMITED_GET_PATTERNS) — bounded but roomy.
+  { pattern: /^\/api\/search/, tier: { tokensPerMinute: 120, burst: 40 } },
+  { pattern: /^\/api\/games\/[^/]+\/itad-overview/, tier: { tokensPerMinute: 60, burst: 30 } },
   { pattern: /^\/api\//, tier: { tokensPerMinute: 100, burst: 100 } },
 ];
 
@@ -135,10 +163,13 @@ function checkRateLimit(key: string, tier: RateLimitTier): { allowed: boolean; r
 function applyRateLimit(request: NextRequest): NextResponse | null {
   cleanup();
 
-  // Only rate-limit mutating methods
-  if (request.method === 'GET') return null;
-
   const pathname = request.nextUrl.pathname;
+
+  // Rate-limit all mutating methods, plus the handful of GETs that trigger an
+  // outbound third-party call. Every other GET is a cheap DB read — leave it
+  // unlimited so browsing the read UI is never throttled.
+  if (request.method === 'GET' && !isRateLimitedGet(pathname)) return null;
+
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip')
     || 'unknown';
@@ -162,14 +193,22 @@ function applyRateLimit(request: NextRequest): NextResponse | null {
 // --- CSP nonce ---
 
 function buildCsp(nonce: string): string {
-  // TODO(security, plan 27 note 1): the per-request nonce is set on `x-nonce` but
-  // not yet consumed by the layout/script tags, so the `'nonce-…'` term is inert
-  // and `'unsafe-eval'` currently does the work. Either wire the nonce through
-  // Next's <Script>/layout and drop `'unsafe-eval'` in prod, or remove the unused
-  // nonce term. Deferred — needs prod-render verification.
+  // The nonce is REAL, not dead: `nextWithCsp` puts this CSP on the request headers
+  // passed to `NextResponse.next({ request })`, and Next.js reads the `nonce-…`
+  // from it and stamps that nonce onto its own inline framework/hydration
+  // <script> tags automatically. That's how those inline scripts pass this policy
+  // with no `'unsafe-inline'`. The app ships no first-party inline scripts, so
+  // nothing else needs the nonce.
+  //
+  // `'unsafe-eval'` is only needed by the dev toolchain (Turbopack/React Refresh
+  // eval their HMR payloads). Production bundles never eval, so we drop it there —
+  // that's the actual hardening. Dev keeps it so `npm run dev` still works.
+  const scriptSrc = process.env.NODE_ENV === 'production'
+    ? `script-src 'self' 'nonce-${nonce}'`
+    : `script-src 'self' 'unsafe-eval' 'nonce-${nonce}'`;
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-eval' 'nonce-${nonce}'`,
+    scriptSrc,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://cdn.akamai.steamstatic.com https://shared.akamai.steamstatic.com https://steamcdn-a.akamaihd.net",
     "font-src 'self' data:",
@@ -198,7 +237,7 @@ export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
 
   // Block mutations in demo mode
-  if (DEMO_MODE) {
+  if (isDemoMode()) {
     const method = request.method;
     for (const rule of DEMO_BLOCKED) {
       if (method === rule.method && pathname.startsWith(rule.prefix)) {
