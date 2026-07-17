@@ -118,6 +118,23 @@ export const userGames = sqliteTable('user_games', {
   // Price-paid suggestion (Phase 3) — system estimate captured at purchase detection; never auto-applied
   pricePaidSuggested: real('price_paid_suggested'), // USD, nullable — proposed at wishlist→owned flip; user confirms/edits/dismisses
   pricePaidSuggestionDismissedAt: text('price_paid_suggestion_dismissed_at'), // ISO; non-null = dismissed, don't re-surface
+  // Backlog lifecycle (issue #12) — where the user is with an owned game.
+  // 'unplayed' (default) | 'playing' | 'beaten' | 'completed' | 'abandoned'.
+  // Distinct from raw playtime: lets the backlog hide finished games and the
+  // recommender skip games the user has consciously closed out.
+  completionStatus: text('completion_status').notNull().default('unplayed'),
+  // Explicit Up-Next queue intent that OVERRIDES the derived bucket. NULL = derive
+  // from signals; 'shortlisted' = pin to Up Next; 'snoozed' = hide for now;
+  // 'dropped' = removed from the queue by the user (distinct from the 'abandoned'
+  // completion outcome — a dropped game can still be revisited later).
+  backlogState: text('backlog_state'),
+  // User-assigned play priority; higher = wants to play sooner. NULL = unset
+  // (the common case — the picker is meant to work with zero manual triage).
+  priority: integer('priority'),
+  // When the game first transitioned to a played state (ISO). NULL until started.
+  startedAt: text('started_at'),
+  // When the game was marked 'abandoned' (ISO). NULL unless currently abandoned.
+  abandonedAt: text('abandoned_at'),
   // Timestamps
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
@@ -127,6 +144,7 @@ export const userGames = sqliteTable('user_games', {
   ownedIdx: index('ug_owned_idx').on(table.userId, table.isOwned),
   wishlistedIdx: index('ug_wishlisted_idx').on(table.userId, table.isWishlisted),
   watchlistedIdx: index('ug_watchlisted_idx').on(table.userId, table.isWatchlisted),
+  completionIdx: index('ug_completion_idx').on(table.userId, table.completionStatus),
 }));
 
 // ===========================================
@@ -289,4 +307,28 @@ export const notifications = sqliteTable('notifications', {
 }, (t) => ({
   userUnreadIdx: index('notif_user_unread_idx').on(t.userId, t.readAt),
   userCreatedIdx: index('notif_user_created_idx').on(t.userId, t.createdAt),
+}));
+
+// ===========================================
+// Recommendation Events - implicit learning signal for the Up Next picker
+// ===========================================
+// One append-only row per surfaced pick. `shownAt` is stamped when the picker
+// shows a game; `acceptedAt` / `dismissedAt` record what the user did with it.
+// These implicit signals feed the ranker (dismissal cooldowns, accept-rate) so
+// the queue personalises with ZERO manual triage — honest engagement, not a
+// growth metric. `reason` stores the one concrete explanation that was shown.
+export const recommendationEvents = sqliteTable('recommendation_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().default('default'),
+  gameId: integer('game_id').references(() => games.id, { onDelete: 'cascade' }).notNull(),
+  bucket: text('bucket').notNull(), // 'continue' | 'finish-soon' | 'start-fresh' | 'drop'
+  reason: text('reason').notNull(), // the concrete explanation shown to the user
+  score: real('score'), // ranking score at surfacing time (for tuning/audit)
+  shownAt: text('shown_at').notNull().default(sql`(datetime('now'))`), // ISO
+  acceptedAt: text('accepted_at'), // user opened/started the pick
+  dismissedAt: text('dismissed_at'), // user dismissed/snoozed the pick
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => ({
+  userGameIdx: index('re_user_game_idx').on(t.userId, t.gameId),
+  userShownIdx: index('re_user_shown_idx').on(t.userId, t.shownAt),
 }));

@@ -95,10 +95,16 @@ const SCHEMA_SQL = `
     price_paid_at TEXT,
     price_paid_suggested REAL,
     price_paid_suggestion_dismissed_at TEXT,
+    completion_status TEXT NOT NULL DEFAULT 'unplayed',
+    backlog_state TEXT,
+    priority INTEGER,
+    started_at TEXT,
+    abandoned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE UNIQUE INDEX IF NOT EXISTS user_game_idx ON user_games (user_id, game_id);
+  CREATE INDEX IF NOT EXISTS ug_completion_idx ON user_games (user_id, completion_status);
 
   CREATE TABLE IF NOT EXISTS price_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +233,21 @@ const SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS notif_user_unread_idx ON notifications (user_id, read_at);
   CREATE INDEX IF NOT EXISTS notif_user_created_idx ON notifications (user_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS recommendation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL DEFAULT 'default',
+    game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    bucket TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    score REAL,
+    shown_at TEXT NOT NULL DEFAULT (datetime('now')),
+    accepted_at TEXT,
+    dismissed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS re_user_game_idx ON recommendation_events (user_id, game_id);
+  CREATE INDEX IF NOT EXISTS re_user_shown_idx ON recommendation_events (user_id, shown_at);
 `;
 
 export type TestDb = ReturnType<typeof drizzle>;
@@ -313,6 +334,11 @@ export function seedUserGame(
       interestRatedAt: overrides.interestRatedAt,
       enjoymentRating: overrides.enjoymentRating,
       enjoymentRatedAt: overrides.enjoymentRatedAt,
+      completionStatus: overrides.completionStatus ?? 'unplayed',
+      backlogState: overrides.backlogState,
+      priority: overrides.priority,
+      startedAt: overrides.startedAt,
+      abandonedAt: overrides.abandonedAt,
     })
     .returning({ id: schema.userGames.id })
     .get();
