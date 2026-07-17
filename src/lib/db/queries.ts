@@ -567,6 +567,81 @@ export function cascadePurchaseCleanup(gameIds: number[], userId: string): void 
 }
 
 /**
+ * Fraction of the currently-owned library that a single reconcile run is allowed
+ * to unmark. A run that would unown MORE than this is treated as a truncated /
+ * globally-wrong owned set and refused wholesale — this is the last-line
+ * defense-in-depth for the one destructive mass-write path in the sync (a wrong
+ * fire is worse than leaving stale ownership one extra cycle).
+ */
+export const RECONCILE_MAX_UNOWN_FRACTION = 0.5;
+
+/**
+ * Reconcile ownership after a library sync: any game the user currently owns
+ * that is ABSENT from the freshly-synced owned set is set `isOwned=false`
+ * (refund, revoked license, family-share change). `ownedGameIds` is the set of
+ * gameIds confirmed owned by THIS sync run.
+ *
+ * CALLER GUARD (load-bearing): only call this for a genuine, successful,
+ * PROVABLY-COMPLETE, NON-EMPTY owned response from a run that completed (not
+ * cancelled). A transient empty/failed response, OR a truncated-but-successful
+ * one, must never reach here — otherwise the missing games get wrongly unowned.
+ * See syncLibrary for the completeness (game_count) + non-empty + not-cancelled
+ * gates.
+ *
+ * TWO internal safety nets on top of the caller's gates:
+ *   1. an empty confirmed set (`ownedGameIds` == []) is never trusted as "you
+ *      own nothing" — refuse to unmark anything;
+ *   2. a SANITY CAP (RECONCILE_MAX_UNOWN_FRACTION) refuses any run that would
+ *      unown more than half the current library — catches an internally-
+ *      consistent but globally-wrong owned set (e.g. Steam's game_count itself
+ *      truncated low) that the caller's completeness check can't detect.
+ *
+ * Diffs currently-owned rows against the confirmed set in JS and unmarks only
+ * the absent ones (batched by 500 like getExistingGamesByAppIds — avoids a giant
+ * NOT IN and its SQLite variable-limit hazard). Returns the count unmarked (0 if
+ * a safety net skipped the run). Pure synchronous DB writes — safe inside the
+ * syncLibrary transaction.
+ */
+export function reconcileOwnership(ownedGameIds: number[], userId: string): number {
+  // Safety net 1: an empty confirmed set is never trusted to mean "you own
+  // nothing" — refuse to unmark anything. Callers must still gate on a genuine,
+  // provably-complete, non-empty owned response (see syncLibrary).
+  if (ownedGameIds.length === 0) return 0;
+
+  const db = getDb();
+  const ownedSet = new Set(ownedGameIds);
+  const currentlyOwned = db
+    .select({ gameId: userGames.gameId })
+    .from(userGames)
+    .where(and(eq(userGames.userId, userId), eq(userGames.isOwned, true)))
+    .all()
+    .map((r) => r.gameId);
+  const toUnown = currentlyOwned.filter((id) => !ownedSet.has(id));
+  if (toUnown.length === 0) return 0;
+
+  // Safety net 2: sanity cap. Refuse a run that would unown more than half the
+  // current library — a legitimate mass-refund at that scale is vanishingly rare
+  // versus a truncated owned set, so we skip loudly rather than mass-delete.
+  if (toUnown.length > currentlyOwned.length * RECONCILE_MAX_UNOWN_FRACTION) {
+    console.warn(
+      `[reconcileOwnership] Refusing to unmark ${toUnown.length}/${currentlyOwned.length} owned games ` +
+      `(> ${RECONCILE_MAX_UNOWN_FRACTION * 100}% of the library) — likely a truncated owned set; skipping`,
+    );
+    return 0;
+  }
+
+  const now = new Date().toISOString();
+  for (let i = 0; i < toUnown.length; i += 500) {
+    const batch = toUnown.slice(i, i + 500);
+    db.update(userGames)
+      .set({ isOwned: false, updatedAt: now })
+      .where(and(eq(userGames.userId, userId), inArray(userGames.gameId, batch)))
+      .run();
+  }
+  return toUnown.length;
+}
+
+/**
  * Capture a price-paid *suggestion* for newly-purchased games (Phase 3).
  *
  * Called at wishlist→owned detection (see syncLibrary) for the games that just
