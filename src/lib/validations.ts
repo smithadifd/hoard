@@ -109,6 +109,21 @@ export const interestSchema = z.object({
   interest: z.number().int().min(1).max(5),
 });
 
+// Bulk-confirm the price-paid suggestion backlog (accept-all / accept-selected /
+// adjust individually). Omitting `value` accepts the stored suggestion as-is;
+// setting it writes a user-adjusted amount instead — same bounds as pricePaid above.
+export const bulkConfirmPricePaidSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        gameId: z.number().int().min(1),
+        value: z.number().min(0).max(100000).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
 // ============================================
 // Alerts
 // ============================================

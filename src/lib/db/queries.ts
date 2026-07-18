@@ -861,6 +861,205 @@ export function capturePricePaidSuggestions(
   return captured;
 }
 
+// ============================================
+// Price-paid suggestion: bulk confirm/adjust (backlog UI)
+//
+// Companion to capturePricePaidSuggestions above and the per-game confirm/adjust
+// prompt (PATCH /api/games/:id, see updateUserGame). That single-game path already
+// writes pricePaidSuggested → pricePaid on explicit confirm; these two functions
+// add the BULK counterpart for the backlog of games still awaiting a decision.
+// ============================================
+
+export interface PendingPriceSuggestion {
+  gameId: number;
+  title: string;
+  headerImageUrl: string | null;
+  pricePaidSuggested: number;
+}
+
+/**
+ * List every CURRENTLY-OWNED game with an unconfirmed, un-dismissed price-paid
+ * suggestion. Mirrors the pending predicate `getEnrichedGame`'s
+ * `hasPricePaidSuggestion` flag uses (pricePaid IS NULL AND pricePaidSuggested IS
+ * NOT NULL AND not dismissed), plus an `isOwned` guard so a suggestion left over
+ * from a game whose ownership was later revoked (refund, Steam Family Sharing
+ * change) can't linger here presented as owned. The page renders every row as an
+ * owned-library game, so the list must actually be scoped to owned games. Powers
+ * the bulk-confirm UI.
+ */
+export function getPendingPricePaidSuggestions(userId: string): PendingPriceSuggestion[] {
+  const db = getDb();
+  const rows = db
+    .select({
+      gameId: userGames.gameId,
+      title: games.title,
+      headerImageUrl: games.headerImageUrl,
+      pricePaidSuggested: userGames.pricePaidSuggested,
+    })
+    .from(userGames)
+    .innerJoin(games, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
+        sql`${userGames.pricePaid} IS NULL`,
+        sql`${userGames.pricePaidSuggested} IS NOT NULL`,
+        sql`${userGames.pricePaidSuggestionDismissedAt} IS NULL`,
+      ),
+    )
+    .orderBy(desc(userGames.updatedAt))
+    .all();
+
+  return rows.map((r) => ({
+    gameId: r.gameId,
+    title: r.title,
+    headerImageUrl: r.headerImageUrl,
+    pricePaidSuggested: r.pricePaidSuggested as number,
+  }));
+}
+
+/**
+ * Whether the price-paid *suggestion* feature is enabled. Mirrors the exact read
+ * used by the sync capture (src/lib/sync/library.ts) and the settings UI
+ * (src/app/settings/alerts/page.tsx): the feature defaults ON, and only an
+ * explicit 'false' turns it off. When off, the sync stops capturing NEW
+ * suggestions — but rows captured while it was on persist in the DB, so every
+ * READ surface must gate on this too or it would keep exposing the feature the
+ * user asked to turn off.
+ */
+export function arePricePaidSuggestionsEnabled(): boolean {
+  return getSetting('price_paid_suggestions_enabled') !== 'false';
+}
+
+/**
+ * The pending price-paid backlog, gated on the feature toggle. Returns [] when
+ * suggestions are disabled so both the /library banner and the
+ * /library/pending-prices page hide the feature entirely — the "turn the whole
+ * feature off" promise of the setting. Existing suggestion rows are NOT deleted;
+ * they simply aren't surfaced while the feature is off, and reappear if it's
+ * re-enabled. Identical to getPendingPricePaidSuggestions when enabled.
+ */
+export function getPendingPricePaidSuggestionsIfEnabled(userId: string): PendingPriceSuggestion[] {
+  if (!arePricePaidSuggestionsEnabled()) return [];
+  return getPendingPricePaidSuggestions(userId);
+}
+
+export interface BulkConfirmEntry {
+  gameId: number;
+  /** User-adjusted amount to write instead of the stored suggestion ("adjust"). Omit to accept as-is. */
+  value?: number;
+}
+
+export interface BulkConfirmResult {
+  /** gameIds whose pricePaid was written by this call. */
+  applied: number[];
+  /** gameIds left untouched — already confirmed/manually priced, or dismissed. */
+  skipped: number[];
+}
+
+/**
+ * Bulk-apply price-paid suggestions — the "accept-all / accept-selected / adjust
+ * individually" backlog action. For each entry, writes either the caller-supplied
+ * `value` (adjust) or the row's own stored `pricePaidSuggested` (accept) into
+ * `pricePaid`, exactly like the single-game PATCH does, and clears
+ * `pricePaidSuggested` the same way (see updateUserGame) so a confirmed game can
+ * never re-surface as pending.
+ *
+ * Every entry is re-checked against the SAME "pending" predicate as
+ * getPendingPricePaidSuggestions at write time (not just whatever the caller
+ * believed was pending when it built the request), so:
+ *   - a game whose pricePaid is already set — confirmed by an earlier call in this
+ *     same batch, confirmed previously, or manually entered through any other path
+ *     — is skipped, never overwritten. This is what keeps a manual pricePaid safe
+ *     from being clobbered by a bulk accept-all, and what makes re-running the
+ *     same bulk request on an already-applied game a no-op instead of a
+ *     double-apply.
+ *   - a game that is no longer owned (refund / Family Sharing change since the
+ *     suggestion was captured) is skipped — we won't record a purchase price for
+ *     a game that isn't in the library, matching the list query's `isOwned` guard.
+ *   - a dismissed suggestion is skipped too, so a stale client-side list can't
+ *     resurrect a "not now".
+ *   - an unknown gameId (no user_games row) is skipped.
+ *
+ * Pure synchronous DB writes; no external calls, no schema change — reads/writes
+ * only the existing pricePaid / pricePaidSuggested / pricePaidAt columns.
+ */
+export function bulkConfirmPricePaidSuggestions(
+  entries: BulkConfirmEntry[],
+  userId: string,
+): BulkConfirmResult {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const applied: number[] = [];
+  const skipped: number[] = [];
+
+  for (const { gameId, value } of entries) {
+    const ug = db
+      .select({
+        isOwned: userGames.isOwned,
+        pricePaid: userGames.pricePaid,
+        pricePaidSuggested: userGames.pricePaidSuggested,
+        pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
+      })
+      .from(userGames)
+      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+      .get();
+
+    const isPending =
+      !!ug &&
+      ug.isOwned === true &&
+      ug.pricePaid == null &&
+      ug.pricePaidSuggested != null &&
+      ug.pricePaidSuggestionDismissedAt == null;
+
+    if (!isPending) {
+      skipped.push(gameId);
+      continue;
+    }
+
+    const finalValue = value !== undefined ? value : (ug.pricePaidSuggested as number);
+    if (!Number.isFinite(finalValue) || finalValue < 0) {
+      skipped.push(gameId);
+      continue;
+    }
+
+    // Guard the write itself with the same "pending" predicate that gated the
+    // read above, so the UPDATE is self-contained: even if the two statements
+    // above were ever separated by a yield point (a future async DB driver, a
+    // multi-process deployment, etc.), the write can never apply to a row that
+    // stopped being pending in between. `changes` (not just the pre-read) is
+    // what decides applied vs skipped, so a 0-row update — the guard tripping —
+    // degrades to a skip instead of silently reporting success.
+    const writeResult = db
+      .update(userGames)
+      .set({
+        pricePaid: finalValue,
+        pricePaidAt: now,
+        pricePaidSuggested: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(userGames.gameId, gameId),
+          eq(userGames.userId, userId),
+          eq(userGames.isOwned, true),
+          sql`${userGames.pricePaid} IS NULL`,
+          sql`${userGames.pricePaidSuggested} IS NOT NULL`,
+          sql`${userGames.pricePaidSuggestionDismissedAt} IS NULL`,
+        ),
+      )
+      .run();
+
+    if (writeResult.changes > 0) {
+      applied.push(gameId);
+    } else {
+      skipped.push(gameId);
+    }
+  }
+
+  return { applied, skipped };
+}
+
 export function upsertTags(gameId: number, tagNames: string[], type: string): void {
   const db = getDb();
   const sqlite = db.$client;
