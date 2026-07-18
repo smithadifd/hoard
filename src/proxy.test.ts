@@ -224,6 +224,83 @@ describe('rate limiting — outbound-triggering GETs', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rate-limit identity — keys on the LAST x-forwarded-for hop, not the first.
+//
+// Caddy (our reverse proxy) APPENDS to x-forwarded-for, so the real client is
+// the last entry; everything left of it is client-supplied and spoofable. If
+// the limiter ever keys on the first entry again, a client could pick a fresh
+// leftmost value on every request and never be throttled — these tests pin
+// that regression closed.
+// ---------------------------------------------------------------------------
+
+describe('rate limiting — keys on the last x-forwarded-for hop (spoof-resistant)', () => {
+  beforeEach(() => {
+    vi.stubEnv('DEMO_MODE', 'false');
+    mockSessionCookie.mockReturnValue('session-token');
+  });
+
+  it('a spoofed leftmost value does not grant a fresh bucket for the same real client', () => {
+    const realClientHop = '9.9.9.9';
+
+    let lastStatus = 0;
+    for (let i = 0; i < 45; i++) {
+      lastStatus = proxy(makeRequest('GET', '/api/search', {
+        'x-forwarded-for': `1.2.3.4, ${realClientHop}`,
+      })).status;
+    }
+    expect(lastStatus).toBe(429); // burst spent for the real (last-hop) client
+
+    // Same real client, attacker varies the spoofable leftmost value — still limited.
+    const stillLimited = proxy(makeRequest('GET', '/api/search', {
+      'x-forwarded-for': `99.99.99.99, ${realClientHop}`,
+    })).status;
+    expect(stillLimited).toBe(429);
+  });
+
+  it('a different real client (same spoofed leftmost value) gets its own bucket', () => {
+    const spoofedLeftmost = '1.2.3.4';
+
+    let lastStatus = 0;
+    for (let i = 0; i < 45; i++) {
+      lastStatus = proxy(makeRequest('GET', '/api/search', {
+        'x-forwarded-for': `${spoofedLeftmost}, 10.10.10.10`,
+      })).status;
+    }
+    expect(lastStatus).toBe(429);
+
+    const freshRealClient = proxy(makeRequest('GET', '/api/search', {
+      'x-forwarded-for': `${spoofedLeftmost}, 10.10.10.11`,
+    })).status;
+    expect(freshRealClient).not.toBe(429);
+  });
+
+  it('a single-value header (no comma) still keys correctly', () => {
+    const statuses = floodGet('/api/search', 45, '20.20.20.20');
+    expect(statuses).toContain(429);
+  });
+
+  it('a missing x-forwarded-for falls back to x-real-ip, unchanged from before', () => {
+    let lastStatus = 0;
+    for (let i = 0; i < 45; i++) {
+      lastStatus = proxy(makeRequest('GET', '/api/search', {
+        'x-real-ip': '30.30.30.30',
+      })).status;
+    }
+    expect(lastStatus).toBe(429);
+  });
+
+  it('trims surrounding whitespace around the last hop', () => {
+    let lastStatus = 0;
+    for (let i = 0; i < 45; i++) {
+      lastStatus = proxy(makeRequest('GET', '/api/search', {
+        'x-forwarded-for': '1.2.3.4,   40.40.40.40   ',
+      })).status;
+    }
+    expect(lastStatus).toBe(429);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CSP — nonce is real; unsafe-eval only in development.
 // ---------------------------------------------------------------------------
 
