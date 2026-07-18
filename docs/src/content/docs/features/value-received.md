@@ -67,6 +67,7 @@ If you'd rated your pre-purchase **interest** (the "bet") before buying, the det
 
 - **Never played** is always *unrealized*, regardless of price — a game you paid for and never opened has returned none of its value yet. (Rating it is moot until you've played it.)
 - **Free games** (price recorded as $0) stay on the time lens. Hoard won't report "$0.00/hour."
+- **Deal Outcomes breakdowns are approximate.** The Deal Outcomes report groups deals by store, discount depth, and deal-score band using purchase-time context inferred from the price on record when you saved what you paid (Hoard has no true purchase date), so those three breakdowns can be off for a price entered well after purchase — the per-game verdict and hit rate (realized vs predicted $/hour) don't depend on it and stay exact.
 - **No HowLongToBeat data and no recorded price** has no honest baseline to grade against — there's no main-story estimate to measure completion, and no price for $/hour. Rather than invent a tier from raw hours (which reads misleadingly as "Approaching" off 15 minutes, or "Exceeded" off a sandbox game you've sunk 100 hours into), the badge shows a neutral **Played Xh** chip with no value claim. Add a duration *or* a price and the game grades normally — the money lens needs no duration at all. A post-play **rating** also resolves it: your verdict needs no baseline.
 
 ## In the backlog
