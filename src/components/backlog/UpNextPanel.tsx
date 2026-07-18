@@ -9,7 +9,7 @@
  * `src/lib/backlog/{upNext,ranking}.ts`.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 import type { UpNextBucket } from '@/lib/backlog/upNext';
@@ -67,11 +67,101 @@ export async function fetchUpNextQueue(): Promise<UpNextItem[]> {
   return parseUpNextQueueResponse(body);
 }
 
+// ---------------------------------------------------------------------------
+// Implicit-feedback signals — POST to the SAME shipped route's existing actions
+// so backlog-v2's learning ranker gets feedback from this UI. Best-effort and
+// fire-and-forget: a failed signal never surfaces to the user, blocks
+// navigation, or perturbs the GET/display path. No `dismissed` — this panel has
+// no dismiss affordance.
+// ---------------------------------------------------------------------------
+
+/** `shown` payload — matches the route's zod schema: items min 1 / max 20, each
+ *  { gameId, bucket, reason, score? }. */
+export interface ShownSignal {
+  action: 'shown';
+  items: { gameId: number; bucket: UpNextBucket; reason: string; score: number }[];
+}
+
+/** `accepted` payload — identified by gameId (the route updates the open `shown`
+ *  event for that game). */
+export interface AcceptedSignal {
+  action: 'accepted';
+  gameId: number;
+}
+
+export type RecommendationSignal = ShownSignal | AcceptedSignal;
+
+export function buildShownSignal(items: UpNextItem[]): ShownSignal {
+  return {
+    action: 'shown',
+    items: items.map((it) => ({
+      gameId: it.gameId,
+      bucket: it.bucket,
+      reason: it.reason,
+      score: it.score,
+    })),
+  };
+}
+
+export function buildAcceptedSignal(gameId: number): AcceptedSignal {
+  return { action: 'accepted', gameId };
+}
+
+/**
+ * Fire a single implicit-feedback signal. NEVER throws: a non-ok response or a
+ * network failure is swallowed (logged only), so callers can treat it as pure
+ * fire-and-forget and the display path is guaranteed unaffected.
+ */
+export async function postRecommendationSignal(body: RecommendationSignal): Promise<void> {
+  try {
+    await fetch('/api/backlog/recommendations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      // Let the `accepted` POST outlive the click-through navigation.
+      keepalive: true,
+    });
+  } catch {
+    // Best-effort — swallow. Implicit feedback must never break the panel.
+  }
+}
+
+/** Stable identity for a surfaced queue — the set of game ids. Re-firing `shown`
+ *  is keyed off this so a re-render or StrictMode double-invoke can't double-count. */
+export function shownSignalKey(items: UpNextItem[]): string {
+  return items.map((it) => it.gameId).join(',');
+}
+
+/**
+ * Emit the `shown` signal at most once per distinct surfaced queue. `firedRef`
+ * is set to the queue key SYNCHRONOUSLY before the await, so two near-concurrent
+ * calls (React StrictMode's double effect invoke) collapse to a single POST.
+ * Never throws. Returns true iff it actually fired this call.
+ */
+export async function emitShownOnce(
+  items: UpNextItem[],
+  firedRef: { current: string | null },
+  post: (body: RecommendationSignal) => Promise<void> = postRecommendationSignal,
+): Promise<boolean> {
+  if (items.length === 0) return false;
+  const key = shownSignalKey(items);
+  if (firedRef.current === key) return false;
+  firedRef.current = key; // set before await → guards concurrent double-invoke
+  try {
+    await post(buildShownSignal(items));
+  } catch {
+    // swallow — best effort; a failed attempt still counts as fired (no retry spam)
+  }
+  return true;
+}
+
 type LoadState = 'loading' | 'error' | 'ready';
 
 export function UpNextPanel() {
   const [state, setState] = useState<LoadState>('loading');
   const [items, setItems] = useState<UpNextItem[]>([]);
+  // Tracks the queue key we've already emitted a `shown` signal for.
+  const shownFiredRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +170,10 @@ export function UpNextPanel() {
         if (cancelled) return;
         setItems(queue);
         setState('ready');
+        // Best-effort: tell the learning ranker what we surfaced, exactly once
+        // per distinct queue. `.catch` is belt-and-suspenders — emitShownOnce
+        // already never rejects — so the display path can't be perturbed.
+        void emitShownOnce(queue, shownFiredRef).catch(() => {});
       })
       .catch(() => {
         if (!cancelled) setState('error');
@@ -120,6 +214,11 @@ export function UpNextPanel() {
             <li key={item.gameId}>
               <Link
                 href={`/games/${item.gameId}`}
+                onClick={() => {
+                  // Accepted signal fires alongside navigation (fire-and-forget,
+                  // keepalive) — never preventDefault, never block the click.
+                  void postRecommendationSignal(buildAcceptedSignal(item.gameId));
+                }}
                 className="flex items-center justify-between gap-3 rounded-md p-2 -m-2 hover:bg-secondary/50 transition-colors"
               >
                 <div className="min-w-0">

@@ -3,6 +3,11 @@ import type { UpNextBucket } from '@/lib/backlog/upNext';
 import {
   parseUpNextQueueResponse,
   fetchUpNextQueue,
+  buildShownSignal,
+  buildAcceptedSignal,
+  postRecommendationSignal,
+  emitShownOnce,
+  shownSignalKey,
   UP_NEXT_BUCKET_BG,
   UP_NEXT_BUCKET_LABEL,
   type UpNextItem,
@@ -119,5 +124,135 @@ describe('fetchUpNextQueue', () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down')) as unknown as typeof fetch;
 
     await expect(fetchUpNextQueue()).rejects.toThrow('network down');
+  });
+});
+
+describe('buildShownSignal / buildAcceptedSignal', () => {
+  it('builds the shown payload matching the route schema (gameId/bucket/reason/score per item)', () => {
+    const items = [
+      item({ gameId: 3, bucket: 'finish-soon', reason: 'close to done', score: 88 }),
+      item({ gameId: 4, bucket: 'drop', reason: 'stalled', score: -5 }),
+    ];
+    expect(buildShownSignal(items)).toEqual({
+      action: 'shown',
+      items: [
+        { gameId: 3, bucket: 'finish-soon', reason: 'close to done', score: 88 },
+        { gameId: 4, bucket: 'drop', reason: 'stalled', score: -5 },
+      ],
+    });
+  });
+
+  it('builds the accepted payload identified by gameId', () => {
+    expect(buildAcceptedSignal(42)).toEqual({ action: 'accepted', gameId: 42 });
+  });
+
+  it('keys a surfaced queue by its game ids', () => {
+    expect(shownSignalKey([item({ gameId: 1 }), item({ gameId: 2 })])).toBe('1,2');
+    expect(shownSignalKey([])).toBe('');
+  });
+});
+
+describe('postRecommendationSignal', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('POSTs the given action + payload to the recommendations route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await postRecommendationSignal(buildAcceptedSignal(7));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/backlog/recommendations');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ action: 'accepted', gameId: 7 });
+  });
+
+  it('swallows a non-ok response (no throw — best-effort)', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: 'nope' }) }) as unknown as typeof fetch;
+    await expect(postRecommendationSignal(buildAcceptedSignal(7))).resolves.toBeUndefined();
+  });
+
+  it('swallows a rejected fetch (no throw — best-effort)', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('offline')) as unknown as typeof fetch;
+    await expect(postRecommendationSignal(buildShownSignal([item()]))).resolves.toBeUndefined();
+  });
+});
+
+describe('emitShownOnce', () => {
+  it('fires exactly once across repeated calls with the same ref+queue (re-render refire guard)', async () => {
+    const post = vi.fn().mockResolvedValue(undefined);
+    const ref = { current: null as string | null };
+    const items = [item({ gameId: 1 }), item({ gameId: 2 })];
+
+    expect(await emitShownOnce(items, ref, post)).toBe(true);
+    expect(await emitShownOnce(items, ref, post)).toBe(false);
+    expect(await emitShownOnce(items, ref, post)).toBe(false);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith(buildShownSignal(items));
+  });
+
+  it('collapses two near-concurrent invokes (StrictMode double-invoke) to a single POST', async () => {
+    const post = vi.fn().mockResolvedValue(undefined);
+    const ref = { current: null as string | null };
+    const items = [item({ gameId: 5 })];
+
+    // Fire both before awaiting either — the ref is set synchronously before the
+    // await, so the second call sees it already keyed and skips.
+    const [a, b] = await Promise.all([
+      emitShownOnce(items, ref, post),
+      emitShownOnce(items, ref, post),
+    ]);
+    expect([a, b].filter(Boolean)).toHaveLength(1);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire for an empty queue', async () => {
+    const post = vi.fn().mockResolvedValue(undefined);
+    const ref = { current: null as string | null };
+    expect(await emitShownOnce([], ref, post)).toBe(false);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('fires again when a different queue (new ids) is surfaced', async () => {
+    const post = vi.fn().mockResolvedValue(undefined);
+    const ref = { current: null as string | null };
+    expect(await emitShownOnce([item({ gameId: 1 })], ref, post)).toBe(true);
+    expect(await emitShownOnce([item({ gameId: 9 })], ref, post)).toBe(true);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('swallows a rejected signal POST — resolves without throwing and leaves the queue untouched', async () => {
+    const post = vi.fn().mockRejectedValue(new Error('signal failed'));
+    const ref = { current: null as string | null };
+    const items = [item({ gameId: 1 }), item({ gameId: 2 })];
+    const snapshot = JSON.parse(JSON.stringify(items));
+
+    // Never rejects even though the POST does — proves the display path (which
+    // holds this same `items` array) is unaffected by a signal failure.
+    await expect(emitShownOnce(items, ref, post)).resolves.toBe(true);
+    expect(items).toEqual(snapshot);
+  });
+
+  it('GET/display path is independent of signal POST failure', async () => {
+    const originalFetch = global.fetch;
+    // GET succeeds; the signal POST (separate call) rejects — the queue the panel
+    // renders comes only from fetchUpNextQueue and is unaffected.
+    const queue = [item({ gameId: 1, bucket: 'continue' })];
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ data: { queue } }) })
+      .mockRejectedValueOnce(new Error('signal down')) as unknown as typeof fetch;
+
+    const displayed = await fetchUpNextQueue();
+    await postRecommendationSignal(buildShownSignal(displayed)); // best-effort, rejects internally
+
+    expect(displayed).toEqual(queue);
+    global.fetch = originalFetch;
   });
 });
