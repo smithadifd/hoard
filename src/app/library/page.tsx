@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
-import { Wallet, DollarSign } from 'lucide-react';
-import { getEnrichedGames, getValueReceivedOverview } from '@/lib/db/queries';
+import Link from 'next/link';
+import { Wallet, DollarSign, Sparkles, ChevronRight } from 'lucide-react';
+import { getEnrichedGames, getValueReceivedOverview, getPendingPricePaidSuggestions } from '@/lib/db/queries';
 import type { ValueReceivedOverview } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
@@ -41,6 +42,13 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
     // DB not ready yet — fall back to the grid without the value rollup.
   }
 
+  let pendingSuggestionCount = 0;
+  try {
+    pendingSuggestionCount = getPendingPricePaidSuggestions(session.user.id).length;
+  } catch {
+    // DB not ready yet — banner just won't show.
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -49,6 +57,21 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
           {total > 0 ? `${total} owned games` : 'Your owned games — filter, sort, and find your next play'}
         </p>
       </div>
+
+      {/* Backlog nudge: newly-detected purchases with an unconfirmed price estimate.
+          Links to the bulk-confirm page rather than duplicating the list here. */}
+      {pendingSuggestionCount > 0 && (
+        <Link
+          href="/library/pending-prices"
+          className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm hover:bg-amber-500/10 transition-colors"
+        >
+          <Sparkles className="h-4 w-4 text-amber-400 shrink-0" />
+          <span>
+            {pendingSuggestionCount} game{pendingSuggestionCount === 1 ? '' : 's'} with an estimated price awaiting confirmation.
+          </span>
+          <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
+        </Link>
+      )}
 
       {/* Lead with Value Received — the same rollup the dashboard shows, so the library
           headlines "did I get my money's worth?" instead of an A–Z wall of titles. */}

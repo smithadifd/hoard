@@ -31,6 +31,8 @@ import {
   upsertUserGame,
   updateUserGame,
   capturePricePaidSuggestions,
+  getPendingPricePaidSuggestions,
+  bulkConfirmPricePaidSuggestions,
   upsertTags,
   getEnrichedGames,
   getEnrichedGameById,
@@ -955,6 +957,144 @@ describe('capturePricePaidSuggestions (price-paid suggestion capture)', () => {
     const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
     expect(row?.pricePaidSuggested).toBe(8.99);
     expect(row?.pricePaidSuggestionDismissedAt).toBeNull();
+  });
+});
+
+describe('getPendingPricePaidSuggestions (bulk-confirm backlog listing)', () => {
+  it('returns exactly the games with a suggestion and no confirmed pricePaid', () => {
+    const pending = seedGame(testDb, { steamAppId: 1, title: 'Pending Game' });
+    seedUserGame(testDb, pending, { isOwned: true, pricePaidSuggested: 8.99 });
+
+    const confirmed = seedGame(testDb, { steamAppId: 2, title: 'Confirmed Game' });
+    seedUserGame(testDb, confirmed, { isOwned: true, pricePaid: 19.99, pricePaidSuggested: null });
+
+    const untouched = seedGame(testDb, { steamAppId: 3, title: 'No Suggestion Game' });
+    seedUserGame(testDb, untouched, { isOwned: true });
+
+    const result = getPendingPricePaidSuggestions('default');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ gameId: pending, title: 'Pending Game', pricePaidSuggested: 8.99 });
+  });
+
+  it('excludes a game whose suggestion was dismissed', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Dismissed Game' });
+    seedUserGame(testDb, gameId, {
+      isOwned: true,
+      pricePaidSuggested: 8.99,
+      pricePaidSuggestionDismissedAt: '2026-05-01T00:00:00.000Z',
+    });
+
+    expect(getPendingPricePaidSuggestions('default')).toHaveLength(0);
+  });
+
+  it('is scoped to the requesting user', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Other User Game' });
+    seedUserGame(testDb, gameId, { userId: 'someone-else', isOwned: true, pricePaidSuggested: 8.99 });
+
+    expect(getPendingPricePaidSuggestions('default')).toHaveLength(0);
+  });
+});
+
+describe('bulkConfirmPricePaidSuggestions (bulk accept/adjust)', () => {
+  it('confirm: writes the stored suggestion into pricePaid when no value is supplied', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 12.5 });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId }], 'default');
+    expect(result.applied).toEqual([gameId]);
+    expect(result.skipped).toEqual([]);
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBe(12.5);
+    expect(row?.pricePaidSuggested).toBeNull();
+    expect(row?.pricePaidAt).not.toBeNull();
+  });
+
+  it('adjust: writes the caller-supplied value instead of the stored suggestion', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 12.5 });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId, value: 4.99 }], 'default');
+    expect(result.applied).toEqual([gameId]);
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBe(4.99);
+    expect(row?.pricePaidSuggested).toBeNull();
+  });
+
+  it('accept-all/accept-selected: applies only to the entries passed in, leaving other pending games untouched', () => {
+    const gameA = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    seedUserGame(testDb, gameA, { isOwned: true, pricePaidSuggested: 10 });
+    const gameB = seedGame(testDb, { steamAppId: 2, title: 'Game B' });
+    seedUserGame(testDb, gameB, { isOwned: true, pricePaidSuggested: 20 });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId: gameA }], 'default');
+    expect(result.applied).toEqual([gameA]);
+
+    const rowA = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameA)).get();
+    const rowB = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameB)).get();
+    expect(rowA?.pricePaid).toBe(10);
+    expect(rowB?.pricePaid).toBeNull();
+    expect(rowB?.pricePaidSuggested).toBe(20);
+  });
+
+  it('idempotency: confirming an already-confirmed game is skipped, not double-applied', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 12.5 });
+
+    const first = bulkConfirmPricePaidSuggestions([{ gameId }], 'default');
+    expect(first.applied).toEqual([gameId]);
+
+    // Re-run the exact same request (double-click / retry).
+    const second = bulkConfirmPricePaidSuggestions([{ gameId }], 'default');
+    expect(second.applied).toEqual([]);
+    expect(second.skipped).toEqual([gameId]);
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBe(12.5); // unchanged
+  });
+
+  it('never clobbers a manually-set pricePaid', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    // A manual price was entered through some other path; no suggestion was ever
+    // captured for it (capturePricePaidSuggestions itself guards this), but a
+    // stale/racy bulk request naming it should still refuse to overwrite it.
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 59.99, pricePaidSuggested: null });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId, value: 4.99 }], 'default');
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([gameId]);
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBe(59.99);
+  });
+
+  it('skips a dismissed suggestion rather than resurrecting it', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    seedUserGame(testDb, gameId, {
+      isOwned: true,
+      pricePaidSuggested: 12.5,
+      pricePaidSuggestionDismissedAt: '2026-05-01T00:00:00.000Z',
+    });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId }], 'default');
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([gameId]);
+  });
+
+  it('skips an unknown gameId', () => {
+    const result = bulkConfirmPricePaidSuggestions([{ gameId: 999999 }], 'default');
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([999999]);
+  });
+
+  it('is scoped to the requesting user — cannot confirm another user\'s pending suggestion', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Game A' });
+    seedUserGame(testDb, gameId, { userId: 'someone-else', isOwned: true, pricePaidSuggested: 12.5 });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId }], 'default');
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([gameId]);
   });
 });
 
