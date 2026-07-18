@@ -39,6 +39,18 @@ describe('computeDealOutcome', () => {
     expect(outcome.verdict).toBe('hit');
   });
 
+  it('decides from RAW $/hr, not the cents-rounded display values (boundary that flips under rounding)', () => {
+    // $20 over 10h HLTB → predicted $2.0000/hr. Played 599 min (9.9833h) →
+    // realized $2.0033/hr. BOTH round to "$2.00", but realized_raw > predicted_raw,
+    // so the honest verdict is a MISS (played less than the price implied).
+    // Mutation-check: a rounded comparison (realized <= predicted on display values)
+    // would give 2.00 <= 2.00 → 'hit', so this assertion fails under that regression.
+    const outcome = computeDealOutcome(makeInput({ pricePaid: 20, hltbMain: 10, playtimeMinutes: 599 }));
+    expect(outcome.predictedDollarsPerHour).toBe(2); // display collapses to $2.00
+    expect(outcome.realizedDollarsPerHour).toBe(2); // display collapses to $2.00
+    expect(outcome.verdict).toBe('miss'); // ...but raw 2.0033 > 2.0000 → miss
+  });
+
   it('misses when realized $/hr exceeds predicted $/hr (played far less than expected)', () => {
     // $60 paid, only 1h played → $60/hr realized vs $6/hr predicted (10h HLTB).
     const outcome = computeDealOutcome(makeInput({ playtimeMinutes: 60, hltbMain: 10, pricePaid: 60 }));

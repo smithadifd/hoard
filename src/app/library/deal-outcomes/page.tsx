@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, Scale } from 'lucide-react';
+import { ArrowLeft, Scale, Info } from 'lucide-react';
 import { getDealOutcomeInputs } from '@/lib/db/queries';
 import { computeDealOutcomesReport, type DealOutcomesReport } from '@/lib/scoring/dealOutcomes';
 import { getSession } from '@/lib/auth-helpers';
@@ -75,18 +75,30 @@ export default async function DealOutcomesPage() {
             <DealOutcomesSummary overall={report.overall} />
           </div>
 
+          <div className="flex items-start gap-2 rounded-lg border border-deal-okay/30 bg-deal-okay/5 p-3.5 text-[13px] text-muted-foreground">
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-deal-okay" />
+            <p>
+              <span className="font-semibold text-foreground">Store, discount, and deal-score breakdowns are approximate.</span>{' '}
+              Hoard has no true purchase date, so purchase-time context is inferred from the price on
+              record when you saved what you paid — it can be off for a price entered well after you
+              bought the game. The per-game verdict and hit rate compare realized vs predicted{' '}
+              $/hour and don&apos;t depend on this, so they stay exact. Games with no matching price
+              on record are shown as <span className="font-medium">Unknown</span>.
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-xl bg-card p-5">
-              <DealOutcomesBreakdown title="By Store" entries={report.byStore} />
+              <DealOutcomesBreakdown title="By Store" entries={report.byStore} approximate />
             </div>
             <div className="rounded-xl bg-card p-5">
               <DealOutcomesBreakdown title="By Genre" entries={report.byGenre} />
             </div>
             <div className="rounded-xl bg-card p-5">
-              <DealOutcomesBreakdown title="By Discount Depth" entries={report.byDiscountBand} />
+              <DealOutcomesBreakdown title="By Discount Depth" entries={report.byDiscountBand} approximate />
             </div>
             <div className="rounded-xl bg-card p-5">
-              <DealOutcomesBreakdown title="By Deal-Score Band" entries={report.byDealScoreBand} />
+              <DealOutcomesBreakdown title="By Deal-Score Band" entries={report.byDealScoreBand} approximate />
             </div>
           </div>
 

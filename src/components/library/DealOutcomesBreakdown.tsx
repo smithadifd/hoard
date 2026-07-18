@@ -5,14 +5,32 @@ import type { DealOutcomeBreakdownEntry } from '@/lib/scoring/dealOutcomes';
  * depth, or deal-score band) — a bar per bucket sized to its hit rate, with the
  * graded fraction and the not-yet-gradable count called out honestly rather than
  * folded into the rate. Server component — pure presentation.
+ *
+ * `approximate` marks a dimension whose buckets come from purchase-time context
+ * inferred from the price-recorded date (store / discount / deal-score band),
+ * not a true purchase date — see the page-level caveat. Genre and the verdict
+ * don't depend on that inference, so they leave it off.
  */
-export function DealOutcomesBreakdown({ title, entries }: { title: string; entries: DealOutcomeBreakdownEntry[] }) {
+export function DealOutcomesBreakdown({
+  title,
+  entries,
+  approximate = false,
+}: {
+  title: string;
+  entries: DealOutcomeBreakdownEntry[];
+  approximate?: boolean;
+}) {
+  const heading = (
+    <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+      {title}
+      {approximate && <span className="ml-1.5 normal-case tracking-normal text-muted-foreground/60">(approximate)</span>}
+    </h3>
+  );
+
   if (entries.length === 0) {
     return (
       <div>
-        <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-          {title}
-        </h3>
+        {heading}
         <p className="text-sm text-muted-foreground">No priced games to break down yet.</p>
       </div>
     );
@@ -20,9 +38,7 @@ export function DealOutcomesBreakdown({ title, entries }: { title: string; entri
 
   return (
     <div>
-      <h3 className="text-xs font-label font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-        {title}
-      </h3>
+      {heading}
       <ul className="space-y-2.5">
         {entries.map((e) => (
           <li key={e.key}>

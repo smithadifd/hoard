@@ -144,8 +144,9 @@ function dealScoreBandFor(dealScore: number | null): string | null {
  *    to tell; NOT a miss just because the clock hasn't started.
  *  - 'unknown' — played, but no expected-hours basis exists (no HLTB, no Steam
  *    review median) to know what "expected" even means. Can't grade honestly.
- *  - 'hit' / 'miss' — both sides resolved; realized <= predicted is a hit
- *    (you played through — or past — what the price implied you should).
+ *  - 'hit' / 'miss' — both sides resolved; raw (unrounded) realized <= predicted
+ *    is a hit (you played through — or past — what the price implied you should).
+ *    The comparison uses the raw $/hr, not the cents-rounded display values.
  */
 export function computeDealOutcome(
   input: DealOutcomeInput,
@@ -167,17 +168,27 @@ export function computeDealOutcome(
     thresholds,
   );
 
-  const predictedDollarsPerHour =
-    effectiveHours != null && effectiveHours > 0 ? round2(input.pricePaid / effectiveHours) : null;
+  const rawHoursPlayed = Math.max(0, input.playtimeMinutes) / 60;
+  const hasEstimate = effectiveHours != null && effectiveHours > 0;
+
+  // Rounded to cents for DISPLAY only — never for the hit/miss decision.
+  const predictedDollarsPerHour = hasEstimate ? round2(input.pricePaid / (effectiveHours as number)) : null;
   const realizedDollarsPerHour = vr.realizedDollarsPerHour;
 
   let verdict: DealOutcomeVerdict;
   if (realizedDollarsPerHour == null) {
+    // No realized $/hr means no playtime yet (money lens needs playtime > 0).
     verdict = 'pending';
-  } else if (predictedDollarsPerHour == null) {
+  } else if (!hasEstimate) {
     verdict = 'unknown';
   } else {
-    verdict = realizedDollarsPerHour <= predictedDollarsPerHour ? 'hit' : 'miss';
+    // Decide from the RAW (unrounded) $/hr so a sub-cent difference isn't lost
+    // to display rounding (e.g. realized 2.0033 vs predicted 2.0000 both show
+    // "$2.00" but is a genuine miss). Equivalent to hoursPlayed >= effectiveHours
+    // — the price cancels — but comparing $/hr keeps the semantics explicit.
+    const rawRealized = input.pricePaid / rawHoursPlayed;
+    const rawPredicted = input.pricePaid / (effectiveHours as number);
+    verdict = rawRealized <= rawPredicted ? 'hit' : 'miss';
   }
 
   return {
