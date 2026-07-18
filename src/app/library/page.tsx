@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { Wallet, DollarSign, Sparkles, ChevronRight } from 'lucide-react';
-import { getEnrichedGames, getValueReceivedOverview, getPendingPricePaidSuggestions } from '@/lib/db/queries';
+import { getEnrichedGames, getValueReceivedOverview, getPendingPricePaidSuggestionsIfEnabled } from '@/lib/db/queries';
 import type { ValueReceivedOverview } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
@@ -42,9 +42,12 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
     // DB not ready yet — fall back to the grid without the value rollup.
   }
 
+  // Gated on the price_paid_suggestions_enabled setting: when the feature is
+  // turned off, this returns 0 even if suggestion rows still exist in the DB, so
+  // the banner (and the page it links to) stay hidden.
   let pendingSuggestionCount = 0;
   try {
-    pendingSuggestionCount = getPendingPricePaidSuggestions(session.user.id).length;
+    pendingSuggestionCount = getPendingPricePaidSuggestionsIfEnabled(session.user.id).length;
   } catch {
     // DB not ready yet — banner just won't show.
   }

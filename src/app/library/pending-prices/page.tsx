@@ -1,5 +1,8 @@
 import { redirect } from 'next/navigation';
-import { getPendingPricePaidSuggestions } from '@/lib/db/queries';
+import {
+  arePricePaidSuggestionsEnabled,
+  getPendingPricePaidSuggestionsIfEnabled,
+} from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { PendingPriceConfirmList } from '@/components/games/PendingPriceConfirmList';
 
@@ -11,12 +14,20 @@ export const dynamic = 'force-dynamic';
  * page and library cards. Lists every owned game with an unconfirmed
  * suggestion (see getPendingPricePaidSuggestions) and lets the user accept
  * all, accept a selection, or adjust individually before writing.
+ *
+ * Gated on the price_paid_suggestions_enabled setting: when the feature is off,
+ * this whole surface disappears — we redirect back to /library rather than show
+ * a bare page for a feature the user turned off. (The library banner that links
+ * here is gated the same way, so it won't point here either.) Existing
+ * suggestion rows are left in the DB untouched; they're just not surfaced.
  */
 export default async function PendingPricesPage() {
   const session = await getSession();
   if (!session) redirect('/login');
 
-  const pending = getPendingPricePaidSuggestions(session.user.id);
+  if (!arePricePaidSuggestionsEnabled()) redirect('/library');
+
+  const pending = getPendingPricePaidSuggestionsIfEnabled(session.user.id);
 
   return (
     <div className="space-y-6">

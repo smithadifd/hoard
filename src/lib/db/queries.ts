@@ -917,6 +917,32 @@ export function getPendingPricePaidSuggestions(userId: string): PendingPriceSugg
   }));
 }
 
+/**
+ * Whether the price-paid *suggestion* feature is enabled. Mirrors the exact read
+ * used by the sync capture (src/lib/sync/library.ts) and the settings UI
+ * (src/app/settings/alerts/page.tsx): the feature defaults ON, and only an
+ * explicit 'false' turns it off. When off, the sync stops capturing NEW
+ * suggestions — but rows captured while it was on persist in the DB, so every
+ * READ surface must gate on this too or it would keep exposing the feature the
+ * user asked to turn off.
+ */
+export function arePricePaidSuggestionsEnabled(): boolean {
+  return getSetting('price_paid_suggestions_enabled') !== 'false';
+}
+
+/**
+ * The pending price-paid backlog, gated on the feature toggle. Returns [] when
+ * suggestions are disabled so both the /library banner and the
+ * /library/pending-prices page hide the feature entirely — the "turn the whole
+ * feature off" promise of the setting. Existing suggestion rows are NOT deleted;
+ * they simply aren't surfaced while the feature is off, and reappear if it's
+ * re-enabled. Identical to getPendingPricePaidSuggestions when enabled.
+ */
+export function getPendingPricePaidSuggestionsIfEnabled(userId: string): PendingPriceSuggestion[] {
+  if (!arePricePaidSuggestionsEnabled()) return [];
+  return getPendingPricePaidSuggestions(userId);
+}
+
 export interface BulkConfirmEntry {
   gameId: number;
   /** User-adjusted amount to write instead of the stored suggestion ("adjust"). Omit to accept as-is. */

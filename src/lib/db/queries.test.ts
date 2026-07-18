@@ -32,6 +32,8 @@ import {
   updateUserGame,
   capturePricePaidSuggestions,
   getPendingPricePaidSuggestions,
+  getPendingPricePaidSuggestionsIfEnabled,
+  arePricePaidSuggestionsEnabled,
   bulkConfirmPricePaidSuggestions,
   upsertTags,
   getEnrichedGames,
@@ -1000,6 +1002,58 @@ describe('getPendingPricePaidSuggestions (bulk-confirm backlog listing)', () => 
     seedUserGame(testDb, gameId, { isOwned: false, pricePaidSuggested: 8.99 });
 
     expect(getPendingPricePaidSuggestions('default')).toHaveLength(0);
+  });
+});
+
+describe('price-paid suggestions feature toggle (price_paid_suggestions_enabled)', () => {
+  it('arePricePaidSuggestionsEnabled defaults to true when the setting is unset', () => {
+    expect(arePricePaidSuggestionsEnabled()).toBe(true);
+  });
+
+  it('arePricePaidSuggestionsEnabled is false only for an explicit "false"', () => {
+    setSetting('price_paid_suggestions_enabled', 'false');
+    expect(arePricePaidSuggestionsEnabled()).toBe(false);
+    setSetting('price_paid_suggestions_enabled', 'true');
+    expect(arePricePaidSuggestionsEnabled()).toBe(true);
+  });
+
+  it('getPendingPricePaidSuggestionsIfEnabled suppresses the backlog when the setting is OFF, even with pending rows', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Pending Game' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 8.99 });
+    // Sanity: the row IS pending (so this proves the gate, not an empty DB).
+    expect(getPendingPricePaidSuggestions('default')).toHaveLength(1);
+
+    setSetting('price_paid_suggestions_enabled', 'false');
+    // Banner + page both read this — OFF ⇒ nothing surfaced.
+    expect(getPendingPricePaidSuggestionsIfEnabled('default')).toEqual([]);
+  });
+
+  it('getPendingPricePaidSuggestionsIfEnabled returns the backlog when the setting is ON (and when unset)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Pending Game' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 8.99 });
+
+    // Unset (default ON).
+    expect(getPendingPricePaidSuggestionsIfEnabled('default')).toHaveLength(1);
+
+    // Explicitly ON.
+    setSetting('price_paid_suggestions_enabled', 'true');
+    const shown = getPendingPricePaidSuggestionsIfEnabled('default');
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatchObject({ gameId, title: 'Pending Game', pricePaidSuggested: 8.99 });
+  });
+
+  it('does not delete the underlying rows when disabled — they reappear if re-enabled', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Pending Game' });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaidSuggested: 8.99 });
+
+    setSetting('price_paid_suggestions_enabled', 'false');
+    expect(getPendingPricePaidSuggestionsIfEnabled('default')).toEqual([]);
+    // Row is untouched in the DB.
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaidSuggested).toBe(8.99);
+
+    setSetting('price_paid_suggestions_enabled', 'true');
+    expect(getPendingPricePaidSuggestionsIfEnabled('default')).toHaveLength(1);
   });
 });
 
