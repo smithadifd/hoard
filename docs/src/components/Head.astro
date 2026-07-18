@@ -1,0 +1,17 @@
+---
+// Starlight component override: renders the default <head> content, then adds a
+// client-side script that turns ```mermaid fenced code blocks into rendered SVG
+// diagrams. See docs/src/scripts/mermaid-render.ts for the render logic and
+// docs/astro.config.mjs `components.Head` for the wiring.
+//
+// Starlight has no native Mermaid renderer (see GitHub issue #123). This is the
+// "lightest" client-side option from that issue: install the `mermaid` package
+// and run `mermaid.run()` over the rendered code blocks after page load, rather
+// than adding a build-time headless-browser renderer to the docs CI.
+import Default from '@astrojs/starlight/components/Head.astro';
+---
+
+<Default><slot /></Default>
+<script>
+  import '../scripts/mermaid-render';
+</script>
