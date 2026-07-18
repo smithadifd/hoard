@@ -45,6 +45,7 @@ import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playti
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
 export { STEAM_PLAYTIME_GIVE_UP_MISSES };
 import { calculateValueReceived, type ValueReceivedTier } from '@/lib/scoring/valueReceived';
+import type { DealOutcomeInput } from '@/lib/scoring/dealOutcomes';
 import { buildDphTargetSql } from '@/lib/scoring/reviewTierLadder';
 import type { ScoringWeights, ScoringThresholds } from '@/lib/scoring/types';
 import { DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS } from '@/lib/scoring/types';
@@ -5286,6 +5287,127 @@ export function getValueReceivedOverview(userId: string): ValueReceivedOverview 
       moneyLensGames,
     },
   };
+}
+
+/**
+ * Per-game inputs for the Deal Outcomes report (`getDealOutcomeInputs`'s consumer,
+ * see {@link DealOutcomeInput}) — joins purchase-time context (store/discount/deal
+ * score, from the price_snapshot nearest to, on or before, the recorded purchase
+ * date) and genre tags onto the owned+priced games `getValueReceivedOverview`
+ * already scores. Only owned games with a recorded price qualify — pricePaid is
+ * the one fact every "was this deal worth it" comparison needs, and we never
+ * fabricate one (mirrors the honest-boundary convention in
+ * capturePricePaidSuggestions).
+ *
+ * The purchase-time snapshot join is a best-effort approximation: it picks the
+ * closest snapshot on or before `pricePaidAt` (ties broken by cheapest store,
+ * same tie-break `capturePricePaidSuggestions` uses), so store/discount/deal
+ * score are null whenever `pricePaidAt` was never stamped (pre-dates that
+ * column) or the game has no price history from before the purchase — the
+ * caller (the pure aggregation layer) buckets those as "Unknown" rather than
+ * guessing.
+ */
+export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
+  const db = getDb();
+
+  const rows = db.all(sql`
+    SELECT ug.game_id as gameId,
+           g.title as title,
+           ug.price_paid as pricePaid,
+           ug.price_paid_at as pricePaidAt,
+           ug.playtime_minutes as playtimeMinutes,
+           ug.playtime_source as playtimeSource,
+           g.hltb_main as hltbMain,
+           g.steam_playtime_median as steamPlaytimeMedian,
+           g.review_score as reviewScore,
+           ug.enjoyment_rating as enjoymentRating,
+           ug.completion_status as completionStatus
+    FROM user_games ug
+    JOIN games g ON g.id = ug.game_id
+    WHERE ug.user_id = ${userId} AND ug.is_owned = 1
+      AND ug.price_paid IS NOT NULL AND ug.price_paid > 0
+  `) as Array<{
+    gameId: number;
+    title: string;
+    pricePaid: number;
+    pricePaidAt: string | null;
+    playtimeMinutes: number | null;
+    playtimeSource: string | null;
+    hltbMain: number | null;
+    steamPlaytimeMedian: number | null;
+    reviewScore: number | null;
+    enjoymentRating: number | null;
+    completionStatus: string;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  const gameIds = rows.map((r) => r.gameId);
+
+  // Genre tags — a game may carry several; the aggregation layer attributes the
+  // outcome to each (same multi-attribution convention as getGenreDistribution).
+  const genreRows = db
+    .select({ gameId: gameTags.gameId, name: tags.name })
+    .from(gameTags)
+    .innerJoin(tags, eq(tags.id, gameTags.tagId))
+    .where(and(eq(tags.type, 'genre'), inArray(gameTags.gameId, gameIds)))
+    .all();
+  const genresByGame = new Map<number, string[]>();
+  for (const r of genreRows) {
+    const list = genresByGame.get(r.gameId);
+    if (list) list.push(r.name);
+    else genresByGame.set(r.gameId, [r.name]);
+  }
+
+  // Purchase-time snapshot — the closest one on or before pricePaidAt, cheapest
+  // store first on a same-date tie. One query per priced game (bounded by the
+  // owned+priced library, not the full catalog); no snapshot ⇒ left null.
+  const snapshotByGame = new Map<
+    number,
+    { store: string; discountPercent: number | null; dealScore: number | null }
+  >();
+  for (const r of rows) {
+    if (!r.pricePaidAt) continue;
+    const purchaseDate = r.pricePaidAt.slice(0, 10); // normalize to YYYY-MM-DD
+    const snap = db
+      .select({
+        store: priceSnapshots.store,
+        discountPercent: priceSnapshots.discountPercent,
+        dealScore: priceSnapshots.dealScore,
+      })
+      .from(priceSnapshots)
+      .where(and(eq(priceSnapshots.gameId, r.gameId), sql`${priceSnapshots.snapshotDate} <= ${purchaseDate}`))
+      .orderBy(desc(priceSnapshots.snapshotDate), asc(priceSnapshots.priceCurrent))
+      .limit(1)
+      .get();
+    if (snap) {
+      snapshotByGame.set(r.gameId, {
+        store: snap.store,
+        discountPercent: snap.discountPercent ?? null,
+        dealScore: snap.dealScore ?? null,
+      });
+    }
+  }
+
+  return rows.map((r) => {
+    const snap = snapshotByGame.get(r.gameId) ?? null;
+    return {
+      gameId: r.gameId,
+      title: r.title,
+      pricePaid: r.pricePaid,
+      playtimeMinutes: r.playtimeMinutes ?? 0,
+      playtimeSource: r.playtimeSource,
+      hltbMain: r.hltbMain,
+      steamPlaytimeMedian: r.steamPlaytimeMedian,
+      reviewPercent: r.reviewScore,
+      enjoymentRating: r.enjoymentRating,
+      completionStatus: r.completionStatus,
+      genres: genresByGame.get(r.gameId) ?? [],
+      store: snap?.store ?? null,
+      discountPercent: snap?.discountPercent ?? null,
+      dealScore: snap?.dealScore ?? null,
+    };
+  });
 }
 
 export type ActivityType = 'wishlisted' | 'played' | 'new_atl';

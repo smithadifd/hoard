@@ -189,7 +189,12 @@ function applyRateLimit(request: NextRequest): NextResponse | null {
   // unlimited so browsing the read UI is never throttled.
   if (request.method === 'GET' && !isRateLimitedGet(pathname)) return null;
 
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  // `x-forwarded-for` is a hop-by-hop trail; Caddy (our reverse proxy) APPENDS
+  // to it, so the real client is the LAST entry, not the first. The leftmost
+  // entry is whatever the client sent and is trivially spoofable — keying on
+  // it would let a client pick its own rate-limit identity. Key on the last
+  // hop instead.
+  const ip = request.headers.get('x-forwarded-for')?.split(',').pop()?.trim()
     || request.headers.get('x-real-ip')
     || 'unknown';
 

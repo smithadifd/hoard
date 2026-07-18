@@ -3,6 +3,7 @@ import { getEnrichedGames, getAllGenres, countGames } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
 import { InfiniteGameGrid } from '@/components/games/InfiniteGameGrid';
 import { BacklogFilters } from '@/components/backlog/BacklogFilters';
+import { UpNextPanel } from '@/components/backlog/UpNextPanel';
 import { BACKLOG_PRESETS } from '@/lib/backlog/presets';
 import { parseGameFiltersFromParams } from '@/lib/utils/filters';
 import type { GameFilters } from '@/types';
@@ -75,6 +76,8 @@ export default async function BacklogPage({ searchParams }: BacklogPageProps) {
             : 'Find your next game to play'}
         </p>
       </div>
+
+      <UpNextPanel />
 
       <BacklogFilters
         currentFilters={filters}
