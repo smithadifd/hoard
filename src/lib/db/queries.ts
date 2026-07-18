@@ -988,17 +988,37 @@ export function bulkConfirmPricePaidSuggestions(
       continue;
     }
 
-    db.update(userGames)
+    // Guard the write itself with the same "pending" predicate that gated the
+    // read above, so the UPDATE is self-contained: even if the two statements
+    // above were ever separated by a yield point (a future async DB driver, a
+    // multi-process deployment, etc.), the write can never apply to a row that
+    // stopped being pending in between. `changes` (not just the pre-read) is
+    // what decides applied vs skipped, so a 0-row update — the guard tripping —
+    // degrades to a skip instead of silently reporting success.
+    const writeResult = db
+      .update(userGames)
       .set({
         pricePaid: finalValue,
         pricePaidAt: now,
         pricePaidSuggested: null,
         updatedAt: now,
       })
-      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+      .where(
+        and(
+          eq(userGames.gameId, gameId),
+          eq(userGames.userId, userId),
+          sql`${userGames.pricePaid} IS NULL`,
+          sql`${userGames.pricePaidSuggested} IS NOT NULL`,
+          sql`${userGames.pricePaidSuggestionDismissedAt} IS NULL`,
+        ),
+      )
       .run();
 
-    applied.push(gameId);
+    if (writeResult.changes > 0) {
+      applied.push(gameId);
+    } else {
+      skipped.push(gameId);
+    }
   }
 
   return { applied, skipped };
