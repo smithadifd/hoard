@@ -56,6 +56,13 @@ export default defineConfig({
         baseUrl: 'https://github.com/smithadifd/hoard/edit/main/docs/',
       },
       lastUpdated: true,
+      // Renders ```mermaid code blocks client-side (see src/components/Head.astro
+      // + src/scripts/mermaid-render.ts). Starlight has no native Mermaid
+      // renderer (issue #123); this overrides the default Head component to
+      // add a script that runs `mermaid.run()` after the page loads.
+      components: {
+        Head: './src/components/Head.astro',
+      },
     }),
   ],
 });
