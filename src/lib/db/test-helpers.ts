@@ -7,6 +7,7 @@
 
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { and, eq } from 'drizzle-orm';
 import * as schema from './schema';
 
 /**
@@ -326,6 +327,7 @@ export function seedUserGame(
       notes: overrides.notes,
       lastPlayed: overrides.lastPlayed,
       pricePaid: overrides.pricePaid,
+      pricePaidAt: overrides.pricePaidAt,
       pricePaidSuggested: overrides.pricePaidSuggested,
       pricePaidSuggestionDismissedAt: overrides.pricePaidSuggestionDismissedAt,
       wishlistRemovedAt: overrides.wishlistRemovedAt,
@@ -371,6 +373,23 @@ export function seedPriceSnapshot(
     .returning({ id: schema.priceSnapshots.id })
     .get();
   return result.id;
+}
+
+/**
+ * Tag a game with a genre (creating the `tags` row if it doesn't already exist
+ * in this test DB, so the same genre name can be reused across games/tests
+ * without tripping the (name, type) unique index).
+ */
+export function seedGenre(db: TestDb, gameId: number, genreName: string): void {
+  const existing = db
+    .select({ id: schema.tags.id })
+    .from(schema.tags)
+    .where(and(eq(schema.tags.name, genreName), eq(schema.tags.type, 'genre')))
+    .get();
+  const tagId =
+    existing?.id ??
+    db.insert(schema.tags).values({ name: genreName, type: 'genre' }).returning({ id: schema.tags.id }).get().id;
+  db.insert(schema.gameTags).values({ gameId, tagId }).run();
 }
 
 /**

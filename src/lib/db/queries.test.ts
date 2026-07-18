@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, afterAll } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from './schema';
-import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser } from './test-helpers';
+import { createTestDb, seedGame, seedUserGame, seedPriceSnapshot, seedPriceAlert, seedSetting, seedUser, seedGenre } from './test-helpers';
 import type { TestDb } from './test-helpers';
 import { SECRET_SETTING_KEYS } from '@/lib/validations';
 import { __resetSecretsCryptoStateForTests } from '@/lib/settings/secrets';
@@ -36,6 +36,7 @@ import {
   getEnrichedGameById,
   getDashboardStats,
   getValueReceivedOverview,
+  getDealOutcomeInputs,
   createSyncLog,
   completeSyncLog,
   getRecentSyncLogs,
@@ -1268,6 +1269,109 @@ describe('getValueReceivedOverview', () => {
     expect(overview.distribution.every((d) => d.count === 0)).toBe(true);
     expect(overview.stats.blendedDollarsPerHour).toBeNull();
     expect(overview.stats.totalSpent).toBe(0);
+  });
+});
+
+describe('getDealOutcomeInputs', () => {
+  it('only includes owned games with a recorded price', () => {
+    const priced = seedGame(testDb, { steamAppId: 900, title: 'Priced', hltbMain: 10 });
+    seedUserGame(testDb, priced, { isOwned: true, pricePaid: 20, pricePaidAt: '2024-01-15' });
+    const unpriced = seedGame(testDb, { steamAppId: 901, title: 'Unpriced', hltbMain: 10 });
+    seedUserGame(testDb, unpriced, { isOwned: true });
+    const wishlisted = seedGame(testDb, { steamAppId: 902, title: 'Wishlisted', hltbMain: 10 });
+    seedUserGame(testDb, wishlisted, { isOwned: false, isWishlisted: true, pricePaid: 20, pricePaidAt: '2024-01-15' });
+
+    const rows = getDealOutcomeInputs('default');
+    expect(rows.map((r) => r.title)).toEqual(['Priced']);
+  });
+
+  it('attaches the price_snapshot nearest to (on or before) pricePaidAt, not a later one', () => {
+    const gameId = seedGame(testDb, { steamAppId: 910, title: 'Snapshot Game', hltbMain: 10 });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 15, pricePaidAt: '2024-01-15' });
+    // Before purchase — the one that should be picked (closest prior date).
+    seedPriceSnapshot(testDb, gameId, { store: 'steam', snapshotDate: '2024-01-10', discountPercent: 40, dealScore: 60 });
+    // An even earlier one — should be ignored in favor of the closer 01-10 snapshot.
+    seedPriceSnapshot(testDb, gameId, { store: 'gog', snapshotDate: '2024-01-01', discountPercent: 10, dealScore: 20 });
+    // After purchase — must NOT be picked (it wasn't observed yet at purchase time).
+    seedPriceSnapshot(testDb, gameId, { store: 'steam', snapshotDate: '2024-02-01', discountPercent: 90, dealScore: 95 });
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.store).toBe('steam');
+    expect(row.discountPercent).toBe(40);
+    expect(row.dealScore).toBe(60);
+  });
+
+  it('picks the cheapest store on a same-date tie', () => {
+    const gameId = seedGame(testDb, { steamAppId: 911, title: 'Tie Game', hltbMain: 10 });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 15, pricePaidAt: '2024-01-15' });
+    seedPriceSnapshot(testDb, gameId, { store: 'steam', snapshotDate: '2024-01-15', priceCurrent: 19.99, discountPercent: 50, dealScore: 70 });
+    seedPriceSnapshot(testDb, gameId, { store: 'humble', snapshotDate: '2024-01-15', priceCurrent: 14.99, discountPercent: 60, dealScore: 80 });
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.store).toBe('humble');
+    expect(row.discountPercent).toBe(60);
+  });
+
+  it('leaves store/discount/dealScore null when pricePaidAt was never stamped (legacy row)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 912, title: 'No Timestamp', hltbMain: 10 });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 15 }); // no pricePaidAt
+    seedPriceSnapshot(testDb, gameId, { store: 'steam', snapshotDate: '2024-01-10', discountPercent: 40, dealScore: 60 });
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.pricePaid).toBe(15);
+    expect(row.store).toBeNull();
+    expect(row.discountPercent).toBeNull();
+    expect(row.dealScore).toBeNull();
+  });
+
+  it('leaves store/discount/dealScore null when no snapshot exists on or before the purchase date', () => {
+    const gameId = seedGame(testDb, { steamAppId: 913, title: 'Too New', hltbMain: 10 });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 15, pricePaidAt: '2024-01-01' });
+    seedPriceSnapshot(testDb, gameId, { store: 'steam', snapshotDate: '2024-02-01' }); // after purchase only
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.store).toBeNull();
+  });
+
+  it('collects all genre tags for a game (multi-genre)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 920, title: 'Multi Genre', hltbMain: 10 });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 20, pricePaidAt: '2024-01-15' });
+    seedGenre(testDb, gameId, 'RPG');
+    seedGenre(testDb, gameId, 'Indie');
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.genres.sort()).toEqual(['Indie', 'RPG']);
+  });
+
+  it('returns an empty genres array for an untagged game', () => {
+    const gameId = seedGame(testDb, { steamAppId: 921, title: 'Untagged', hltbMain: 10 });
+    seedUserGame(testDb, gameId, { isOwned: true, pricePaid: 20, pricePaidAt: '2024-01-15' });
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.genres).toEqual([]);
+  });
+
+  it('returns an empty array when there are no owned+priced games', () => {
+    expect(getDealOutcomeInputs('default')).toEqual([]);
+  });
+
+  it('carries through playtime, enjoyment, and completion status for the report to grade', () => {
+    const gameId = seedGame(testDb, { steamAppId: 930, title: 'Graded Game', hltbMain: 8, reviewScore: 88 });
+    seedUserGame(testDb, gameId, {
+      isOwned: true,
+      pricePaid: 24.99,
+      pricePaidAt: '2024-01-15',
+      playtimeMinutes: 600,
+      enjoymentRating: 4,
+      completionStatus: 'completed',
+    });
+
+    const [row] = getDealOutcomeInputs('default');
+    expect(row.playtimeMinutes).toBe(600);
+    expect(row.enjoymentRating).toBe(4);
+    expect(row.completionStatus).toBe('completed');
+    expect(row.reviewPercent).toBe(88);
+    expect(row.hltbMain).toBe(8);
   });
 });
 

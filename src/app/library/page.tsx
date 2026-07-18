@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Wallet, DollarSign } from 'lucide-react';
+import { Wallet, DollarSign, Scale } from 'lucide-react';
 import { getEnrichedGames, getValueReceivedOverview } from '@/lib/db/queries';
 import type { ValueReceivedOverview } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
@@ -61,6 +62,16 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
             <ValueSummaryCard stats={valueOverview.stats} />
           </ValueCard>
         </div>
+      )}
+
+      {total > 0 && (
+        <Link
+          href="/library/deal-outcomes"
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+        >
+          <Scale className="h-4 w-4" />
+          See how your deals played out (expected vs realized value) →
+        </Link>
       )}
 
       <GameListFilters currentFilters={filters} showValueFilters />
