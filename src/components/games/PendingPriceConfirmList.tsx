@@ -4,14 +4,10 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Check, Loader2, Pencil, Sparkles, X } from 'lucide-react';
 import type { PendingPriceSuggestion } from '@/lib/db/queries';
+import { runBulkConfirmBatches, type BulkConfirmApiEntry } from './bulkConfirmBatches';
 
 interface PendingPriceConfirmListProps {
   initialPending: PendingPriceSuggestion[];
-}
-
-interface BulkConfirmApiEntry {
-  gameId: number;
-  value?: number;
 }
 
 /**
@@ -57,31 +53,35 @@ export function PendingPriceConfirmList({ initialPending }: PendingPriceConfirmL
     });
   };
 
+  // One request. Throws on a non-OK response so runBulkConfirmBatches (and the
+  // caller's catch) treats it as a failure instead of silently reporting success.
+  const sendBatch = async (batch: BulkConfirmApiEntry[]) => {
+    const resp = await fetch('/api/games/price-paid/bulk-confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries: batch }),
+    });
+    if (!resp.ok) throw new Error('bulk-confirm request failed');
+    const { data } = await resp.json();
+    return { applied: data?.applied ?? [], skipped: data?.skipped ?? [] };
+  };
+
   const submitBulkConfirm = async (entries: BulkConfirmApiEntry[]) => {
     if (entries.length === 0) return;
     setBusy(true);
     setMessage(null);
     try {
-      const resp = await fetch('/api/games/price-paid/bulk-confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries }),
-      });
-      if (resp.ok) {
-        const { data } = await resp.json();
-        const applied: number[] = data?.applied ?? [];
-        const skipped: number[] = data?.skipped ?? [];
-        removeResolved([...applied, ...skipped]);
-        setEditingId(null);
-        if (applied.length > 0 || skipped.length > 0) {
-          setMessage(
-            skipped.length > 0
-              ? `Confirmed ${applied.length}, ${skipped.length} already resolved.`
-              : `Confirmed ${applied.length}.`,
-          );
-        }
-      } else {
-        setMessage('Something went wrong — please try again.');
+      // Chunk into batches of <= the server cap so Accept-All over a >cap backlog
+      // isn't rejected wholesale — every batch runs and the counts are aggregated.
+      const { applied, skipped } = await runBulkConfirmBatches(entries, sendBatch);
+      removeResolved([...applied, ...skipped]);
+      setEditingId(null);
+      if (applied.length > 0 || skipped.length > 0) {
+        setMessage(
+          skipped.length > 0
+            ? `Confirmed ${applied.length}, ${skipped.length} already resolved.`
+            : `Confirmed ${applied.length}.`,
+        );
       }
     } catch {
       setMessage('Something went wrong — please try again.');

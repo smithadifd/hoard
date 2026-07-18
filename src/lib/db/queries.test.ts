@@ -993,6 +993,14 @@ describe('getPendingPricePaidSuggestions (bulk-confirm backlog listing)', () => 
 
     expect(getPendingPricePaidSuggestions('default')).toHaveLength(0);
   });
+
+  it('excludes a game that is no longer owned (refund / Family Sharing change)', () => {
+    // Suggestion was captured while owned; ownership was later revoked by a sync.
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Refunded Game' });
+    seedUserGame(testDb, gameId, { isOwned: false, pricePaidSuggested: 8.99 });
+
+    expect(getPendingPricePaidSuggestions('default')).toHaveLength(0);
+  });
 });
 
 describe('bulkConfirmPricePaidSuggestions (bulk accept/adjust)', () => {
@@ -1086,6 +1094,20 @@ describe('bulkConfirmPricePaidSuggestions (bulk accept/adjust)', () => {
     const result = bulkConfirmPricePaidSuggestions([{ gameId: 999999 }], 'default');
     expect(result.applied).toEqual([]);
     expect(result.skipped).toEqual([999999]);
+  });
+
+  it('skips a game that is no longer owned — never records a price for a non-library game', () => {
+    const gameId = seedGame(testDb, { steamAppId: 1, title: 'Refunded Game' });
+    // Pending suggestion, but ownership was revoked (refund / Family Sharing change).
+    seedUserGame(testDb, gameId, { isOwned: false, pricePaidSuggested: 12.5 });
+
+    const result = bulkConfirmPricePaidSuggestions([{ gameId }], 'default');
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([gameId]);
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.pricePaid).toBeNull(); // changes:0 — nothing written
+    expect(row?.pricePaidSuggested).toBe(12.5);
   });
 
   it('is scoped to the requesting user — cannot confirm another user\'s pending suggestion', () => {

@@ -877,12 +877,14 @@ export interface PendingPriceSuggestion {
 }
 
 /**
- * List every owned game with an unconfirmed, un-dismissed price-paid suggestion.
- * Mirrors the exact predicate `getEnrichedGame`'s `hasPricePaidSuggestion` flag
- * uses (pricePaid IS NULL AND pricePaidSuggested IS NOT NULL AND not dismissed),
- * so this backlog list always matches what the per-game "Did you pay ~$X?" prompt
- * would show — no game appears here that wouldn't also show the individual
- * prompt, and vice versa. Powers the bulk-confirm UI.
+ * List every CURRENTLY-OWNED game with an unconfirmed, un-dismissed price-paid
+ * suggestion. Mirrors the pending predicate `getEnrichedGame`'s
+ * `hasPricePaidSuggestion` flag uses (pricePaid IS NULL AND pricePaidSuggested IS
+ * NOT NULL AND not dismissed), plus an `isOwned` guard so a suggestion left over
+ * from a game whose ownership was later revoked (refund, Steam Family Sharing
+ * change) can't linger here presented as owned. The page renders every row as an
+ * owned-library game, so the list must actually be scoped to owned games. Powers
+ * the bulk-confirm UI.
  */
 export function getPendingPricePaidSuggestions(userId: string): PendingPriceSuggestion[] {
   const db = getDb();
@@ -898,6 +900,7 @@ export function getPendingPricePaidSuggestions(userId: string): PendingPriceSugg
     .where(
       and(
         eq(userGames.userId, userId),
+        eq(userGames.isOwned, true),
         sql`${userGames.pricePaid} IS NULL`,
         sql`${userGames.pricePaidSuggested} IS NOT NULL`,
         sql`${userGames.pricePaidSuggestionDismissedAt} IS NULL`,
@@ -944,6 +947,9 @@ export interface BulkConfirmResult {
  *     from being clobbered by a bulk accept-all, and what makes re-running the
  *     same bulk request on an already-applied game a no-op instead of a
  *     double-apply.
+ *   - a game that is no longer owned (refund / Family Sharing change since the
+ *     suggestion was captured) is skipped — we won't record a purchase price for
+ *     a game that isn't in the library, matching the list query's `isOwned` guard.
  *   - a dismissed suggestion is skipped too, so a stale client-side list can't
  *     resurrect a "not now".
  *   - an unknown gameId (no user_games row) is skipped.
@@ -963,6 +969,7 @@ export function bulkConfirmPricePaidSuggestions(
   for (const { gameId, value } of entries) {
     const ug = db
       .select({
+        isOwned: userGames.isOwned,
         pricePaid: userGames.pricePaid,
         pricePaidSuggested: userGames.pricePaidSuggested,
         pricePaidSuggestionDismissedAt: userGames.pricePaidSuggestionDismissedAt,
@@ -973,6 +980,7 @@ export function bulkConfirmPricePaidSuggestions(
 
     const isPending =
       !!ug &&
+      ug.isOwned === true &&
       ug.pricePaid == null &&
       ug.pricePaidSuggested != null &&
       ug.pricePaidSuggestionDismissedAt == null;
@@ -1007,6 +1015,7 @@ export function bulkConfirmPricePaidSuggestions(
         and(
           eq(userGames.gameId, gameId),
           eq(userGames.userId, userId),
+          eq(userGames.isOwned, true),
           sql`${userGames.pricePaid} IS NULL`,
           sql`${userGames.pricePaidSuggested} IS NOT NULL`,
           sql`${userGames.pricePaidSuggestionDismissedAt} IS NULL`,
