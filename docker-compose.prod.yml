@@ -21,6 +21,12 @@ services:
       - ITAD_API_KEY=${ITAD_API_KEY:-}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
       - DISCORD_OPS_WEBHOOK_URL=${DISCORD_OPS_WEBHOOK_URL:-}
+      # Field-level encryption key for the secret values in the `settings` table
+      # (Steam/ITAD keys + both Discord webhooks). This `environment:` block is an
+      # explicit allowlist, so the key must be listed here to reach the container;
+      # setting it only in .env.production would leave it inert. Unset degrades to
+      # plaintext with a logged warning (non-bricking). See src/lib/settings/secrets.ts.
+      - HOARD_SECRETS_KEY=${HOARD_SECRETS_KEY:-}
       - NEXT_PUBLIC_APP_URL=${APP_URL:-https://hoard.home}
       - CRON_PRICE_CHECK=${CRON_PRICE_CHECK:-0 */12 * * *}
       - CRON_LIBRARY_SYNC=${CRON_LIBRARY_SYNC:-0 3 * * *}
