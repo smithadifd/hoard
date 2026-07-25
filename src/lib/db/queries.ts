@@ -4046,6 +4046,86 @@ export function getDealsCount(): number {
 // User Game Updates (for PATCH endpoint)
 // ============================================
 
+/** The subset of `updateUserGame`'s `updates` param that alert auto-management reads. */
+type UserGameAlertUpdates = Partial<{
+  isWatchlisted: boolean;
+  priceThreshold: number;
+  isWishlisted: boolean;
+}>;
+
+/**
+ * Select the existing price alert for (gameId, userId) and, if present, set its
+ * `isActive` flag. No-ops if no alert row exists. Returns whether an alert was
+ * found (so callers that need to create-if-absent can branch on it) — this
+ * collapses the "select existing alert, then activate/deactivate" pattern that
+ * was previously repeated three times inline in `updateUserGame`.
+ */
+function setPriceAlertActive(gameId: number, userId: string, active: boolean): boolean {
+  const db = getDb();
+  const existing = db
+    .select({ id: priceAlerts.id })
+    .from(priceAlerts)
+    .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
+    .get();
+  if (existing) {
+    db.update(priceAlerts)
+      .set({ isActive: active })
+      .where(eq(priceAlerts.id, existing.id))
+      .run();
+  }
+  return !!existing;
+}
+
+/**
+ * Cascade + auto-manage the price alert / watchlist state in response to a
+ * `updateUserGame` column write. Runs after the `userGames` update has already
+ * landed (`now` is the same timestamp stamped on that write). Two independent
+ * branches, exactly as before:
+ *  1. Unwishlisting cascades to clearing watchlist/Hoard-only flags and
+ *     deactivating any existing alert.
+ *  2. Watchlist/threshold changes auto-manage the alert (deactivate, retarget,
+ *     or ensure-exists).
+ */
+function syncAlertForUserGameChange(
+  gameId: number,
+  userId: string,
+  updates: UserGameAlertUpdates,
+  now: string
+): void {
+  const db = getDb();
+
+  // Deactivate watchlist and price alert when unwishlisting; clear the
+  // Hoard-only flag (it's no longer a wishlist entry of any kind).
+  if (updates.isWishlisted === false) {
+    db.update(userGames)
+      .set({ isWatchlisted: false, wishlistedLocally: false, updatedAt: now })
+      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+      .run();
+    setPriceAlertActive(gameId, userId, false);
+  }
+
+  // Auto-manage price alert when watchlist/threshold changes
+  if (updates.isWatchlisted === false) {
+    // Deactivate alert when unwatchlisted
+    setPriceAlertActive(gameId, userId, false);
+  } else if (updates.priceThreshold !== undefined) {
+    // Upsert alert with new threshold
+    upsertPriceAlert(gameId, { targetPrice: updates.priceThreshold }, userId);
+  } else if (updates.isWatchlisted === true) {
+    // Ensure alert exists when watchlisting (re-activate if deactivated, else create)
+    const hadAlert = setPriceAlertActive(gameId, userId, true);
+    if (!hadAlert) {
+      // Read current threshold from userGames to seed the alert
+      const ug = db
+        .select({ priceThreshold: userGames.priceThreshold })
+        .from(userGames)
+        .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
+        .get();
+      upsertPriceAlert(gameId, { targetPrice: ug?.priceThreshold ?? undefined }, userId);
+    }
+  }
+}
+
 export function updateUserGame(
   gameId: number,
   updates: Partial<{
@@ -4114,65 +4194,7 @@ export function updateUserGame(
 
   if (result.changes === 0) return false;
 
-  // Deactivate watchlist and price alert when unwishlisting; clear the
-  // Hoard-only flag (it's no longer a wishlist entry of any kind).
-  if (updates.isWishlisted === false) {
-    db.update(userGames)
-      .set({ isWatchlisted: false, wishlistedLocally: false, updatedAt: now })
-      .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
-      .run();
-    const existingAlert = db
-      .select({ id: priceAlerts.id })
-      .from(priceAlerts)
-      .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
-      .get();
-    if (existingAlert) {
-      db.update(priceAlerts)
-        .set({ isActive: false })
-        .where(eq(priceAlerts.id, existingAlert.id))
-        .run();
-    }
-  }
-
-  // Auto-manage price alert when watchlist/threshold changes
-  if (updates.isWatchlisted === false) {
-    // Deactivate alert when unwatchlisted
-    const existing = db
-      .select({ id: priceAlerts.id })
-      .from(priceAlerts)
-      .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
-      .get();
-    if (existing) {
-      db.update(priceAlerts)
-        .set({ isActive: false })
-        .where(eq(priceAlerts.id, existing.id))
-        .run();
-    }
-  } else if (updates.priceThreshold !== undefined) {
-    // Upsert alert with new threshold
-    upsertPriceAlert(gameId, { targetPrice: updates.priceThreshold }, userId);
-  } else if (updates.isWatchlisted === true) {
-    // Ensure alert exists when watchlisting (re-activate if deactivated)
-    const existing = db
-      .select({ id: priceAlerts.id })
-      .from(priceAlerts)
-      .where(and(eq(priceAlerts.gameId, gameId), eq(priceAlerts.userId, userId)))
-      .get();
-    if (existing) {
-      db.update(priceAlerts)
-        .set({ isActive: true })
-        .where(eq(priceAlerts.id, existing.id))
-        .run();
-    } else {
-      // Read current threshold from userGames to seed the alert
-      const ug = db
-        .select({ priceThreshold: userGames.priceThreshold })
-        .from(userGames)
-        .where(and(eq(userGames.gameId, gameId), eq(userGames.userId, userId)))
-        .get();
-      upsertPriceAlert(gameId, { targetPrice: ug?.priceThreshold ?? undefined }, userId);
-    }
-  }
+  syncAlertForUserGameChange(gameId, userId, { isWatchlisted, priceThreshold, isWishlisted }, now);
 
   return true;
 }
