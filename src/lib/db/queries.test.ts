@@ -568,6 +568,86 @@ describe('updateUserGame', () => {
     expect(row?.pricePaid).toBeNull();
     expect(row?.pricePaidSuggested).toBe(14.99); // retained, just dismissed
   });
+
+  // --- Extraction-fidelity: setPriceAlertActive / syncAlertForUserGameChange ---
+  // These lock in branch/edge behavior of the plan-29 Phase 3 split of updateUserGame
+  // (setPriceAlertActive + syncAlertForUserGameChange), exercised through the public
+  // updateUserGame entry point since the helpers are intentionally module-private.
+
+  it('cascade: deactivates an existing active alert when unwishlisting', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWishlisted: true, isWatchlisted: true, wishlistedLocally: true });
+    const alertId = seedPriceAlert(testDb, gameId, { isActive: true });
+
+    updateUserGame(gameId, { isWishlisted: false }, 'default');
+
+    const alert = getPriceAlertForGame(gameId, 'default');
+    expect(alert?.id).toBe(alertId);
+    expect(alert?.isActive).toBe(false);
+  });
+
+  it('cascade: unwishlisting with no existing alert is a no-op (does not create one)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWishlisted: true });
+
+    expect(() => updateUserGame(gameId, { isWishlisted: false }, 'default')).not.toThrow();
+    expect(getPriceAlertForGame(gameId, 'default')).toBeNull();
+  });
+
+  it('unwatchlisting with no existing alert is a no-op (does not create one)', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWatchlisted: true });
+
+    expect(() => updateUserGame(gameId, { isWatchlisted: false }, 'default')).not.toThrow();
+    expect(getPriceAlertForGame(gameId, 'default')).toBeNull();
+  });
+
+  it('re-watchlisting reactivates the existing (inactive) alert rather than creating a new one', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWatchlisted: false });
+    const alertId = seedPriceAlert(testDb, gameId, { isActive: false, targetPrice: 12.5 });
+
+    updateUserGame(gameId, { isWatchlisted: true }, 'default');
+
+    const alert = getPriceAlertForGame(gameId, 'default');
+    expect(alert?.id).toBe(alertId); // same row reactivated, not a new one
+    expect(alert?.isActive).toBe(true);
+    expect(alert?.targetPrice).toBe(12.5); // untouched by the reactivate path
+  });
+
+  it('watchlisting with no existing alert creates one seeded from the current priceThreshold', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWatchlisted: false, priceThreshold: 24.99 });
+
+    updateUserGame(gameId, { isWatchlisted: true }, 'default');
+
+    const alert = getPriceAlertForGame(gameId, 'default');
+    expect(alert).not.toBeNull();
+    expect(alert?.isActive).toBe(true);
+    expect(alert?.targetPrice).toBe(24.99);
+  });
+
+  it('threshold boundary: a priceThreshold of 0 (falsy but defined) still upserts the alert', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWatchlisted: true });
+
+    updateUserGame(gameId, { priceThreshold: 0 }, 'default');
+
+    const alert = getPriceAlertForGame(gameId, 'default');
+    expect(alert).not.toBeNull();
+    expect(alert?.targetPrice).toBe(0);
+  });
+
+  it('unwishlisting cascades isWatchlisted/wishlistedLocally to false even without an alert row', () => {
+    const gameId = seedGame(testDb, { steamAppId: 440, title: 'TF2' });
+    seedUserGame(testDb, gameId, { isWishlisted: true, isWatchlisted: true, wishlistedLocally: true });
+
+    updateUserGame(gameId, { isWishlisted: false }, 'default');
+
+    const row = testDb.select().from(schema.userGames).where(eq(schema.userGames.gameId, gameId)).get();
+    expect(row?.isWatchlisted).toBe(false);
+    expect(row?.wishlistedLocally).toBe(false);
+  });
 });
 
 // ============================================

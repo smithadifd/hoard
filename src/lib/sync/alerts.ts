@@ -99,7 +99,7 @@ export function shouldSendDigest(
   return currentHour >= digestHour && lastDigestDate !== currentDateKey;
 }
 
-interface DigestGame {
+export interface DigestGame {
   gameId: number;
   title: string;
   currentPrice: number;
@@ -109,7 +109,7 @@ interface DigestGame {
   storeUrl: string;
 }
 
-interface PendingNotification {
+export interface PendingNotification {
   type: 'individual' | 'digest';
   // Internal games.id, so the in-app notification can deep-link to the detail page.
   gameId: number;
@@ -204,6 +204,192 @@ function buildDigestInApp(digestGames: DigestGame[], kind: 'new' | 'still'): Not
   };
 }
 
+/** Aggregate result of evaluating one pass (explicit alerts or auto candidates). */
+export interface AlertEvaluationResult {
+  notifications: PendingNotification[];
+  /** Skipped because a recent notification already consumed the throttle window. */
+  throttled: number;
+  /** Skipped because too few snapshots exist to trust an ATL claim. */
+  insufficientHistory: number;
+}
+
+/**
+ * Evaluate the explicit (user-created) price alerts pass: classify each active alert's
+ * trigger conditions (free / threshold / genuine-new-ATL), apply the throttle and
+ * insufficient-history gates, and route each firing alert to either the individual queue
+ * or the once-daily still-at-ATL digest. Pure with respect to its inputs — no DB writes;
+ * callers dispatch `onSent()` after a notification is actually delivered.
+ */
+export function evaluateExplicitAlerts(
+  activeAlerts: ActiveAlertRow[],
+  minSnapshots: number,
+  now: Date,
+  alertThrottleHours: number,
+  digestSend: boolean,
+  onProgress?: ProgressCallback,
+): AlertEvaluationResult {
+  let throttled = 0;
+  let insufficientHistory = 0;
+  const pending: PendingNotification[] = [];
+
+  for (const alert of activeAlerts) {
+    onProgress?.(pending.length, activeAlerts.length);
+
+    // Classify trigger conditions before throttle so we can let a genuine new ATL
+    // break through even if a recent digest or alert consumed the throttle slot.
+    const isFree = alert.currentPrice === 0;
+    const triggeredByThreshold = !!(
+      alert.notifyOnThreshold &&
+      alert.targetPrice !== null &&
+      alert.currentPrice <= alert.targetPrice
+    );
+
+    // Gate ATL trigger: need enough observed history before we can claim ATL.
+    // Threshold and free triggers remain unguarded — those are explicit prices the user set.
+    const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
+    if (atlGated) insufficientHistory++;
+    const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated;
+    // A new ATL only counts as "new" once per snapshot. The daily-deduped snapshot
+    // doesn't advance on a second same-day run, so without this guard isNewAtl would
+    // keep seeing the previous-day baseline and re-fire the same alert every run.
+    const isNew =
+      atlTriggered &&
+      isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) &&
+      !alreadyNotifiedForSnapshot(alert.lastNotifiedAt, alert.latestSnapshotAt);
+
+    const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
+    if (!shouldNotify) continue;
+
+    const routeIndividual = isFree || triggeredByThreshold || isNew;
+
+    if (routeIndividual) {
+      // Throttle: skip if notified within the configured period.
+      // A genuine new ATL bypasses the throttle — it's fresh news that should
+      // ping immediately even if a still-at-ATL digest recently consumed the slot.
+      if (!isNew && alert.lastNotifiedAt) {
+        const lastNotified = new Date(alert.lastNotifiedAt);
+        const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+        if (hoursSince < alertThrottleHours) {
+          throttled++;
+          continue;
+        }
+      }
+
+      pending.push({
+        type: 'individual',
+        gameId: alert.gameId,
+        alertPayload: buildAlertPayload(alert),
+        // Free and explicit-threshold hits stay individual even in a burst; only a generic
+        // new ATL is foldable into the sale digest.
+        individualKind: isFree || triggeredByThreshold ? 'priority' : 'new-atl',
+        onSent: () => updateAlertLastNotified(alert.id),
+      });
+    } else if (alert.discountPercent > 0) {
+      // Still-at-ATL with a real discount — goes to the once-daily digest. Frequency is
+      // controlled by the daily digest gate, not the 24h throttle, so every still-at-ATL
+      // game appears in each day's complete list. Skip entirely on non-digest runs.
+      if (!digestSend) continue;
+      const payload = buildAlertPayload(alert);
+      pending.push({
+        type: 'digest',
+        gameId: alert.gameId,
+        digestGame: {
+          gameId: alert.gameId,
+          title: alert.title,
+          currentPrice: alert.currentPrice,
+          regularPrice: alert.regularPrice,
+          discountPercent: alert.discountPercent,
+          store: alert.store,
+          storeUrl: payload.storeUrl,
+        },
+        onSent: () => updateAlertLastNotified(alert.id),
+      });
+    }
+    // else: at "ATL" because regular price never dropped — not a deal, skip silently
+  }
+
+  return { notifications: pending, throttled, insufficientHistory };
+}
+
+/**
+ * Evaluate the auto (implicit, no user-created alert) ATL deal-candidate pass: gate on
+ * minimum snapshot history, classify free/genuine-new-ATL triggers, and route each firing
+ * candidate to the individual queue or the once-daily digest. Mirrors
+ * `evaluateExplicitAlerts` but keyed by `AutoAlertCandidate` and the auto-alert
+ * last-notified timestamp. Pure with respect to its inputs — no DB writes.
+ */
+export function evaluateAutoAlertCandidates(
+  candidates: AutoAlertCandidate[],
+  minSnapshots: number,
+  now: Date,
+  alertThrottleHours: number,
+  digestSend: boolean,
+  effectiveUserId: string,
+): AlertEvaluationResult {
+  let throttled = 0;
+  let insufficientHistory = 0;
+  const pending: PendingNotification[] = [];
+
+  for (const candidate of candidates) {
+    // Auto alerts only ever fire on ATL — fully skip when history is too thin.
+    if (candidate.snapshotCount < minSnapshots) {
+      insufficientHistory++;
+      continue;
+    }
+
+    const isFree = candidate.currentPrice === 0;
+    // See the explicit-alert path: gate the new-ATL bypass to once per snapshot so a
+    // second same-day run doesn't re-fire against the unchanged daily snapshot.
+    const isNew =
+      isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice) &&
+      !alreadyNotifiedForSnapshot(candidate.lastAutoAlertAt, candidate.latestSnapshotAt);
+
+    if (isFree || isNew) {
+      // Throttle: skip if recently notified. A genuine new ATL bypasses — a
+      // "still at ATL" digest entry on day N must not silence a genuine new ATL
+      // on day N+1 that lands inside the throttle window.
+      if (!isNew && candidate.lastAutoAlertAt) {
+        const lastNotified = new Date(candidate.lastAutoAlertAt);
+        const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+        if (hoursSince < alertThrottleHours) {
+          throttled++;
+          continue;
+        }
+      }
+
+      pending.push({
+        type: 'individual',
+        gameId: candidate.gameId,
+        alertPayload: buildAlertPayload(candidate, candidate.dealScore),
+        // Auto alerts only ever fire free or new-ATL; free is high-signal and stays individual.
+        individualKind: isFree ? 'priority' : 'new-atl',
+        onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
+      });
+    } else if (candidate.discountPercent > 0) {
+      // Still-at-ATL with a discount — once-daily digest, gated like the explicit path.
+      if (!digestSend) continue;
+      const payload = buildAlertPayload(candidate, candidate.dealScore);
+      pending.push({
+        type: 'digest',
+        gameId: candidate.gameId,
+        digestGame: {
+          gameId: candidate.gameId,
+          title: candidate.title,
+          currentPrice: candidate.currentPrice,
+          regularPrice: candidate.regularPrice,
+          discountPercent: candidate.discountPercent,
+          store: candidate.store,
+          storeUrl: payload.storeUrl,
+        },
+        onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
+      });
+    }
+    // else: at "ATL" because regular price never dropped — not a deal, skip silently
+  }
+
+  return { notifications: pending, throttled, insufficientHistory };
+}
+
 export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: string): Promise<SyncResult> {
   const syncLogId = createSyncLog('alert_check');
 
@@ -213,8 +399,6 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     const activeAlerts = getActivePriceAlerts(effectiveUserId);
     const discord = getDiscordClient();
     const now = new Date();
-    let throttled = 0;
-    let insufficientHistory = 0;
 
     // The still-at-ATL digest is a once-daily reminder, decoupled from the 12h price-check
     // cadence. On non-digest runs we still queue individual (new-ATL/threshold/free) alerts,
@@ -236,84 +420,18 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
 
     console.log(`[AlertCheck] ${activeAlerts.length} active alerts to evaluate (min snapshots for ATL: ${minSnapshots})`);
 
-    const pending: PendingNotification[] = [];
-
     // Evaluate explicit alerts
-    for (const alert of activeAlerts) {
-      onProgress?.(pending.length, activeAlerts.length);
-
-      // Classify trigger conditions before throttle so we can let a genuine new ATL
-      // break through even if a recent digest or alert consumed the throttle slot.
-      const isFree = alert.currentPrice === 0;
-      const triggeredByThreshold = !!(
-        alert.notifyOnThreshold &&
-        alert.targetPrice !== null &&
-        alert.currentPrice <= alert.targetPrice
-      );
-
-      // Gate ATL trigger: need enough observed history before we can claim ATL.
-      // Threshold and free triggers remain unguarded — those are explicit prices the user set.
-      const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
-      if (atlGated) insufficientHistory++;
-      const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated;
-      // A new ATL only counts as "new" once per snapshot. The daily-deduped snapshot
-      // doesn't advance on a second same-day run, so without this guard isNewAtl would
-      // keep seeing the previous-day baseline and re-fire the same alert every run.
-      const isNew =
-        atlTriggered &&
-        isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) &&
-        !alreadyNotifiedForSnapshot(alert.lastNotifiedAt, alert.latestSnapshotAt);
-
-      const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
-      if (!shouldNotify) continue;
-
-      const routeIndividual = isFree || triggeredByThreshold || isNew;
-
-      if (routeIndividual) {
-        // Throttle: skip if notified within the configured period.
-        // A genuine new ATL bypasses the throttle — it's fresh news that should
-        // ping immediately even if a still-at-ATL digest recently consumed the slot.
-        if (!isNew && alert.lastNotifiedAt) {
-          const lastNotified = new Date(alert.lastNotifiedAt);
-          const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
-          if (hoursSince < config.alertThrottleHours) {
-            throttled++;
-            continue;
-          }
-        }
-
-        pending.push({
-          type: 'individual',
-          gameId: alert.gameId,
-          alertPayload: buildAlertPayload(alert),
-          // Free and explicit-threshold hits stay individual even in a burst; only a generic
-          // new ATL is foldable into the sale digest.
-          individualKind: isFree || triggeredByThreshold ? 'priority' : 'new-atl',
-          onSent: () => updateAlertLastNotified(alert.id),
-        });
-      } else if (alert.discountPercent > 0) {
-        // Still-at-ATL with a real discount — goes to the once-daily digest. Frequency is
-        // controlled by the daily digest gate, not the 24h throttle, so every still-at-ATL
-        // game appears in each day's complete list. Skip entirely on non-digest runs.
-        if (!digestSend) continue;
-        const payload = buildAlertPayload(alert);
-        pending.push({
-          type: 'digest',
-          gameId: alert.gameId,
-          digestGame: {
-            gameId: alert.gameId,
-            title: alert.title,
-            currentPrice: alert.currentPrice,
-            regularPrice: alert.regularPrice,
-            discountPercent: alert.discountPercent,
-            store: alert.store,
-            storeUrl: payload.storeUrl,
-          },
-          onSent: () => updateAlertLastNotified(alert.id),
-        });
-      }
-      // else: at "ATL" because regular price never dropped — not a deal, skip silently
-    }
+    const explicitResult = evaluateExplicitAlerts(
+      activeAlerts,
+      minSnapshots,
+      now,
+      config.alertThrottleHours,
+      digestSend,
+      onProgress,
+    );
+    const throttled = explicitResult.throttled;
+    let insufficientHistory = explicitResult.insufficientHistory;
+    const pending: PendingNotification[] = [...explicitResult.notifications];
 
     // Auto ATL deal alerts
     let autoThrottled = 0;
@@ -323,62 +441,17 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       const candidates = getAutoAlertCandidates(effectiveUserId, minScore);
       console.log(`[AlertCheck] ${candidates.length} auto ATL deal candidates`);
 
-      for (const candidate of candidates) {
-        // Auto alerts only ever fire on ATL — fully skip when history is too thin.
-        if (candidate.snapshotCount < minSnapshots) {
-          insufficientHistory++;
-          continue;
-        }
-
-        const isFree = candidate.currentPrice === 0;
-        // See the explicit-alert path: gate the new-ATL bypass to once per snapshot so a
-        // second same-day run doesn't re-fire against the unchanged daily snapshot.
-        const isNew =
-          isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice) &&
-          !alreadyNotifiedForSnapshot(candidate.lastAutoAlertAt, candidate.latestSnapshotAt);
-
-        if (isFree || isNew) {
-          // Throttle: skip if recently notified. A genuine new ATL bypasses — a
-          // "still at ATL" digest entry on day N must not silence a genuine new ATL
-          // on day N+1 that lands inside the throttle window.
-          if (!isNew && candidate.lastAutoAlertAt) {
-            const lastNotified = new Date(candidate.lastAutoAlertAt);
-            const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
-            if (hoursSince < config.alertThrottleHours) {
-              autoThrottled++;
-              continue;
-            }
-          }
-
-          pending.push({
-            type: 'individual',
-            gameId: candidate.gameId,
-            alertPayload: buildAlertPayload(candidate, candidate.dealScore),
-            // Auto alerts only ever fire free or new-ATL; free is high-signal and stays individual.
-            individualKind: isFree ? 'priority' : 'new-atl',
-            onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
-          });
-        } else if (candidate.discountPercent > 0) {
-          // Still-at-ATL with a discount — once-daily digest, gated like the explicit path.
-          if (!digestSend) continue;
-          const payload = buildAlertPayload(candidate, candidate.dealScore);
-          pending.push({
-            type: 'digest',
-            gameId: candidate.gameId,
-            digestGame: {
-              gameId: candidate.gameId,
-              title: candidate.title,
-              currentPrice: candidate.currentPrice,
-              regularPrice: candidate.regularPrice,
-              discountPercent: candidate.discountPercent,
-              store: candidate.store,
-              storeUrl: payload.storeUrl,
-            },
-            onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
-          });
-        }
-        // else: at "ATL" because regular price never dropped — not a deal, skip silently
-      }
+      const autoResult = evaluateAutoAlertCandidates(
+        candidates,
+        minSnapshots,
+        now,
+        config.alertThrottleHours,
+        digestSend,
+        effectiveUserId,
+      );
+      pending.push(...autoResult.notifications);
+      autoThrottled = autoResult.throttled;
+      insufficientHistory += autoResult.insufficientHistory;
     }
 
     // Send individual alerts
