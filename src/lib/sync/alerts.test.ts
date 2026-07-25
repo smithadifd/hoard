@@ -21,7 +21,16 @@ vi.mock('../db/queries', () => ({
   getNotificationPreferences: vi.fn(),
 }));
 
-import { checkPriceAlerts, isNewAtl, alreadyNotifiedForSnapshot, shouldSendDigest, localDateKey } from './alerts';
+import {
+  checkPriceAlerts,
+  isNewAtl,
+  alreadyNotifiedForSnapshot,
+  shouldSendDigest,
+  localDateKey,
+  evaluateExplicitAlerts,
+  evaluateAutoAlertCandidates,
+} from './alerts';
+import type { PendingNotification } from './alerts';
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
 import { DEFAULT_PREFERENCES } from '../notifications/preferences';
@@ -1126,5 +1135,344 @@ describe('checkPriceAlerts', () => {
 
     expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
     expect(result.stats.succeeded).toBe(0);
+  });
+});
+
+// ============================================================================
+// Extraction fidelity: evaluateExplicitAlerts / evaluateAutoAlertCandidates
+//
+// Plan 29 §Phase 4: checkPriceAlerts's two sequential evaluation loops were
+// extracted verbatim into these two functions. The `describe('checkPriceAlerts', ...)`
+// suite above already proves the full pipeline (evaluate + dispatch) is unchanged.
+// This block adds two more layers of evidence specifically requested for behavior
+// identity: (1) frozen, independently re-derived "reference" implementations of the
+// pre-extraction control flow (routing/throttle/count decisions — payload construction
+// via buildAlertPayload is an unmodified shared helper, not part of what moved, so it's
+// intentionally excluded from the diff), asserted identical to the real extracted
+// functions' output for a representative multi-item batch; and (2) direct, table-driven
+// unit tests of each extracted function's branches/edge cases in isolation.
+// ============================================================================
+
+/** Frozen pre-extraction reference for the explicit-alert loop's routing decisions. */
+function referenceExplicitDecisions(
+  activeAlerts: ActiveAlertRowLike[],
+  minSnapshots: number,
+  now: Date,
+  alertThrottleHours: number,
+  digestSend: boolean,
+): { decisions: Decision[]; throttled: number; insufficientHistory: number } {
+  let throttled = 0;
+  let insufficientHistory = 0;
+  const decisions: Decision[] = [];
+
+  for (const alert of activeAlerts) {
+    const isFree = alert.currentPrice === 0;
+    const triggeredByThreshold = !!(
+      alert.notifyOnThreshold &&
+      alert.targetPrice !== null &&
+      alert.currentPrice <= alert.targetPrice
+    );
+    const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
+    if (atlGated) insufficientHistory++;
+    const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated;
+    const isNew =
+      atlTriggered &&
+      isNewAtl(alert.prevHistoricalLowPrice, alert.historicalLowPrice) &&
+      !alreadyNotifiedForSnapshot(alert.lastNotifiedAt, alert.latestSnapshotAt);
+
+    const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
+    if (!shouldNotify) continue;
+
+    const routeIndividual = isFree || triggeredByThreshold || isNew;
+
+    if (routeIndividual) {
+      if (!isNew && alert.lastNotifiedAt) {
+        const lastNotified = new Date(alert.lastNotifiedAt);
+        const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+        if (hoursSince < alertThrottleHours) {
+          throttled++;
+          continue;
+        }
+      }
+      decisions.push({
+        type: 'individual',
+        gameId: alert.gameId,
+        individualKind: isFree || triggeredByThreshold ? 'priority' : 'new-atl',
+      });
+    } else if (alert.discountPercent > 0) {
+      if (!digestSend) continue;
+      decisions.push({ type: 'digest', gameId: alert.gameId });
+    }
+    // else: at "ATL" because regular price never dropped — not a deal, skip silently
+  }
+
+  return { decisions, throttled, insufficientHistory };
+}
+
+/** Frozen pre-extraction reference for the auto-alert-candidate loop's routing decisions. */
+function referenceAutoDecisions(
+  candidates: AutoAlertCandidateLike[],
+  minSnapshots: number,
+  now: Date,
+  alertThrottleHours: number,
+  digestSend: boolean,
+): { decisions: Decision[]; throttled: number; insufficientHistory: number } {
+  let throttled = 0;
+  let insufficientHistory = 0;
+  const decisions: Decision[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.snapshotCount < minSnapshots) {
+      insufficientHistory++;
+      continue;
+    }
+
+    const isFree = candidate.currentPrice === 0;
+    const isNew =
+      isNewAtl(candidate.prevHistoricalLowPrice, candidate.historicalLowPrice) &&
+      !alreadyNotifiedForSnapshot(candidate.lastAutoAlertAt, candidate.latestSnapshotAt);
+
+    if (isFree || isNew) {
+      if (!isNew && candidate.lastAutoAlertAt) {
+        const lastNotified = new Date(candidate.lastAutoAlertAt);
+        const hoursSince = (now.getTime() - lastNotified.getTime()) / (1000 * 60 * 60);
+        if (hoursSince < alertThrottleHours) {
+          throttled++;
+          continue;
+        }
+      }
+      decisions.push({ type: 'individual', gameId: candidate.gameId, individualKind: isFree ? 'priority' : 'new-atl' });
+    } else if (candidate.discountPercent > 0) {
+      if (!digestSend) continue;
+      decisions.push({ type: 'digest', gameId: candidate.gameId });
+    }
+    // else: at "ATL" because regular price never dropped — not a deal, skip silently
+  }
+
+  return { decisions, throttled, insufficientHistory };
+}
+
+interface Decision {
+  type: 'individual' | 'digest';
+  gameId: number;
+  individualKind?: 'new-atl' | 'priority';
+}
+
+type ActiveAlertRowLike = ReturnType<typeof makeAlert>;
+type AutoAlertCandidateLike = ReturnType<typeof makeCandidate>;
+
+function makeCandidate(overrides: Record<string, unknown> = {}) {
+  return {
+    gameId: 1,
+    title: 'Auto Candidate',
+    headerImageUrl: null,
+    steamAppId: 500,
+    reviewDescription: 'Very Positive',
+    hltbMain: 10,
+    currentPrice: 9.99,
+    regularPrice: 19.99,
+    discountPercent: 50,
+    historicalLowPrice: 9.99,
+    dealScore: 80,
+    store: 'Steam',
+    storeUrl: 'https://store.steam/app/500',
+    lastAutoAlertAt: null as string | null,
+    prevHistoricalLowPrice: null as number | null,
+    snapshotCount: 10,
+    latestSnapshotAt: null as string | null,
+    ...overrides,
+  };
+}
+
+/** Extract just the comparable routing fields from a real PendingNotification[]. */
+function toDecisions(notifications: PendingNotification[]): Decision[] {
+  return notifications.map((n) => ({
+    type: n.type,
+    gameId: n.gameId,
+    individualKind: n.individualKind,
+  }));
+}
+
+describe('evaluateExplicitAlerts (extraction fidelity)', () => {
+  const now = new Date('2026-06-03T12:00:00Z');
+  const minSnapshots = 3;
+  const alertThrottleHours = 24;
+
+  it('matches the frozen pre-extraction reference across a representative batch (free, threshold, new-ATL, still-at-ATL digest, non-deal skip, insufficient-history, throttled)', () => {
+    const alerts = [
+      makeAlert({ id: 1, gameId: 1, currentPrice: 0, notifyOnThreshold: false, notifyOnAllTimeLow: false }),
+      makeAlert({ id: 2, gameId: 2, currentPrice: 9.99, targetPrice: 10, notifyOnThreshold: true, notifyOnAllTimeLow: false }),
+      makeAlert({
+        id: 3, gameId: 3, currentPrice: 3.99, targetPrice: null, notifyOnThreshold: false,
+        notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.99,
+      }),
+      makeAlert({
+        id: 4, gameId: 4, currentPrice: 4.99, targetPrice: null, notifyOnThreshold: false,
+        notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 4.99, prevHistoricalLowPrice: 4.99, discountPercent: 50,
+      }),
+      makeAlert({
+        id: 5, gameId: 5, currentPrice: 19.99, regularPrice: 19.99, discountPercent: 0, targetPrice: null,
+        notifyOnThreshold: false, notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 19.99, prevHistoricalLowPrice: 19.99,
+      }),
+      makeAlert({
+        id: 6, gameId: 6, currentPrice: 4.99, targetPrice: null, notifyOnThreshold: false,
+        notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 4.99, prevHistoricalLowPrice: null, snapshotCount: 1,
+      }),
+      makeAlert({
+        id: 7, gameId: 7, currentPrice: 8.00, targetPrice: 8.00, notifyOnThreshold: true, notifyOnAllTimeLow: false,
+        lastNotifiedAt: '2026-06-03T02:00:00Z', // 10h ago, inside the 24h throttle
+      }),
+    ];
+
+    const reference = referenceExplicitDecisions(alerts, minSnapshots, now, alertThrottleHours, true);
+    const real = evaluateExplicitAlerts(alerts, minSnapshots, now, alertThrottleHours, true);
+
+    expect(toDecisions(real.notifications)).toEqual(reference.decisions);
+    expect(real.throttled).toBe(reference.throttled);
+    expect(real.insufficientHistory).toBe(reference.insufficientHistory);
+    // Pin the expected shape explicitly too, not just reference-equality:
+    expect(toDecisions(real.notifications)).toEqual([
+      { type: 'individual', gameId: 1, individualKind: 'priority' }, // free
+      { type: 'individual', gameId: 2, individualKind: 'priority' }, // threshold
+      { type: 'individual', gameId: 3, individualKind: 'new-atl' },  // genuine new ATL
+      { type: 'digest', gameId: 4, individualKind: undefined },     // still-at-ATL, discounted
+      // gameId 5 skipped: non-deal (discount 0%)
+      // gameId 6 skipped: insufficient history
+      // gameId 7 skipped: throttled
+    ]);
+    expect(real.throttled).toBe(1);
+    expect(real.insufficientHistory).toBe(1);
+  });
+
+  it('a genuine new-ATL bypasses the throttle even with a recent lastNotifiedAt', () => {
+    const alerts = [
+      makeAlert({
+        gameId: 10, currentPrice: 3.99, targetPrice: null, notifyOnThreshold: false,
+        notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.99,
+        lastNotifiedAt: '2026-06-03T11:00:00Z', // 1h ago — would throttle a non-new-ATL trigger
+        latestSnapshotAt: '2026-06-03T11:30:00Z', // recorded AFTER the last notification — this snapshot is unnotified
+      }),
+    ];
+    const real = evaluateExplicitAlerts(alerts, minSnapshots, now, alertThrottleHours, true);
+    expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 10, individualKind: 'new-atl' }]);
+    expect(real.throttled).toBe(0);
+  });
+
+  it('suppresses still-at-ATL digest entries when digestSend is false, without affecting individual alerts', () => {
+    const alerts = [
+      makeAlert({
+        gameId: 20, currentPrice: 4.99, targetPrice: null, notifyOnThreshold: false,
+        notifyOnAllTimeLow: true, isHistoricalLow: true, historicalLowPrice: 4.99, prevHistoricalLowPrice: 4.99, discountPercent: 50,
+      }),
+      makeAlert({ gameId: 21, currentPrice: 0, notifyOnThreshold: false, notifyOnAllTimeLow: false }),
+    ];
+    const real = evaluateExplicitAlerts(alerts, minSnapshots, now, alertThrottleHours, false);
+    expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 21, individualKind: 'priority' }]);
+  });
+
+  it('calls onProgress once per alert, with the accumulated pending count at that point', () => {
+    const alerts = [
+      makeAlert({ gameId: 30, currentPrice: 0, notifyOnThreshold: false, notifyOnAllTimeLow: false }), // pushes
+      makeAlert({ gameId: 31, currentPrice: 5, targetPrice: 10, notifyOnThreshold: false, notifyOnAllTimeLow: false }), // no-op
+      makeAlert({ gameId: 32, currentPrice: 0, notifyOnThreshold: false, notifyOnAllTimeLow: false }), // pushes
+    ];
+    const onProgress = vi.fn();
+    evaluateExplicitAlerts(alerts, minSnapshots, now, alertThrottleHours, true, onProgress);
+    expect(onProgress.mock.calls).toEqual([
+      [0, 3], // before alert 30 — nothing pending yet
+      [1, 3], // before alert 31 — alert 30 already pushed
+      [1, 3], // before alert 32 — alert 31 was a no-op, count unchanged
+    ]);
+  });
+
+  it('handles an empty alert list (no notifications, zero counts)', () => {
+    const real = evaluateExplicitAlerts([], minSnapshots, now, alertThrottleHours, true);
+    expect(real).toEqual({ notifications: [], throttled: 0, insufficientHistory: 0 });
+  });
+});
+
+describe('evaluateAutoAlertCandidates (extraction fidelity)', () => {
+  const now = new Date('2026-06-03T12:00:00Z');
+  const minSnapshots = 3;
+  const alertThrottleHours = 24;
+  const effectiveUserId = 'user-1';
+
+  it('matches the frozen pre-extraction reference across a representative batch (free, new-ATL, still-at-ATL digest, non-deal skip, insufficient-history, throttled)', () => {
+    const candidates = [
+      makeCandidate({ gameId: 1, currentPrice: 0 }),
+      makeCandidate({ gameId: 2, currentPrice: 3.99, historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.99 }),
+      makeCandidate({ gameId: 3, currentPrice: 4.99, historicalLowPrice: 4.99, prevHistoricalLowPrice: 4.99, discountPercent: 50 }),
+      makeCandidate({ gameId: 4, currentPrice: 19.99, regularPrice: 19.99, discountPercent: 0, historicalLowPrice: 19.99, prevHistoricalLowPrice: 19.99 }),
+      makeCandidate({ gameId: 5, snapshotCount: 1 }),
+      makeCandidate({
+        gameId: 6, currentPrice: 8.0, historicalLowPrice: 8.0, prevHistoricalLowPrice: 8.0, discountPercent: 0,
+        lastAutoAlertAt: null,
+      }),
+      makeCandidate({
+        // Free, but a non-new-ATL free game is still throttle-checked (only a genuine
+        // new ATL bypasses); 10h ago is inside the 24h throttle window, so this is skipped.
+        gameId: 7, currentPrice: 0, lastAutoAlertAt: '2026-06-03T02:00:00Z',
+      }),
+    ];
+
+    const reference = referenceAutoDecisions(candidates, minSnapshots, now, alertThrottleHours, true);
+    const real = evaluateAutoAlertCandidates(candidates, minSnapshots, now, alertThrottleHours, true, effectiveUserId);
+
+    expect(toDecisions(real.notifications)).toEqual(reference.decisions);
+    expect(real.throttled).toBe(reference.throttled);
+    expect(real.insufficientHistory).toBe(reference.insufficientHistory);
+    expect(toDecisions(real.notifications)).toEqual([
+      { type: 'individual', gameId: 1, individualKind: 'priority' }, // free
+      { type: 'individual', gameId: 2, individualKind: 'new-atl' },  // genuine new ATL
+      { type: 'digest', gameId: 3, individualKind: undefined },      // still-at-ATL, discounted
+      // gameId 4 skipped: non-deal (discount 0%)
+      // gameId 5 skipped: insufficient history
+      // gameId 6 skipped: non-deal (discount 0%, not free, not new)
+      // gameId 7 skipped: free but throttled (recent lastAutoAlertAt, not a new-ATL bypass)
+    ]);
+    expect(real.throttled).toBe(1);
+    expect(real.insufficientHistory).toBe(1);
+  });
+
+  it('a free auto-candidate is throttled by a recent lastAutoAlertAt (not a new-ATL bypass)', () => {
+    const candidates = [
+      makeCandidate({ gameId: 40, currentPrice: 0, lastAutoAlertAt: '2026-06-03T02:00:00Z' }), // 10h ago, inside 24h throttle
+    ];
+    const real = evaluateAutoAlertCandidates(candidates, minSnapshots, now, alertThrottleHours, true, effectiveUserId);
+    expect(real.notifications).toEqual([]);
+    expect(real.throttled).toBe(1);
+  });
+
+  it('a genuine new-ATL auto-candidate bypasses the throttle despite a recent lastAutoAlertAt', () => {
+    const candidates = [
+      makeCandidate({
+        gameId: 41, currentPrice: 3.99, historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.99,
+        lastAutoAlertAt: '2026-06-03T11:00:00Z', // 1h ago
+        latestSnapshotAt: '2026-06-03T11:30:00Z', // recorded AFTER the last auto-alert — this snapshot is unnotified
+      }),
+    ];
+    const real = evaluateAutoAlertCandidates(candidates, minSnapshots, now, alertThrottleHours, true, effectiveUserId);
+    expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 41, individualKind: 'new-atl' }]);
+    expect(real.throttled).toBe(0);
+  });
+
+  it('suppresses still-at-ATL digest entries when digestSend is false', () => {
+    const candidates = [
+      makeCandidate({ gameId: 50, currentPrice: 4.99, historicalLowPrice: 4.99, prevHistoricalLowPrice: 4.99, discountPercent: 50 }),
+    ];
+    const real = evaluateAutoAlertCandidates(candidates, minSnapshots, now, alertThrottleHours, false, effectiveUserId);
+    expect(real.notifications).toEqual([]);
+  });
+
+  it('handles an empty candidate list (no notifications, zero counts)', () => {
+    const real = evaluateAutoAlertCandidates([], minSnapshots, now, alertThrottleHours, true, effectiveUserId);
+    expect(real).toEqual({ notifications: [], throttled: 0, insufficientHistory: 0 });
+  });
+
+  it('onSent callbacks route to updateAutoAlertLastNotified (not updateAlertLastNotified) for the effective user', () => {
+    const candidates = [makeCandidate({ gameId: 60, currentPrice: 0 })];
+    const real = evaluateAutoAlertCandidates(candidates, minSnapshots, now, alertThrottleHours, true, effectiveUserId);
+    real.notifications[0].onSent();
+    expect(_mockUpdateAutoNotified).toHaveBeenCalledWith(60, effectiveUserId);
   });
 });
