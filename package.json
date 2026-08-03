@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
-    "@serwist/turbopack": "^9.5.11",
+    "@serwist/turbopack": "^9.5.12",
     "@swc/helpers": "0.5.23",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^25.9.3",
