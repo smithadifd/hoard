@@ -19,7 +19,7 @@ self-contained; read it first. Personal/secret config lives in the gitignored `C
   `plan-generator` for a quick single-area pass. `plans/` is gitignored.
 - Run `/review` (or the `reviewer`/`code-reviewer` agent) on the diff before declaring work done;
   apply mechanical fixes silently, surface real questions.
-- Doc updates (CLAUDE.md / AGENTS.md / MEMORY.md / `plans/README.md`) ship in the same PR as the code.
+- Doc updates (CLAUDE.md / AGENTS.md / MEMORY.md) ship in the same PR as the code.
 - Conventional commits; never auto-push; confirm before destructive ops. No emojis unless asked.
 - End-of-session ship steps (deploy script, boot-migration rule) are deploy-specific
   and live in the gitignored `CLAUDE.local.md`, not this committed shim.
