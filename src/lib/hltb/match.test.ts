@@ -114,3 +114,99 @@ describe('similarity', () => {
     expect(similarity('ab', 'ac')).toBe(0.5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CHARACTERIZATION: non-ASCII titles
+// ---------------------------------------------------------------------------
+// These tests pin CURRENT behavior, which is lossy for non-ASCII titles, and
+// they are deliberately NOT a statement that this behavior is correct.
+//
+// `cleanSearchTitle`'s `[^\w\s'-]` class carries no `u` flag, so `\w` is the
+// ASCII-only `[A-Za-z0-9_]`. Every non-ASCII letter — accented Latin, Cyrillic,
+// Greek, CJK, kana — is therefore treated as a "special char" and replaced with
+// a space. Since the cleaned title is what gets sent to HLTB as the search query
+// (client.ts) *and* what candidate names are scored against (via `similarity`),
+// a non-Latin title can be mangled ("Pokémon" -> "Pok mon") or erased entirely
+// ("Гарри Поттер" -> ""), and `similarity('', x)` is 0, so it can never match.
+//
+// Pinned rather than fixed so that any future change to the character class is a
+// deliberate, visible decision with these expectations failing loudly, instead of
+// a silent shift in match accuracy. See the PR description for the write-up.
+describe('cleanSearchTitle — non-ASCII characterization (current lossy behavior)', () => {
+  it.each([
+    // Accented Latin: the accented letter itself is dropped, leaving a gap.
+    ['drops accented Latin letters, leaving a space', 'Pokémon', 'Pok mon'],
+    ['drops multiple accents across words', 'naïve café', 'na ve caf'],
+    ['drops umlauts', 'Zähler Über Alles', 'Z hler ber Alles'],
+    ['drops a leading macron vowel', 'Ōkami HD', 'kami HD'],
+    ['drops a dotted capital I', 'İstanbul', 'stanbul'],
+    ['drops eszett', 'ß-Test', '-Test'],
+    // Whole-script erasure: nothing ASCII survives, so the query becomes empty.
+    ['erases an all-Cyrillic title entirely', 'Гарри Поттер', ''],
+    // CJK/kana are dropped; only the ASCII remnant survives.
+    ['keeps only the ASCII remnant of a Japanese title', 'ファイナルファンタジー VII', 'VII'],
+    // Emoji (astral plane) are dropped like any other non-word char.
+    ['drops emoji and collapses the resulting whitespace', '🎮 Game 🎮', 'Game'],
+  ])('%s: %j -> %j', (_label, input, expected) => {
+    expect(cleanSearchTitle(input)).toBe(expected);
+  });
+
+  it('an erased title can never match a real candidate (similarity is 0)', () => {
+    // The downstream consequence of the erasure above: HLTB scoring compares the
+    // *cleaned* title, so an all-Cyrillic title scores 0 against every candidate.
+    expect(similarity(cleanSearchTitle('Гарри Поттер'), 'Harry Potter')).toBe(0);
+  });
+
+  it('normalizeGameTitle, unlike cleanSearchTitle, preserves non-ASCII letters', () => {
+    // normalizeGameTitle only strips edition/year suffixes — it has no character
+    // class filter, so accented and CJK titles pass through intact.
+    expect(normalizeGameTitle('Pokémon Café ReMix')).toBe('Pokémon Café ReMix');
+    expect(normalizeGameTitle('ファイナルファンタジー VII')).toBe('ファイナルファンタジー VII');
+    // ...while still stripping a trailing edition suffix off a non-ASCII title.
+    expect(normalizeGameTitle('Ōkami HD')).toBe('Ōkami');
+    expect(normalizeGameTitle('Ōkami Deluxe Edition (2018)')).toBe('Ōkami');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CHARACTERIZATION: very long inputs
+// ---------------------------------------------------------------------------
+// Nothing truncates, and the suffix regexes are anchored, so long titles are
+// pass-through. Pinned so a future regex change can't quietly introduce
+// catastrophic backtracking or an unintended truncation.
+describe('long-input characterization', () => {
+  it('cleanSearchTitle passes a long alphanumeric title through unchanged', () => {
+    const long = 'A'.repeat(1000);
+    expect(cleanSearchTitle(long)).toBe(long);
+  });
+
+  it('cleanSearchTitle collapses whitespace across a long title and trims the tail', () => {
+    // 'a b ' x500 => 'a b a b ... a b' : 1000 letters + 999 separators, trailing space trimmed.
+    expect(cleanSearchTitle('a b '.repeat(500))).toHaveLength(1999);
+  });
+
+  it('normalizeGameTitle leaves a long suffix-free title untouched', () => {
+    const long = 'A'.repeat(1000);
+    expect(normalizeGameTitle(long)).toBe(long);
+  });
+
+  it('normalizeGameTitle strips only the single trailing edition suffix, not every occurrence', () => {
+    // The edition regex is $-anchored, so repeated occurrences mid-title survive.
+    expect(normalizeGameTitle('X ' + 'Game of the Year Edition '.repeat(3))).toBe(
+      'X Game of the Year Edition Game of the Year Edition'
+    );
+  });
+
+  it('similarity stays bounded and exact on long strings', () => {
+    const a = 'A'.repeat(1000);
+    expect(similarity(a, a)).toBe(1);
+    // 1000 vs 999 identical chars: 2*999 / (1000+999).
+    expect(similarity(a, 'A'.repeat(999))).toBe((2 * 999) / (1000 + 999));
+  });
+
+  it('similarity completes on two long disjoint strings without pathological blowup', () => {
+    const start = Date.now();
+    expect(similarity('x'.repeat(5000), 'y'.repeat(5000))).toBe(0);
+    expect(Date.now() - start).toBeLessThan(5000);
+  });
+});
