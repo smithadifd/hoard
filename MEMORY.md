@@ -52,9 +52,9 @@ See `AGENTS.md` for the full project guide and `CLAUDE.md` for Claude-specific n
 - `docs/` — the Astro Starlight site published by `docs.yml`.
 - This file did not exist before this PR, despite being named in `CLAUDE.md:22`.
 
-## Known drift to watch for
+## History
 
-- `AGENTS.md`'s Testing section deliberately states test coverage qualitatively ("a broad automated
-  test suite") rather than as a number. PR #293 (`docs: qualitative test-suite wording in AGENTS.md
-  (no drifting count)`, merged 2026-07-18) replaced a numeric count specifically because it kept
-  re-drifting across sessions — don't reintroduce a hardcoded test count here for the same reason.
+- `AGENTS.md`'s Testing section states test coverage qualitatively ("a broad automated test suite")
+  rather than as a number. PR #293 (`docs: qualitative test-suite wording in AGENTS.md (no drifting
+  count)`, merged 2026-07-18) replaced a prior numeric count with that qualitative wording; the PR's
+  own body states the reason: the number kept re-drifting across sessions.
