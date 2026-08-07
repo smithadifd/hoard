@@ -9,9 +9,9 @@
 
 export function cleanSearchTitle(title: string): string {
   return title
-    .replace(/[™®©]/g, '')           // Strip trademark/copyright symbols
-    .replace(/[^\w\s'-]/g, ' ')       // Replace other special chars with space (keep apostrophes, hyphens within words)
-    .replace(/\s+/g, ' ')            // Normalize whitespace
+    .replace(/[™®©]/g, '')                 // Strip trademark/copyright symbols
+    .replace(/[^\p{L}\p{N}_\s'-]/gu, ' ')    // Replace other special chars with space (keep letters/digits in any script, underscore, apostrophes, hyphens within words)
+    .replace(/\s+/g, ' ')                  // Normalize whitespace
     .trim();
 }
 
