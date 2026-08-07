@@ -116,50 +116,103 @@ describe('similarity', () => {
 });
 
 // ---------------------------------------------------------------------------
-// CHARACTERIZATION: non-ASCII titles
+// non-ASCII behavior (AI8 — was a lossy-behavior characterization under AH11)
 // ---------------------------------------------------------------------------
-// These tests pin CURRENT behavior, which is lossy for non-ASCII titles, and
-// they are deliberately NOT a statement that this behavior is correct.
+// AH11 pinned the then-CURRENT lossy behavior here as a characterization,
+// explicitly so a deliberate fix could flip these pins loudly instead of
+// silently. AI8 is that fix: `cleanSearchTitle`'s character class is now
+// `[^\p{L}\p{N}_\s'-]` with the `u` flag, so `\p{L}`/`\p{N}` keep letters and
+// digits from ANY script (accented Latin, Cyrillic, Greek, CJK, kana, ...)
+// instead of only ASCII `\w`. Since the cleaned title is what gets sent to
+// HLTB as the search query (client.ts) *and* what candidate names are scored
+// against (via `similarity`), a non-Latin title no longer gets mangled
+// ("Pokémon" -> "Pok mon") or erased entirely ("Гарри Поттер" -> ""), which
+// used to make `similarity('', x)` always 0 — i.e. it could never match.
 //
-// `cleanSearchTitle`'s `[^\w\s'-]` class carries no `u` flag, so `\w` is the
-// ASCII-only `[A-Za-z0-9_]`. Every non-ASCII letter — accented Latin, Cyrillic,
-// Greek, CJK, kana — is therefore treated as a "special char" and replaced with
-// a space. Since the cleaned title is what gets sent to HLTB as the search query
-// (client.ts) *and* what candidate names are scored against (via `similarity`),
-// a non-Latin title can be mangled ("Pokémon" -> "Pok mon") or erased entirely
-// ("Гарри Поттер" -> ""), and `similarity('', x)` is 0, so it can never match.
-//
-// Pinned rather than fixed so that any future change to the character class is a
-// deliberate, visible decision with these expectations failing loudly, instead of
-// a silent shift in match accuracy. See the PR description for the write-up.
-describe('cleanSearchTitle — non-ASCII characterization (current lossy behavior)', () => {
+// See the PR description for the pin-by-pin old-expectation -> new-expectation
+// table.
+describe('cleanSearchTitle — non-ASCII behavior (AH11 pins flipped by AI8)', () => {
   it.each([
-    // Accented Latin: the accented letter itself is dropped, leaving a gap.
-    ['drops accented Latin letters, leaving a space', 'Pokémon', 'Pok mon'],
-    ['drops multiple accents across words', 'naïve café', 'na ve caf'],
-    ['drops umlauts', 'Zähler Über Alles', 'Z hler ber Alles'],
-    ['drops a leading macron vowel', 'Ōkami HD', 'kami HD'],
-    ['drops a dotted capital I', 'İstanbul', 'stanbul'],
-    ['drops eszett', 'ß-Test', '-Test'],
-    // Whole-script erasure: nothing ASCII survives, so the query becomes empty.
-    ['erases an all-Cyrillic title entirely', 'Гарри Поттер', ''],
-    // CJK/kana are dropped; only the ASCII remnant survives.
-    ['keeps only the ASCII remnant of a Japanese title', 'ファイナルファンタジー VII', 'VII'],
-    // Emoji (astral plane) are dropped like any other non-word char.
+    // Accented Latin: the accented letter now survives (was: dropped, leaving a gap).
+    ['keeps accented Latin letters', 'Pokémon', 'Pokémon'],
+    ['keeps multiple accents across words', 'naïve café', 'naïve café'],
+    ['keeps umlauts', 'Zähler Über Alles', 'Zähler Über Alles'],
+    ['keeps a leading macron vowel', 'Ōkami HD', 'Ōkami HD'],
+    ['keeps a dotted capital I', 'İstanbul', 'İstanbul'],
+    ['keeps eszett', 'ß-Test', 'ß-Test'],
+    // Whole-script survival: was whole-script erasure ('' for an all-Cyrillic title).
+    ['keeps an all-Cyrillic title intact', 'Гарри Поттер', 'Гарри Поттер'],
+    // CJK/kana now survive; was: only the ASCII remnant survived.
+    ['keeps a Japanese title intact, including the ASCII remnant', 'ファイナルファンタジー VII', 'ファイナルファンタジー VII'],
+    ['keeps an all-CJK title with no ASCII remnant at all', '原神', '原神'],
+    // Mixed-script: each script's letters survive independently.
+    ['keeps a mixed Latin+Cyrillic title intact', 'Metro 2033: Гарри Edition', 'Metro 2033 Гарри Edition'],
+    // Emoji (astral plane, category So — not \p{L} or \p{N}) are still dropped
+    // like any other non-letter/non-digit symbol. Unchanged by the fix.
     ['drops emoji and collapses the resulting whitespace', '🎮 Game 🎮', 'Game'],
   ])('%s: %j -> %j', (_label, input, expected) => {
     expect(cleanSearchTitle(input)).toBe(expected);
   });
 
-  it('an erased title can never match a real candidate (similarity is 0)', () => {
-    // The downstream consequence of the erasure above: HLTB scoring compares the
-    // *cleaned* title, so an all-Cyrillic title scores 0 against every candidate.
-    expect(similarity(cleanSearchTitle('Гарри Поттер'), 'Harry Potter')).toBe(0);
+  it('a preserved non-Latin title can now match an identical-script candidate (similarity is 1)', () => {
+    // Was: 'an erased title can never match a real candidate (similarity is 0)' —
+    // cleanSearchTitle('Гарри Поттер') used to erase to '', and similarity('', x)
+    // is always 0, so the title could never match anything HLTB returned. Now the
+    // title survives, so if HLTB's own catalog entry is in the same script, the
+    // cleaned query scores a perfect match against it.
+    expect(similarity(cleanSearchTitle('Гарри Поттер'), 'Гарри Поттер')).toBe(1);
   });
 
-  it('normalizeGameTitle, unlike cleanSearchTitle, preserves non-ASCII letters', () => {
+  // KNOWN LIMITATION — cross-script matching is unsolved (pinned, not fixed).
+  //
+  // AI8 only fixes cleanSearchTitle() so a non-Latin title survives cleaning
+  // instead of being erased to ''. It does NOT make similarity() (a plain
+  // character-overlap ratio) understand that "Гарри Поттер" and "Harry Potter"
+  // name the same game — that would require transliteration/romanization or an
+  // alias table, which is a separate, net-new capability (design work, not a
+  // bugfix) and is explicitly out of scope for this PR.
+  //
+  // HLTBClient.search() (src/lib/hltb/client.ts:204,210,224) discards any
+  // result scoring below `similarity >= 0.4` (SIMILARITY_THRESHOLD in the
+  // sibling src/app/api/games/[id]/hltb-fetch/route.ts and src/lib/sync/hltb.ts
+  // callers — client.ts itself inlines the same 0.4 literal at those three
+  // call sites rather than naming a constant). So today, a Cyrillic/CJK Steam
+  // title whose HLTB catalog entry is stored in English still gets ZERO hours
+  // — cleaning no longer erases the title, but matching still can't cross the
+  // script boundary.
+  //
+  // These assertions pin the CURRENT TRUE (still-broken) behavior against that
+  // real 0.4 threshold, so if cross-script matching is ever solved, these tests
+  // FAIL loudly and tell whoever changed it to update this pin — instead of the
+  // gap silently staying invisible behind a green suite (which is what happened
+  // here: the previous version of this test asserted same-script similarity
+  // instead of the original cross-script question, so nothing caught it).
+  const MATCH_THRESHOLD = 0.4; // mirrors client.ts:204,210,224 — see comment above.
+
+  it('KNOWN LIMITATION: a cleaned Cyrillic title still scores below the match threshold against its English HLTB name', () => {
+    const sim = similarity(cleanSearchTitle('Гарри Поттер'), 'Harry Potter');
+    // Only the literal space character overlaps between the two scripts:
+    // 1 match / (12 + 12) chars * 2 = 1/12.
+    expect(sim).toBe(1 / 12);
+    expect(sim).toBeLessThan(MATCH_THRESHOLD);
+  });
+
+  it('KNOWN LIMITATION: a cleaned CJK title still scores below the match threshold against its English HLTB name', () => {
+    const sim = similarity(cleanSearchTitle('原神'), 'Genshin Impact');
+    expect(sim).toBe(0);
+    expect(sim).toBeLessThan(MATCH_THRESHOLD);
+  });
+
+  it('KNOWN LIMITATION: a cleaned Japanese title (with an ASCII remnant) still scores below the match threshold against its English HLTB name', () => {
+    const sim = similarity(cleanSearchTitle('ファイナルファンタジー VII'), 'Final Fantasy VII');
+    expect(sim).toBe(0.25);
+    expect(sim).toBeLessThan(MATCH_THRESHOLD);
+  });
+
+  it('normalizeGameTitle, unlike cleanSearchTitle, has always preserved non-ASCII letters', () => {
     // normalizeGameTitle only strips edition/year suffixes — it has no character
-    // class filter, so accented and CJK titles pass through intact.
+    // class filter, so accented and CJK titles pass through intact. Unaffected by
+    // this fix (never had the bug); kept here for contrast with cleanSearchTitle.
     expect(normalizeGameTitle('Pokémon Café ReMix')).toBe('Pokémon Café ReMix');
     expect(normalizeGameTitle('ファイナルファンタジー VII')).toBe('ファイナルファンタジー VII');
     // ...while still stripping a trailing edition suffix off a non-ASCII title.
