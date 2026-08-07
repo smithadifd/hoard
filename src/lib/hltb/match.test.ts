@@ -161,9 +161,52 @@ describe('cleanSearchTitle — non-ASCII behavior (AH11 pins flipped by AI8)', (
     // title survives, so if HLTB's own catalog entry is in the same script, the
     // cleaned query scores a perfect match against it.
     expect(similarity(cleanSearchTitle('Гарри Поттер'), 'Гарри Поттер')).toBe(1);
-    // Cross-script matching (e.g. against an HLTB entry stored as "Harry Potter")
-    // is NOT attempted by this fix — that's a transliteration concern belonging to
-    // similarity()/candidate scoring, not to cleanSearchTitle(). Out of scope here.
+  });
+
+  // KNOWN LIMITATION — cross-script matching is unsolved (pinned, not fixed).
+  //
+  // AI8 only fixes cleanSearchTitle() so a non-Latin title survives cleaning
+  // instead of being erased to ''. It does NOT make similarity() (a plain
+  // character-overlap ratio) understand that "Гарри Поттер" and "Harry Potter"
+  // name the same game — that would require transliteration/romanization or an
+  // alias table, which is a separate, net-new capability (design work, not a
+  // bugfix) and is explicitly out of scope for this PR.
+  //
+  // HLTBClient.search() (src/lib/hltb/client.ts:204,210,224) discards any
+  // result scoring below `similarity >= 0.4` (SIMILARITY_THRESHOLD in the
+  // sibling src/app/api/games/[id]/hltb-fetch/route.ts and src/lib/sync/hltb.ts
+  // callers — client.ts itself inlines the same 0.4 literal at those three
+  // call sites rather than naming a constant). So today, a Cyrillic/CJK Steam
+  // title whose HLTB catalog entry is stored in English still gets ZERO hours
+  // — cleaning no longer erases the title, but matching still can't cross the
+  // script boundary.
+  //
+  // These assertions pin the CURRENT TRUE (still-broken) behavior against that
+  // real 0.4 threshold, so if cross-script matching is ever solved, these tests
+  // FAIL loudly and tell whoever changed it to update this pin — instead of the
+  // gap silently staying invisible behind a green suite (which is what happened
+  // here: the previous version of this test asserted same-script similarity
+  // instead of the original cross-script question, so nothing caught it).
+  const MATCH_THRESHOLD = 0.4; // mirrors client.ts:204,210,224 — see comment above.
+
+  it('KNOWN LIMITATION: a cleaned Cyrillic title still scores below the match threshold against its English HLTB name', () => {
+    const sim = similarity(cleanSearchTitle('Гарри Поттер'), 'Harry Potter');
+    // Only the literal space character overlaps between the two scripts:
+    // 1 match / (12 + 12) chars * 2 = 1/12.
+    expect(sim).toBe(1 / 12);
+    expect(sim).toBeLessThan(MATCH_THRESHOLD);
+  });
+
+  it('KNOWN LIMITATION: a cleaned CJK title still scores below the match threshold against its English HLTB name', () => {
+    const sim = similarity(cleanSearchTitle('原神'), 'Genshin Impact');
+    expect(sim).toBe(0);
+    expect(sim).toBeLessThan(MATCH_THRESHOLD);
+  });
+
+  it('KNOWN LIMITATION: a cleaned Japanese title (with an ASCII remnant) still scores below the match threshold against its English HLTB name', () => {
+    const sim = similarity(cleanSearchTitle('ファイナルファンタジー VII'), 'Final Fantasy VII');
+    expect(sim).toBe(0.25);
+    expect(sim).toBeLessThan(MATCH_THRESHOLD);
   });
 
   it('normalizeGameTitle, unlike cleanSearchTitle, has always preserved non-ASCII letters', () => {
