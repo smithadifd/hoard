@@ -44,7 +44,7 @@
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.2.10",
+    "eslint-config-next": "^16.2.12",
     "postcss": "^8.5.23",
     "serwist": "^9.5.11",
     "sharp": "^0.34.5",
