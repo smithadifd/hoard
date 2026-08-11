@@ -32,6 +32,7 @@ vi.mock('./net-new-prices', () => ({
 
 import { syncLibrary } from './library';
 import { getSteamClient } from '../steam/client';
+import type { SteamClient } from '../steam/client';
 import {
   upsertGameFromSteam,
   upsertUserGame,
@@ -66,6 +67,17 @@ const mockCountOwned = vi.mocked(countOwnedGames);
 const mockGetSetting = vi.mocked(getSetting);
 const mockEmit = vi.mocked(emitNotification);
 const mockFetchNetNew = vi.mocked(fetchNetNewPrices);
+
+// Each case stubs only the SteamClient methods it actually exercises, so the stub
+// never structurally matches the full class. Funnel every stub through this one
+// helper rather than casting at each site: the widening then lives in a single
+// greppable place, and the mapped-key parameter still rejects a stub naming a
+// method SteamClient does not have — which is the drift this file needs to catch.
+function asSteamClient(
+  stub: { [K in keyof SteamClient]?: unknown },
+): ReturnType<typeof getSteamClient> {
+  return stub as unknown as ReturnType<typeof getSteamClient>;
+}
 
 function makeSteamGame(appid: number, name: string, playtime = 0, recentPlaytime?: number, lastPlayed?: number) {
   return {
@@ -103,9 +115,9 @@ describe('syncLibrary', () => {
       makeSteamGame(570, 'Dota 2', 500),
     ];
 
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
 
     const result = await syncLibrary();
@@ -127,12 +139,12 @@ describe('syncLibrary', () => {
   });
 
   it('uses provided userId instead of getFirstUserId', async () => {
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({
         game_count: 1,
         games: [makeSteamGame(440, 'TF2', 100)],
       }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await syncLibrary(undefined, undefined, 'custom-user');
 
@@ -146,9 +158,9 @@ describe('syncLibrary', () => {
       makeSteamGame(2, 'Game B'),
       makeSteamGame(3, 'Game C'),
     ];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 3, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     const onProgress = vi.fn();
     await syncLibrary(onProgress);
@@ -166,9 +178,9 @@ describe('syncLibrary', () => {
       makeSteamGame(2, 'Game B'),
       makeSteamGame(3, 'Game C'),
     ];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 3, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     // Abort after the first game is processed
     mockUpsertGame.mockImplementation(() => {
@@ -203,9 +215,9 @@ describe('syncLibrary', () => {
       makeSteamGame(2, 'Unprocessed'),
       makeSteamGame(3, 'Unprocessed 2'),
     ];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 3, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     // All three are known games that just flipped wishlist→owned (would be cleaned up).
     mockGetExisting.mockReturnValue(new Map([
       [1, { id: 10, title: 'Processed' }],
@@ -243,9 +255,9 @@ describe('syncLibrary', () => {
 
   it('reconciles ownership for a genuine, non-empty owned response (bug b)', async () => {
     const games = [makeSteamGame(440, 'TF2', 100), makeSteamGame(570, 'Dota 2', 50)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
     mockReconcile.mockReturnValue(1); // one previously-owned game absent → unowned
 
@@ -261,9 +273,9 @@ describe('syncLibrary', () => {
   it('does NOT reconcile ownership on a transient empty owned response (bug b guard)', async () => {
     // Steam returned a 200 with an empty games array — a hiccup, NOT "you own
     // nothing". Reconciling here would wipe the whole library.
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 0, games: [] }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await syncLibrary();
 
@@ -276,9 +288,9 @@ describe('syncLibrary', () => {
     // Steam claims game_count=5 but only returned 2 games (pagination bug /
     // partial success). Reconciling here would unown the 3 missing REAL games.
     const games = [makeSteamGame(440, 'TF2', 100), makeSteamGame(570, 'Dota 2', 50)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 5, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
 
     await syncLibrary();
@@ -294,9 +306,9 @@ describe('syncLibrary', () => {
     // No game_count field → completeness is unprovable → skip rather than trust
     // a possibly-truncated list.
     const games = [makeSteamGame(440, 'TF2', 100)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(10);
 
     await syncLibrary();
@@ -306,9 +318,9 @@ describe('syncLibrary', () => {
 
   it('records lastPlayed when rtime_last_played > 0', async () => {
     const games = [makeSteamGame(440, 'TF2', 100, 10, 1700000000)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await syncLibrary();
 
@@ -323,9 +335,9 @@ describe('syncLibrary', () => {
 
   it('sets lastPlayed to undefined when rtime_last_played is 0', async () => {
     const games = [makeSteamGame(440, 'TF2', 100, 10, 0)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await syncLibrary();
 
@@ -337,18 +349,18 @@ describe('syncLibrary', () => {
   });
 
   it('propagates Steam API errors and logs sync failure', async () => {
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockRejectedValue(new Error('API key is invalid')),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await expect(syncLibrary()).rejects.toThrow('API key is invalid');
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'API key is invalid', undefined, undefined, 0);
   });
 
   it('handles non-Error exceptions in catch block', async () => {
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockRejectedValue('string error'),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await expect(syncLibrary()).rejects.toBe('string error');
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'error', 0, 'Unknown error', undefined, undefined, 0);
@@ -359,9 +371,9 @@ describe('syncLibrary', () => {
       makeSteamGame(440, 'TF2', 100), // newly purchased: was wishlisted, now owned
       makeSteamGame(570, 'Dota 2', 50), // already owned previously
     ];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
     mockGetExisting.mockReturnValue(new Map([
       [440, { id: 10, title: 'TF2' }],
@@ -380,9 +392,9 @@ describe('syncLibrary', () => {
 
   it('does not cascade when no wishlist→owned transitions occur', async () => {
     const games = [makeSteamGame(570, 'Dota 2', 50)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(20);
     mockGetExisting.mockReturnValue(new Map([[570, { id: 20, title: 'Dota 2' }]]));
     mockGetPreOwnership.mockReturnValue([
@@ -396,9 +408,9 @@ describe('syncLibrary', () => {
 
   it('collapses N price-paid captures from one sync into a single digest notification', async () => {
     const games = [makeSteamGame(440, 'TF2', 100), makeSteamGame(570, 'Dota 2', 50)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
     mockGetExisting.mockReturnValue(new Map([
       [440, { id: 10, title: 'TF2' }],
@@ -426,9 +438,9 @@ describe('syncLibrary', () => {
 
   it('renders a single price-paid capture naturally (not "1 game")', async () => {
     const games = [makeSteamGame(440, 'TF2', 100)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(10);
     mockGetExisting.mockReturnValue(new Map([[440, { id: 10, title: 'TF2' }]]));
     mockGetPreOwnership.mockReturnValue([
@@ -449,9 +461,9 @@ describe('syncLibrary', () => {
 
   it('does not notify when no price-paid suggestions are captured', async () => {
     const games = [makeSteamGame(570, 'Dota 2', 50)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(20);
     mockGetExisting.mockReturnValue(new Map([[570, { id: 20, title: 'Dota 2' }]]));
     mockGetPreOwnership.mockReturnValue([
@@ -467,9 +479,9 @@ describe('syncLibrary', () => {
   it('fetches ITAD prices for a net-new owned add that was never wishlisted, then captures a suggestion', async () => {
     // A brand-new game (not in `existing`, no prior row) added straight as owned.
     const games = [makeSteamGame(999, 'New Purchase', 120)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(77);
     mockGetExisting.mockReturnValue(new Map()); // never seen before
     mockGetPreOwnership.mockReturnValue([]); // no prior row
@@ -492,9 +504,9 @@ describe('syncLibrary', () => {
   it('does NOT fetch net-new prices on the first library import (no prior owned games)', async () => {
     mockCountOwned.mockReturnValue(0); // initial import — drain owns this
     const games = [makeSteamGame(999, 'New Purchase', 120)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(77);
     mockGetExisting.mockReturnValue(new Map());
     mockGetPreOwnership.mockReturnValue([]);
@@ -508,9 +520,9 @@ describe('syncLibrary', () => {
   it('does NOT run the net-new lane for a game that was previously wishlisted', async () => {
     // Wishlisted-then-owned goes through the existing purchase lane, not net-new.
     const games = [makeSteamGame(440, 'TF2', 100)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(10);
     mockGetExisting.mockReturnValue(new Map([[440, { id: 10, title: 'TF2' }]]));
     mockGetPreOwnership.mockReturnValue([
@@ -524,9 +536,9 @@ describe('syncLibrary', () => {
 
   it('skips the net-new capture when the ITAD fetch yields no snapshot (honest boundary)', async () => {
     const games = [makeSteamGame(999, 'Obscure Game', 30)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(88);
     mockGetExisting.mockReturnValue(new Map());
     mockGetPreOwnership.mockReturnValue([]);
@@ -543,9 +555,9 @@ describe('syncLibrary', () => {
   it('does not run the net-new lane when suggestions are disabled', async () => {
     mockGetSetting.mockReturnValue('false'); // master opt-out
     const games = [makeSteamGame(999, 'New Purchase', 120)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
     mockUpsertGame.mockReturnValue(77);
     mockGetExisting.mockReturnValue(new Map());
     mockGetPreOwnership.mockReturnValue([]);
@@ -557,9 +569,9 @@ describe('syncLibrary', () => {
 
   it('sets playtimeRecentMinutes to 0 when playtime_2weeks is undefined', async () => {
     const games = [makeSteamGame(440, 'TF2', 100, undefined)];
-    mockGetSteamClient.mockReturnValue({
+    mockGetSteamClient.mockReturnValue(asSteamClient({
       getOwnedGames: vi.fn().mockResolvedValue({ game_count: 1, games }),
-    } as ReturnType<typeof getSteamClient>);
+    }));
 
     await syncLibrary();
 
@@ -576,9 +588,9 @@ describe('syncLibrary', () => {
         makeSteamGame(440, 'TF2', 100, 10, 1700000000),
         makeSteamGame(570, 'Dota 2', 200, 0, 0),
       ];
-      mockGetSteamClient.mockReturnValue({
+      mockGetSteamClient.mockReturnValue(asSteamClient({
         getOwnedGames: vi.fn().mockResolvedValue({ game_count: 2, games }),
-      } as ReturnType<typeof getSteamClient>);
+      }));
       mockUpsertGame.mockReturnValueOnce(10).mockReturnValueOnce(20);
       mockGetExisting.mockReturnValue(new Map([
         [440, { id: 10, title: 'TF2' }],

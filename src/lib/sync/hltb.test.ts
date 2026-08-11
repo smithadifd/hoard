@@ -28,7 +28,9 @@ const mockCreateSyncLog = vi.mocked(createSyncLog);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
 
 function makeGame(id: number, title: string) {
-  return { id, title, steamAppId: id * 100 };
+  // hltbMissCount is part of getGamesForHltbSync's row shape. The sync code never
+  // reads it (the backoff increment happens DB-side), so null is the inert default.
+  return { id, title, steamAppId: id * 100, hltbMissCount: null };
 }
 
 function makeHltbResult(id: string, similarity: number, main = 10, extra = 15, completionist = 25) {
