@@ -19,7 +19,7 @@
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-tooltip": "^1.2.12",
-    "better-auth": "^1.6.25",
+    "better-auth": "^1.6.26",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^1.23.0",
