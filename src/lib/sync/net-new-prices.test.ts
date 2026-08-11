@@ -84,7 +84,11 @@ describe('fetchNetNewPrices', () => {
   });
 
   it('returns early when no ITAD key is configured', async () => {
-    mockGetConfig.mockReturnValue({ itadApiKey: undefined } as ReturnType<typeof getEffectiveConfig>);
+    // Only itadApiKey matters for this early-return path, so the stub is deliberately
+    // partial. The mapped-key parameter still rejects a key AppConfig does not have.
+    mockGetConfig.mockReturnValue(
+      { itadApiKey: undefined } as { [K in keyof ReturnType<typeof getEffectiveConfig>]?: unknown } as ReturnType<typeof getEffectiveConfig>,
+    );
     const result = await fetchNetNewPrices([1]);
     expect(result).toEqual({ snapshotted: 0 });
     expect(mockGetGames).not.toHaveBeenCalled();

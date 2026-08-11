@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
+
+// next 16.3 narrowed NextRequest's init type: its `signal` is `AbortSignal | undefined`,
+// while the DOM `RequestInit` allows `null`. Derive the type from the constructor
+// so this helper tracks next's shape instead of drifting from it.
+type NextRequestInit = NonNullable<ConstructorParameters<typeof NextRequest>[1]>;
 import { GET, POST } from './route';
 
 // Mock auth helper
@@ -16,7 +21,7 @@ import { getAllPriceAlertsWithGames, upsertPriceAlert } from '@/lib/db/queries';
 const mockGetAlerts = vi.mocked(getAllPriceAlertsWithGames);
 const mockUpsertAlert = vi.mocked(upsertPriceAlert);
 
-function createRequest(url: string, init?: RequestInit): NextRequest {
+function createRequest(url: string, init?: NextRequestInit): NextRequest {
   return new NextRequest(new URL(url, 'http://localhost:3000'), init);
 }
 
