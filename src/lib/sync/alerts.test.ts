@@ -63,6 +63,12 @@ const _mockUpdateAutoNotified = vi.mocked(updateAutoAlertLastNotified);
 function makeAlert(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
+    // ActiveAlertRow extends PriceAlertRow, so these three are part of the real row
+    // shape. The fixture omitted them; tests that care about gameId already override
+    // it, and the rest previously read `undefined` off it.
+    gameId: 1,
+    isActive: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
     title: 'Test Game',
     steamAppId: 440,
     headerImageUrl: 'https://cdn.steam/440/header.jpg',
@@ -413,6 +419,8 @@ describe('checkPriceAlerts', () => {
         lastAutoAlertAt: null,
         prevHistoricalLowPrice: null,
         snapshotCount: 1,
+        // null = unknown snapshot age; alerts.ts:64 treats null and undefined alike.
+        latestSnapshotAt: null as string | null,
       },
     ]);
     mockGetSetting.mockImplementation((key) =>
@@ -725,6 +733,8 @@ describe('checkPriceAlerts', () => {
         lastAutoAlertAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
         prevHistoricalLowPrice: 22.49,
         snapshotCount: 200,
+        // null = unknown snapshot age; alerts.ts:64 treats null and undefined alike.
+        latestSnapshotAt: null as string | null,
       },
       {
         gameId: 101,
@@ -743,6 +753,8 @@ describe('checkPriceAlerts', () => {
         lastAutoAlertAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
         prevHistoricalLowPrice: 4.99, // Same as before — still at ATL
         snapshotCount: 200,
+        // null = unknown snapshot age; alerts.ts:64 treats null and undefined alike.
+        latestSnapshotAt: null as string | null,
       },
     ]);
     const mockDiscord = makeMockDiscord();
