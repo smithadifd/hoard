@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiValidationError, withAuth } from '@/lib/utils/api';
 import {
   startDrain,
   cancelDrain,
@@ -18,37 +17,32 @@ const startSchema = z.object({
  * 403 in demo mode.
  */
 export async function POST(request: NextRequest) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return apiValidationError('Invalid JSON');
-  }
-
-  const parsed = startSchema.safeParse(body);
-  if (!parsed.success) {
-    return apiValidationError('mode must be one of: full, lite, cron-only');
-  }
-
-  const result = startDrain({ mode: parsed.data.mode, userId });
-  if (!result.started) {
-    if (result.reason === 'already-running') {
-      return apiError('A drain is already in progress', 409);
+  return withAuth(request, async (userId) => {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiValidationError('Invalid JSON');
     }
-    if (result.reason === 'demo-mode') {
-      return apiError('Drain is disabled in demo mode', 403);
-    }
-    return apiError('Failed to start drain');
-  }
 
-  return apiSuccess(getDrainProgressForUser(userId));
+    const parsed = startSchema.safeParse(body);
+    if (!parsed.success) {
+      return apiValidationError('mode must be one of: full, lite, cron-only');
+    }
+
+    const result = startDrain({ mode: parsed.data.mode, userId });
+    if (!result.started) {
+      if (result.reason === 'already-running') {
+        return apiError('A drain is already in progress', 409);
+      }
+      if (result.reason === 'demo-mode') {
+        return apiError('Drain is disabled in demo mode', 403);
+      }
+      return apiError('Failed to start drain');
+    }
+
+    return apiSuccess(getDrainProgressForUser(userId));
+  });
 }
 
 /**
@@ -60,14 +54,9 @@ export async function POST(request: NextRequest) {
  * User A's live drain progress in a multi-user install.
  */
 export async function GET(request: NextRequest) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  return apiSuccess(getDrainProgressForUser(userId));
+  return withAuth(request, async (userId) => {
+    return apiSuccess(getDrainProgressForUser(userId));
+  });
 }
 
 /**
@@ -76,12 +65,8 @@ export async function GET(request: NextRequest) {
  * drain was actually running. Either way the orchestrator ends up idle.
  */
 export async function DELETE(request: NextRequest) {
-  try {
-    await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  const cancelled = cancelDrain();
-  return apiSuccess({ cancelled });
+  return withAuth(request, async () => {
+    const cancelled = cancelDrain();
+    return apiSuccess({ cancelled });
+  });
 }

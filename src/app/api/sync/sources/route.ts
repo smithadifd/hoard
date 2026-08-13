@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiError, apiUnauthorized } from '@/lib/utils/api';
+import { apiSuccess, apiError, withAuth } from '@/lib/utils/api';
 import { getTaskStatus } from '@/lib/scheduler';
 import {
   getRecentSyncStats,
@@ -68,84 +67,80 @@ function sourceKeysByService(service: SyncService): string[] {
  * grouped by external service (steam/itad/hltb) for the top-of-page widget.
  */
 export async function GET(request: NextRequest) {
-  try {
-    await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
+  return withAuth(request, async () => {
+    try {
+      const taskStatus = getTaskStatus();
+      const taskByName = new Map(taskStatus.map((t) => [t.name, t]));
 
-  try {
-    const taskStatus = getTaskStatus();
-    const taskByName = new Map(taskStatus.map((t) => [t.name, t]));
+      const now = Date.now();
+      const since24h = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+      const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const now = Date.now();
-    const since24h = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-    const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const sources = SYNC_SOURCES.map((def) => {
+        const recent = getRecentSyncStats(def.key, 14) as RecentStatRow[];
+        const threshold = SUCCESS_RATE_THRESHOLDS[def.key];
+        const minAttempts = MIN_ATTEMPTS_FOR_ALERT[def.key] ?? 0;
+        const health = deriveHealth(recent, threshold, minAttempts);
 
-    const sources = SYNC_SOURCES.map((def) => {
-      const recent = getRecentSyncStats(def.key, 14) as RecentStatRow[];
-      const threshold = SUCCESS_RATE_THRESHOLDS[def.key];
-      const minAttempts = MIN_ATTEMPTS_FOR_ALERT[def.key] ?? 0;
-      const health = deriveHealth(recent, threshold, minAttempts);
+        const apiCalls24h = sumApiCallsBySourcesSince([def.key], since24h);
 
-      const apiCalls24h = sumApiCallsBySourcesSince([def.key], since24h);
+        const task = def.taskName ? taskByName.get(def.taskName) : undefined;
 
-      const task = def.taskName ? taskByName.get(def.taskName) : undefined;
-
-      const lastRun = recent[0]
-        ? {
-            id: recent[0].id,
-            status: recent[0].status,
-            itemsProcessed: recent[0].itemsProcessed,
-            itemsAttempted: recent[0].itemsAttempted,
-            itemsFailed: recent[0].itemsFailed,
-            apiCalls: recent[0].apiCalls,
-            startedAt: recent[0].startedAt,
-            completedAt: recent[0].completedAt,
-          }
-        : null;
-
-      return {
-        source: def.key,
-        label: def.label,
-        description: def.description,
-        service: def.service,
-        supportsManualRun: def.supportsManualRun,
-        manualRunType: def.manualRunType ?? null,
-        task: task
+        const lastRun = recent[0]
           ? {
-              name: task.name,
-              schedule: task.schedule,
-              isRunning: task.isRunning,
-              lastRun: task.lastRun ? task.lastRun.toISOString() : null,
-              nextRun: task.nextRun ? task.nextRun.toISOString() : null,
+              id: recent[0].id,
+              status: recent[0].status,
+              itemsProcessed: recent[0].itemsProcessed,
+              itemsAttempted: recent[0].itemsAttempted,
+              itemsFailed: recent[0].itemsFailed,
+              apiCalls: recent[0].apiCalls,
+              startedAt: recent[0].startedAt,
+              completedAt: recent[0].completedAt,
             }
-          : null,
-        health,
-        threshold: threshold ?? null,
-        minAttempts,
-        recentStats: recent.map((r) => ({
-          startedAt: r.startedAt,
-          status: r.status,
-          itemsProcessed: r.itemsProcessed,
-          itemsAttempted: r.itemsAttempted,
-          itemsFailed: r.itemsFailed,
-          apiCalls: r.apiCalls,
-        })),
-        apiCalls24h,
-        lastRun,
+          : null;
+
+        return {
+          source: def.key,
+          label: def.label,
+          description: def.description,
+          service: def.service,
+          supportsManualRun: def.supportsManualRun,
+          manualRunType: def.manualRunType ?? null,
+          task: task
+            ? {
+                name: task.name,
+                schedule: task.schedule,
+                isRunning: task.isRunning,
+                lastRun: task.lastRun ? task.lastRun.toISOString() : null,
+                nextRun: task.nextRun ? task.nextRun.toISOString() : null,
+              }
+            : null,
+          health,
+          threshold: threshold ?? null,
+          minAttempts,
+          recentStats: recent.map((r) => ({
+            startedAt: r.startedAt,
+            status: r.status,
+            itemsProcessed: r.itemsProcessed,
+            itemsAttempted: r.itemsAttempted,
+            itemsFailed: r.itemsFailed,
+            apiCalls: r.apiCalls,
+          })),
+          apiCalls24h,
+          lastRun,
+        };
+      });
+
+      const apiCallsByService7d = {
+        steam: sumApiCallsBySourcesSince(sourceKeysByService('steam'), since7d),
+        itad: sumApiCallsBySourcesSince(sourceKeysByService('itad'), since7d),
+        hltb: sumApiCallsBySourcesSince(sourceKeysByService('hltb'), since7d),
       };
-    });
 
-    const apiCallsByService7d = {
-      steam: sumApiCallsBySourcesSince(sourceKeysByService('steam'), since7d),
-      itad: sumApiCallsBySourcesSince(sourceKeysByService('itad'), since7d),
-      hltb: sumApiCallsBySourcesSince(sourceKeysByService('hltb'), since7d),
-    };
-
-    return apiSuccess({ sources, apiCallsByService7d });
-  } catch (error) {
-    console.error('[GET /api/sync/sources]', error);
-    return apiError('Failed to fetch sync sources');
-  }
+      return apiSuccess({ sources, apiCallsByService7d });
+    } catch (error) {
+      console.error('[GET /api/sync/sources]', error);
+      return apiError('Failed to fetch sync sources');
+    }
+  });
 }

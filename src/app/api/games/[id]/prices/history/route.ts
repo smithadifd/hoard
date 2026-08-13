@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import { backfillPriceHistory } from '@/lib/sync/prices-history';
 import { gameIdSchema } from '@/lib/validations';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import {
   apiSuccess,
   apiError,
-  apiUnauthorized,
   apiValidationError,
+  withAuth,
 } from '@/lib/utils/api';
 
 const ITAD_HISTORY_EPOCH = '2012-01-01T00:00:00Z';
@@ -29,52 +28,48 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  let parsedId;
-  try {
-    const { id } = await params;
-    parsedId = gameIdSchema.safeParse({ id });
-  } catch {
-    return apiValidationError('Invalid game ID');
-  }
-  if (!parsedId.success) {
-    return apiValidationError('Invalid game ID');
-  }
-
-  let parsedBody: z.infer<typeof bodySchema>;
-  try {
-    const raw = await request.json().catch(() => ({}));
-    const result = bodySchema.safeParse(raw);
-    if (!result.success) {
-      return apiValidationError('Invalid body — expected { since?: ISO datetime | "all" }');
+  return withAuth(request, async () => {
+    let parsedId;
+    try {
+      const { id } = await params;
+      parsedId = gameIdSchema.safeParse({ id });
+    } catch {
+      return apiValidationError('Invalid game ID');
     }
-    parsedBody = result.data;
-  } catch {
-    return apiValidationError('Invalid JSON body');
-  }
-
-  const since =
-    parsedBody.since === 'all'
-      ? new Date(ITAD_HISTORY_EPOCH)
-      : parsedBody.since
-        ? new Date(parsedBody.since)
-        : undefined;
-
-  try {
-    const result = await backfillPriceHistory(parsedId.data.id, { since });
-    return apiSuccess(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[POST /api/games/:id/prices/history]', message);
-    // Surface user-actionable errors (missing API key, missing ITAD link) as 400s
-    if (/ITAD API Key|not linked to ITAD|not found/i.test(message)) {
-      return apiValidationError(message);
+    if (!parsedId.success) {
+      return apiValidationError('Invalid game ID');
     }
-    return apiError('Failed to backfill price history');
-  }
+
+    let parsedBody: z.infer<typeof bodySchema>;
+    try {
+      const raw = await request.json().catch(() => ({}));
+      const result = bodySchema.safeParse(raw);
+      if (!result.success) {
+        return apiValidationError('Invalid body — expected { since?: ISO datetime | "all" }');
+      }
+      parsedBody = result.data;
+    } catch {
+      return apiValidationError('Invalid JSON body');
+    }
+
+    const since =
+      parsedBody.since === 'all'
+        ? new Date(ITAD_HISTORY_EPOCH)
+        : parsedBody.since
+          ? new Date(parsedBody.since)
+          : undefined;
+
+    try {
+      const result = await backfillPriceHistory(parsedId.data.id, { since });
+      return apiSuccess(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[POST /api/games/:id/prices/history]', message);
+      // Surface user-actionable errors (missing API key, missing ITAD link) as 400s
+      if (/ITAD API Key|not linked to ITAD|not found/i.test(message)) {
+        return apiValidationError(message);
+      }
+      return apiError('Failed to backfill price history');
+    }
+  });
 }
