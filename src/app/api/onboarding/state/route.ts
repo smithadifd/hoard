@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiValidationError, withAuth } from '@/lib/utils/api';
 import { formatZodError } from '@/lib/validations';
 import {
   getOnboardingState,
@@ -28,22 +27,17 @@ const patchSchema = z
  * Returns the user's onboarding state machine and the derived checklist.
  */
 export async function GET(request: NextRequest) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  try {
-    return apiSuccess({
-      state: getOnboardingState(userId),
-      checklist: computeChecklist(userId),
-    });
-  } catch (error) {
-    console.error('[GET /api/onboarding/state]', error);
-    return apiError('Failed to load onboarding state');
-  }
+  return withAuth(request, async (userId) => {
+    try {
+      return apiSuccess({
+        state: getOnboardingState(userId),
+        checklist: computeChecklist(userId),
+      });
+    } catch (error) {
+      console.error('[GET /api/onboarding/state]', error);
+      return apiError('Failed to load onboarding state');
+    }
+  });
 }
 
 /**
@@ -52,30 +46,25 @@ export async function GET(request: NextRequest) {
  * wizardCompletedAt, mark the checklist dismissed, etc.
  */
 export async function PATCH(request: NextRequest) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
+  return withAuth(request, async (userId) => {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiValidationError('Invalid JSON');
+    }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return apiValidationError('Invalid JSON');
-  }
+    const parsed = patchSchema.safeParse(body);
+    if (!parsed.success) {
+      return apiValidationError(formatZodError(parsed.error));
+    }
 
-  const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) {
-    return apiValidationError(formatZodError(parsed.error));
-  }
-
-  try {
-    const next = updateOnboardingState(userId, parsed.data);
-    return apiSuccess({ state: next, checklist: computeChecklist(userId) });
-  } catch (error) {
-    console.error('[PATCH /api/onboarding/state]', error);
-    return apiError('Failed to update onboarding state');
-  }
+    try {
+      const next = updateOnboardingState(userId, parsed.data);
+      return apiSuccess({ state: next, checklist: computeChecklist(userId) });
+    } catch (error) {
+      console.error('[PATCH /api/onboarding/state]', error);
+      return apiError('Failed to update onboarding state');
+    }
+  });
 }

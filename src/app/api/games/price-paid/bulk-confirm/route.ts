@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import { bulkConfirmPricePaidSuggestions } from '@/lib/db/queries';
 import { bulkConfirmPricePaidSchema, formatZodError } from '@/lib/validations';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiValidationError, withAuth } from '@/lib/utils/api';
 
 /**
  * POST /api/games/price-paid/bulk-confirm
@@ -22,27 +21,22 @@ import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib
  * price), or its suggestion was dismissed. See bulkConfirmPricePaidSuggestions.
  */
 export async function POST(request: NextRequest) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
+  return withAuth(request, async (userId) => {
+    try {
+      const body = await request.json().catch(() => null);
+      if (body === null) {
+        return apiValidationError('Invalid JSON');
+      }
+      const parsed = bulkConfirmPricePaidSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiValidationError(formatZodError(parsed.error));
+      }
 
-  try {
-    const body = await request.json().catch(() => null);
-    if (body === null) {
-      return apiValidationError('Invalid JSON');
+      const result = bulkConfirmPricePaidSuggestions(parsed.data.entries, userId);
+      return apiSuccess(result);
+    } catch (error) {
+      console.error('[POST /api/games/price-paid/bulk-confirm]', error);
+      return apiError('Failed to confirm price-paid suggestions');
     }
-    const parsed = bulkConfirmPricePaidSchema.safeParse(body);
-    if (!parsed.success) {
-      return apiValidationError(formatZodError(parsed.error));
-    }
-
-    const result = bulkConfirmPricePaidSuggestions(parsed.data.entries, userId);
-    return apiSuccess(result);
-  } catch (error) {
-    console.error('[POST /api/games/price-paid/bulk-confirm]', error);
-    return apiError('Failed to confirm price-paid suggestions');
-  }
+  });
 }

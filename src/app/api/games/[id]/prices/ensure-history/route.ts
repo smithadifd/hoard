@@ -8,13 +8,12 @@ import {
   PRICE_HISTORY_GIVE_UP_MISSES,
 } from '@/lib/db/queries';
 import { gameIdSchema } from '@/lib/validations';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import {
   apiSuccess,
   apiError,
-  apiUnauthorized,
   apiValidationError,
   apiNotFound,
+  withAuth,
 } from '@/lib/utils/api';
 
 // ITAD's effective history epoch — matches the manual "All available" depth and the cron backfill.
@@ -37,64 +36,60 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  let gameId: number;
-  try {
-    const { id } = await params;
-    const parsed = gameIdSchema.safeParse({ id });
-    if (!parsed.success) return apiValidationError('Invalid game ID');
-    gameId = parsed.data.id;
-  } catch {
-    return apiValidationError('Invalid game ID');
-  }
-
-  const game = getGameBackfillState(gameId);
-  if (!game) return apiNotFound('Game');
-
-  // Already done, or given up after too many misses — no-op.
-  // Loose `!= null` so an unset column (null or undefined) falls through to a backfill.
-  if (game.priceHistoryBackfilledAt != null) {
-    return apiSuccess({ status: 'already-backfilled' });
-  }
-  if (game.priceHistoryMissCount >= PRICE_HISTORY_GIVE_UP_MISSES) {
-    return apiSuccess({ status: 'gave-up' });
-  }
-
-  if (inFlight.has(gameId)) {
-    return apiSuccess({ status: 'in-progress' });
-  }
-  inFlight.add(gameId);
-
-  try {
-    // Resolve the ITAD link on demand if missing (lookup games never have one).
-    let itadGameId = game.itadGameId;
-    if (!itadGameId) {
-      const lookup = await getITADClient().lookupBySteamAppId(game.steamAppId);
-      if (lookup?.found && lookup.game?.id) {
-        itadGameId = lookup.game.id;
-        bulkUpdateGameItadIds([{ steamAppId: game.steamAppId, itadGameId }]);
-      } else {
-        // No ITAD match — count the miss and let it retry on a later open (ITAD may
-        // link the game in future). Do NOT stamp backfilledAt: that's success-only.
-        incrementPriceHistoryMissCount(gameId);
-        return apiSuccess({ status: 'no-itad-link' });
-      }
+  return withAuth(request, async () => {
+    let gameId: number;
+    try {
+      const { id } = await params;
+      const parsed = gameIdSchema.safeParse({ id });
+      if (!parsed.success) return apiValidationError('Invalid game ID');
+      gameId = parsed.data.id;
+    } catch {
+      return apiValidationError('Invalid game ID');
     }
 
-    const result = await backfillPriceHistory(gameId, { since: FULL_HISTORY_SINCE });
-    markPriceHistoryBackfilled(gameId);
-    return apiSuccess({ status: 'backfilled', inserted: result.inserted, events: result.events });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[POST /api/games/:id/prices/ensure-history]', message);
-    incrementPriceHistoryMissCount(gameId);
-    return apiError('Failed to backfill price history');
-  } finally {
-    inFlight.delete(gameId);
-  }
+    const game = getGameBackfillState(gameId);
+    if (!game) return apiNotFound('Game');
+
+    // Already done, or given up after too many misses — no-op.
+    // Loose `!= null` so an unset column (null or undefined) falls through to a backfill.
+    if (game.priceHistoryBackfilledAt != null) {
+      return apiSuccess({ status: 'already-backfilled' });
+    }
+    if (game.priceHistoryMissCount >= PRICE_HISTORY_GIVE_UP_MISSES) {
+      return apiSuccess({ status: 'gave-up' });
+    }
+
+    if (inFlight.has(gameId)) {
+      return apiSuccess({ status: 'in-progress' });
+    }
+    inFlight.add(gameId);
+
+    try {
+      // Resolve the ITAD link on demand if missing (lookup games never have one).
+      let itadGameId = game.itadGameId;
+      if (!itadGameId) {
+        const lookup = await getITADClient().lookupBySteamAppId(game.steamAppId);
+        if (lookup?.found && lookup.game?.id) {
+          itadGameId = lookup.game.id;
+          bulkUpdateGameItadIds([{ steamAppId: game.steamAppId, itadGameId }]);
+        } else {
+          // No ITAD match — count the miss and let it retry on a later open (ITAD may
+          // link the game in future). Do NOT stamp backfilledAt: that's success-only.
+          incrementPriceHistoryMissCount(gameId);
+          return apiSuccess({ status: 'no-itad-link' });
+        }
+      }
+
+      const result = await backfillPriceHistory(gameId, { since: FULL_HISTORY_SINCE });
+      markPriceHistoryBackfilled(gameId);
+      return apiSuccess({ status: 'backfilled', inserted: result.inserted, events: result.events });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[POST /api/games/:id/prices/ensure-history]', message);
+      incrementPriceHistoryMissCount(gameId);
+      return apiError('Failed to backfill price history');
+    } finally {
+      inFlight.delete(gameId);
+    }
+  });
 }

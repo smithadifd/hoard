@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiError, apiUnauthorized, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiValidationError, withAuth } from '@/lib/utils/api';
 import { formatZodError } from '@/lib/validations';
 import { setSetting } from '@/lib/db/queries';
 import { updateOnboardingState } from '@/lib/onboarding/state';
@@ -96,38 +95,33 @@ async function probeSteam(apiKey: string, userId: string): Promise<SteamProbeRes
  * to the settings table and stamp steamConnectedAt.
  */
 export async function POST(request: NextRequest) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
+  return withAuth(request, async (userId) => {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiValidationError('Invalid JSON');
+    }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return apiValidationError('Invalid JSON');
-  }
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return apiValidationError(formatZodError(parsed.error));
+    }
 
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return apiValidationError(formatZodError(parsed.error));
-  }
+    const probe = await probeSteam(parsed.data.steamApiKey, parsed.data.steamUserId);
+    if (!probe.ok) {
+      return apiSuccess(probe);
+    }
 
-  const probe = await probeSteam(parsed.data.steamApiKey, parsed.data.steamUserId);
-  if (!probe.ok) {
+    try {
+      setSetting('steam_api_key', parsed.data.steamApiKey, 'Steam Web API key');
+      setSetting('steam_user_id', parsed.data.steamUserId, 'Steam64 ID');
+      updateOnboardingState(userId, { steamConnectedAt: new Date().toISOString() });
+    } catch (err) {
+      console.error('[validate-steam] Failed to persist credentials:', err);
+      return apiError('Validation succeeded but saving failed. Please try again.');
+    }
+
     return apiSuccess(probe);
-  }
-
-  try {
-    setSetting('steam_api_key', parsed.data.steamApiKey, 'Steam Web API key');
-    setSetting('steam_user_id', parsed.data.steamUserId, 'Steam64 ID');
-    updateOnboardingState(userId, { steamConnectedAt: new Date().toISOString() });
-  } catch (err) {
-    console.error('[validate-steam] Failed to persist credentials:', err);
-    return apiError('Validation succeeded but saving failed. Please try again.');
-  }
-
-  return apiSuccess(probe);
+  });
 }

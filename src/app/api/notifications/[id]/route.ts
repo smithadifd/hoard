@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
 import {
   apiSuccess,
   apiError,
-  apiUnauthorized,
   apiValidationError,
+  withAuth,
 } from '@/lib/utils/api';
 import { formatZodError } from '@/lib/validations';
 import { dismissNotification, markRead } from '@/lib/notifications/queries';
@@ -25,51 +24,46 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  const { id: rawId } = await params;
-  // parseInt rejects `1e5`-style inputs that `Number(...)` would happily parse
-  // as 100000; path segments here should be plain integers.
-  const id = /^\d+$/.test(rawId) ? Number.parseInt(rawId, 10) : NaN;
-  if (!Number.isInteger(id) || id <= 0) {
-    return apiValidationError('Invalid notification id');
-  }
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return apiValidationError('Invalid JSON');
-  }
-
-  const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) {
-    return apiValidationError(formatZodError(parsed.error));
-  }
-
-  if (parsed.data.read === undefined && parsed.data.dismissed === undefined) {
-    return apiValidationError('Provide read or dismissed in the body');
-  }
-
-  try {
-    let touched = false;
-    if (parsed.data.read === true) {
-      touched = markRead(id, userId) || touched;
-    }
-    if (parsed.data.dismissed === true) {
-      touched = dismissNotification(id, userId) || touched;
+  return withAuth(request, async (userId) => {
+    const { id: rawId } = await params;
+    // parseInt rejects `1e5`-style inputs that `Number(...)` would happily parse
+    // as 100000; path segments here should be plain integers.
+    const id = /^\d+$/.test(rawId) ? Number.parseInt(rawId, 10) : NaN;
+    if (!Number.isInteger(id) || id <= 0) {
+      return apiValidationError('Invalid notification id');
     }
 
-    // When !touched the notification either doesn't exist for this user or was
-    // already in the requested state. Both are safe to treat as a no-op success.
-    return apiSuccess({ touched });
-  } catch (error) {
-    console.error('[PATCH /api/notifications/:id]', error);
-    return apiError('Failed to update notification');
-  }
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiValidationError('Invalid JSON');
+    }
+
+    const parsed = patchSchema.safeParse(body);
+    if (!parsed.success) {
+      return apiValidationError(formatZodError(parsed.error));
+    }
+
+    if (parsed.data.read === undefined && parsed.data.dismissed === undefined) {
+      return apiValidationError('Provide read or dismissed in the body');
+    }
+
+    try {
+      let touched = false;
+      if (parsed.data.read === true) {
+        touched = markRead(id, userId) || touched;
+      }
+      if (parsed.data.dismissed === true) {
+        touched = dismissNotification(id, userId) || touched;
+      }
+
+      // When !touched the notification either doesn't exist for this user or was
+      // already in the requested state. Both are safe to treat as a no-op success.
+      return apiSuccess({ touched });
+    } catch (error) {
+      console.error('[PATCH /api/notifications/:id]', error);
+      return apiError('Failed to update notification');
+    }
+  });
 }

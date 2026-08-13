@@ -2,8 +2,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/index';
 import { games } from '@/lib/db/schema';
 import { getITADClient } from '@/lib/itad/client';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiUnauthorized, apiNotFound, apiValidationError } from '@/lib/utils/api';
+import { apiSuccess, apiNotFound, apiValidationError, withAuth } from '@/lib/utils/api';
 import { gameIdSchema } from '@/lib/validations';
 import type { ITADOverviewPrice } from '@/lib/itad/types';
 
@@ -34,52 +33,48 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  const { id } = await params;
-  const idResult = gameIdSchema.safeParse({ id });
-  if (!idResult.success) {
-    return apiValidationError('Invalid game ID');
-  }
-
-  try {
-    const db = getDb();
-    const game = db
-      .select({ id: games.id, steamAppId: games.steamAppId })
-      .from(games)
-      .where(eq(games.id, idResult.data.id))
-      .get();
-
-    if (!game) {
-      return apiNotFound('Game');
+  return withAuth(request, async () => {
+    const { id } = await params;
+    const idResult = gameIdSchema.safeParse({ id });
+    if (!idResult.success) {
+      return apiValidationError('Invalid game ID');
     }
 
-    const { steamAppId } = game;
-    const now = Date.now();
+    try {
+      const db = getDb();
+      const game = db
+        .select({ id: games.id, steamAppId: games.steamAppId })
+        .from(games)
+        .where(eq(games.id, idResult.data.id))
+        .get();
 
-    // Cache hit
-    const cached = cache.get(steamAppId);
-    if (cached && cached.expiresAt > now) {
-      return apiSuccess(cached.data);
+      if (!game) {
+        return apiNotFound('Game');
+      }
+
+      const { steamAppId } = game;
+      const now = Date.now();
+
+      // Cache hit
+      const cached = cache.get(steamAppId);
+      if (cached && cached.expiresAt > now) {
+        return apiSuccess(cached.data);
+      }
+
+      // Cache miss — fetch from ITAD
+      const resultMap = await getITADClient().getPricesBySteamAppIds([steamAppId]);
+      const overview = resultMap.get(steamAppId) ?? null;
+
+      if (overview) {
+        pruneCache(now);
+        cache.set(steamAppId, { data: overview, expiresAt: now + CACHE_TTL_MS });
+      }
+
+      return apiSuccess(overview);
+    } catch (error) {
+      console.error('[GET /api/games/:id/itad-overview]', error);
+      // Return null gracefully rather than 500 — ITAD failures shouldn't break the page
+      return apiSuccess(null);
     }
-
-    // Cache miss — fetch from ITAD
-    const resultMap = await getITADClient().getPricesBySteamAppIds([steamAppId]);
-    const overview = resultMap.get(steamAppId) ?? null;
-
-    if (overview) {
-      pruneCache(now);
-      cache.set(steamAppId, { data: overview, expiresAt: now + CACHE_TTL_MS });
-    }
-
-    return apiSuccess(overview);
-  } catch (error) {
-    console.error('[GET /api/games/:id/itad-overview]', error);
-    // Return null gracefully rather than 500 — ITAD failures shouldn't break the page
-    return apiSuccess(null);
-  }
+  });
 }
