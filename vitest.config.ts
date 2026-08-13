@@ -18,6 +18,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // See test/mocks/server-only.ts: Next's bundler special-cases this
+      // package at build time; Vitest needs an explicit no-op stand-in.
+      'server-only': path.resolve(__dirname, './test/mocks/server-only.ts'),
     },
   },
 });

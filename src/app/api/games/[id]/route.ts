@@ -1,7 +1,6 @@
 import { getEnrichedGameById, updateUserGame, upsertUserGame, gameExists, updateManualHltbData, setHltbExcluded, setPlaytimeSource, getRatedGameCount } from '@/lib/db/queries';
 import { gameIdSchema, gameUpdateSchema, formatZodError } from '@/lib/validations';
-import { requireUserIdFromRequest } from '@/lib/auth-helpers';
-import { apiSuccess, apiError, apiUnauthorized, apiValidationError, apiNotFound } from '@/lib/utils/api';
+import { apiSuccess, apiError, apiValidationError, apiNotFound, withAuth } from '@/lib/utils/api';
 import { milestones } from '@/lib/onboarding/milestones';
 
 /**
@@ -12,30 +11,25 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
+  return withAuth(request, async (userId) => {
+    try {
+      const { id } = await params;
+      const idResult = gameIdSchema.safeParse({ id });
+      if (!idResult.success) {
+        return apiValidationError('Invalid game ID');
+      }
 
-  try {
-    const { id } = await params;
-    const idResult = gameIdSchema.safeParse({ id });
-    if (!idResult.success) {
-      return apiValidationError('Invalid game ID');
+      const game = getEnrichedGameById(idResult.data.id, userId);
+      if (!game) {
+        return apiNotFound('Game');
+      }
+
+      return apiSuccess(game);
+    } catch (error) {
+      console.error('[GET /api/games/:id]', error);
+      return apiError('Failed to fetch game');
     }
-
-    const game = getEnrichedGameById(idResult.data.id, userId);
-    if (!game) {
-      return apiNotFound('Game');
-    }
-
-    return apiSuccess(game);
-  } catch (error) {
-    console.error('[GET /api/games/:id]', error);
-    return apiError('Failed to fetch game');
-  }
+  });
 }
 
 /**
@@ -46,93 +40,88 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(request);
-  } catch {
-    return apiUnauthorized();
-  }
-
-  try {
-    const { id } = await params;
-    const idResult = gameIdSchema.safeParse({ id });
-    if (!idResult.success) {
-      return apiValidationError('Invalid game ID');
-    }
-
-    const body = await request.json().catch(() => null);
-    if (body === null) {
-      return apiValidationError('Invalid JSON');
-    }
-    const parsed = gameUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return apiValidationError(formatZodError(parsed.error));
-    }
-
-    if (Object.keys(parsed.data).length === 0) {
-      return apiValidationError('No valid fields to update');
-    }
-
-    // Separate HLTB fields (games table) and the playtime-source preference
-    // (user_games, with its own recompute) from the plain user fields.
-    const { hltbMain, hltbMainExtra, hltbCompletionist, hltbExcluded, playtimeSource, ...userFields } = parsed.data;
-    const hasHltbFields = hltbMain !== undefined || hltbMainExtra !== undefined || hltbCompletionist !== undefined;
-
-    if (hltbExcluded !== undefined) {
-      setHltbExcluded(idResult.data.id, hltbExcluded);
-    } else if (hasHltbFields) {
-      updateManualHltbData(idResult.data.id, {
-        hltbMain: hltbMain ?? null,
-        hltbMainExtra: hltbMainExtra ?? null,
-        hltbCompletionist: hltbCompletionist ?? null,
-      });
-    }
-
-    if (playtimeSource !== undefined) {
-      // Create a baseline user_games row first if needed (e.g. a looked-up game),
-      // so the preference always lands.
-      if (!setPlaytimeSource(idResult.data.id, playtimeSource, userId)) {
-        if (!gameExists(idResult.data.id)) {
-          return apiNotFound('Game');
-        }
-        upsertUserGame(idResult.data.id, {}, userId);
-        setPlaytimeSource(idResult.data.id, playtimeSource, userId);
+  return withAuth(request, async (userId) => {
+    try {
+      const { id } = await params;
+      const idResult = gameIdSchema.safeParse({ id });
+      if (!idResult.success) {
+        return apiValidationError('Invalid game ID');
       }
-    }
 
-    if (Object.keys(userFields).length > 0) {
-      const updated = updateUserGame(idResult.data.id, userFields, userId);
-      if (!updated) {
-        // No user_games row yet (e.g. a looked-up game the user is wishlisting
-        // for the first time). Create a baseline row, then re-apply so the field
-        // set + cascades run exactly once, in updateUserGame.
-        if (!gameExists(idResult.data.id)) {
-          return apiNotFound('Game');
-        }
-        upsertUserGame(idResult.data.id, {}, userId);
-        if (!updateUserGame(idResult.data.id, userFields, userId)) {
-          return apiNotFound('Game');
+      const body = await request.json().catch(() => null);
+      if (body === null) {
+        return apiValidationError('Invalid JSON');
+      }
+      const parsed = gameUpdateSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiValidationError(formatZodError(parsed.error));
+      }
+
+      if (Object.keys(parsed.data).length === 0) {
+        return apiValidationError('No valid fields to update');
+      }
+
+      // Separate HLTB fields (games table) and the playtime-source preference
+      // (user_games, with its own recompute) from the plain user fields.
+      const { hltbMain, hltbMainExtra, hltbCompletionist, hltbExcluded, playtimeSource, ...userFields } = parsed.data;
+      const hasHltbFields = hltbMain !== undefined || hltbMainExtra !== undefined || hltbCompletionist !== undefined;
+
+      if (hltbExcluded !== undefined) {
+        setHltbExcluded(idResult.data.id, hltbExcluded);
+      } else if (hasHltbFields) {
+        updateManualHltbData(idResult.data.id, {
+          hltbMain: hltbMain ?? null,
+          hltbMainExtra: hltbMainExtra ?? null,
+          hltbCompletionist: hltbCompletionist ?? null,
+        });
+      }
+
+      if (playtimeSource !== undefined) {
+        // Create a baseline user_games row first if needed (e.g. a looked-up game),
+        // so the preference always lands.
+        if (!setPlaytimeSource(idResult.data.id, playtimeSource, userId)) {
+          if (!gameExists(idResult.data.id)) {
+            return apiNotFound('Game');
+          }
+          upsertUserGame(idResult.data.id, {}, userId);
+          setPlaytimeSource(idResult.data.id, playtimeSource, userId);
         }
       }
-    }
 
-    // Onboarding milestone fires when the user crosses 10 rated games — only
-    // relevant if this patch actually set personalInterest. Wrapped so a
-    // broken milestone path never fails the user's update.
-    if (userFields.personalInterest !== undefined) {
-      try {
-        const ratedCount = getRatedGameCount(userId);
-        if (ratedCount >= 10) {
-          void milestones.firstTenRated(userId, ratedCount);
+      if (Object.keys(userFields).length > 0) {
+        const updated = updateUserGame(idResult.data.id, userFields, userId);
+        if (!updated) {
+          // No user_games row yet (e.g. a looked-up game the user is wishlisting
+          // for the first time). Create a baseline row, then re-apply so the field
+          // set + cascades run exactly once, in updateUserGame.
+          if (!gameExists(idResult.data.id)) {
+            return apiNotFound('Game');
+          }
+          upsertUserGame(idResult.data.id, {}, userId);
+          if (!updateUserGame(idResult.data.id, userFields, userId)) {
+            return apiNotFound('Game');
+          }
         }
-      } catch (err) {
-        console.warn('[game PATCH] milestone hook failed:', err);
       }
-    }
 
-    return apiSuccess({ message: 'Updated' });
-  } catch (error) {
-    console.error('[PATCH /api/games/:id]', error);
-    return apiError('Failed to update game');
-  }
+      // Onboarding milestone fires when the user crosses 10 rated games — only
+      // relevant if this patch actually set personalInterest. Wrapped so a
+      // broken milestone path never fails the user's update.
+      if (userFields.personalInterest !== undefined) {
+        try {
+          const ratedCount = getRatedGameCount(userId);
+          if (ratedCount >= 10) {
+            void milestones.firstTenRated(userId, ratedCount);
+          }
+        } catch (err) {
+          console.warn('[game PATCH] milestone hook failed:', err);
+        }
+      }
+
+      return apiSuccess({ message: 'Updated' });
+    } catch (error) {
+      console.error('[PATCH /api/games/:id]', error);
+      return apiError('Failed to update game');
+    }
+  });
 }
