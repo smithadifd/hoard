@@ -1566,6 +1566,59 @@ describe('getValueReceivedOverview', () => {
     expect(overview.stats.blendedDollarsPerHour).toBeNull();
     expect(overview.stats.totalSpent).toBe(0);
   });
+
+  // Cross-filter regression test (finding 5, hoard-user-review-2026-08.md): the Library
+  // page passes its own GameFilters into getValueReceivedOverview so the value cards
+  // describe the filtered grid on screen, not the whole owned library. Before the fix,
+  // the second argument didn't exist and the Library silently rendered the same
+  // unfiltered numbers as the Dashboard.
+  it('computes stats from the filtered set — a genre filter changes the rollup, an unfiltered call (the Dashboard shape) does not', () => {
+    // Two owned, priced-and-played games with deliberately lopsided realized $/hr so
+    // including/excluding either one is unmistakable in the aggregate stats.
+    const rpg = seedGame(testDb, { steamAppId: 870, title: 'RPG Gem', reviewScore: 90, hltbMain: 10 });
+    seedGenre(testDb, rpg, 'RPG');
+    seedUserGame(testDb, rpg, { isOwned: true, playtimeMinutes: 600, pricePaid: 5 }); // 10h @ $5 = $0.50/hr
+
+    const action = seedGame(testDb, { steamAppId: 871, title: 'Action Blaster', reviewScore: 90, hltbMain: 10 });
+    seedGenre(testDb, action, 'Action');
+    seedUserGame(testDb, action, { isOwned: true, playtimeMinutes: 60, pricePaid: 60 }); // 1h @ $60 = $60/hr
+
+    // No filters — the exact call shape the Dashboard uses. Both games must count.
+    const unfiltered = getValueReceivedOverview('default');
+    expect(unfiltered.stats.pricedGames).toBe(2);
+    expect(unfiltered.stats.totalSpent).toBe(65);
+    expect(unfiltered.stats.moneyLensGames).toBe(2);
+
+    // Library, filtered to RPG only (mirrors ?genres=RPG on /library) — a filter that
+    // provably shrinks the underlying set from 2 games to 1.
+    const filtered = getValueReceivedOverview('default', { view: 'library', genres: ['RPG'] });
+    expect(filtered.stats.pricedGames).toBe(1);
+    expect(filtered.stats.totalSpent).toBe(5);
+    expect(filtered.stats.moneyLensGames).toBe(1);
+    expect(filtered.stats.blendedDollarsPerHour).toBe(0.5);
+    const filteredGradedCount = filtered.distribution.reduce((sum, d) => sum + d.count, 0);
+    expect(filteredGradedCount).toBe(1);
+
+    // The Dashboard's own (unfiltered) call is unaffected — identical to the pre-filter run.
+    expect(getValueReceivedOverview('default')).toEqual(unfiltered);
+  });
+
+  it('respects the valueReceivedTier filter (the donut-tier dropdown) without re-deriving the SQL ordinal', () => {
+    // Money lens, well under target → exceeded.
+    const good = seedGame(testDb, { steamAppId: 880, title: 'Great Deal', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, good, { isOwned: true, playtimeMinutes: 600, pricePaid: 1 }); // $0.10/hr
+    // Money lens, way over target → unrealized.
+    const bad = seedGame(testDb, { steamAppId: 881, title: 'Bad Deal', reviewScore: 90, hltbMain: 10 });
+    seedUserGame(testDb, bad, { isOwned: true, playtimeMinutes: 60, pricePaid: 100 }); // $100/hr
+
+    const exceededOnly = getValueReceivedOverview('default', { view: 'library', valueReceivedTier: 'exceeded' });
+    expect(exceededOnly.stats.pricedGames).toBe(1);
+    expect(exceededOnly.stats.totalSpent).toBe(1);
+
+    const unrealizedOnly = getValueReceivedOverview('default', { view: 'library', valueReceivedTier: 'unrealized' });
+    expect(unrealizedOnly.stats.pricedGames).toBe(1);
+    expect(unrealizedOnly.stats.totalSpent).toBe(100);
+  });
 });
 
 describe('getDealOutcomeInputs', () => {

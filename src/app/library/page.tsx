@@ -35,9 +35,12 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
   const pageSize = 24;
   const { games, total } = getEnrichedGames(filters, 1, pageSize, session.user.id);
 
+  // Filter-aware: pass the Library's own filters so these cards describe the
+  // filtered set on screen, not the whole owned library (the Dashboard's cards
+  // call getValueReceivedOverview with no filters and stay library-wide).
   let valueOverview: ValueReceivedOverview | null = null;
   try {
-    valueOverview = getValueReceivedOverview(session.user.id);
+    valueOverview = getValueReceivedOverview(session.user.id, filters);
   } catch {
     // DB not ready yet — fall back to the grid without the value rollup.
   }
@@ -76,14 +79,16 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
         </Link>
       )}
 
-      {/* Lead with Value Received — the same rollup the dashboard shows, so the library
-          headlines "did I get my money's worth?" instead of an A–Z wall of titles. */}
+      {/* Lead with Value Received — the same rollup chrome the dashboard shows, but computed
+          from THIS page's filtered set (see getValueReceivedOverview(filters) above) rather
+          than the whole owned library, so the headline number matches the grid beneath it.
+          The "N filtered games" suffix states that scope instead of leaving it implicit. */}
       {total > 0 && valueOverview && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ValueCard icon={<Wallet className="h-4 w-4" />} title="Value Received">
+          <ValueCard icon={<Wallet className="h-4 w-4" />} title={`Value Received — ${total} filtered game${total === 1 ? '' : 's'}`}>
             <ValueReceivedChart data={valueOverview.distribution} />
           </ValueCard>
-          <ValueCard icon={<DollarSign className="h-4 w-4" />} title="Spending & Value">
+          <ValueCard icon={<DollarSign className="h-4 w-4" />} title={`Spending & Value — ${total} filtered game${total === 1 ? '' : 's'}`}>
             <ValueSummaryCard stats={valueOverview.stats} />
           </ValueCard>
         </div>
