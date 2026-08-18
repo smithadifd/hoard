@@ -1619,6 +1619,55 @@ describe('getValueReceivedOverview', () => {
     expect(unrealizedOnly.stats.pricedGames).toBe(1);
     expect(unrealizedOnly.stats.totalSpent).toBe(100);
   });
+
+  // `earlyAccess` is the one grid dimension mirrored INTO this function by hand rather than
+  // inherited from buildGameFilterConditions (getEnrichedGames applies it separately too), so
+  // it is the dimension most likely to silently drift out of the rollup. Pin it explicitly:
+  // deleting the mirror block leaves every other test in this file green.
+  it('respects the earlyAccess filter, which is mirrored outside buildGameFilterConditions', () => {
+    const ea = seedGame(testDb, { steamAppId: 890, title: 'Early Access Game', reviewScore: 90, hltbMain: 10, isEarlyAccess: true });
+    seedUserGame(testDb, ea, { isOwned: true, playtimeMinutes: 600, pricePaid: 5 });
+    const full = seedGame(testDb, { steamAppId: 891, title: 'Full Release Game', reviewScore: 90, hltbMain: 10, isEarlyAccess: false });
+    seedUserGame(testDb, full, { isOwned: true, playtimeMinutes: 60, pricePaid: 60 });
+
+    expect(getValueReceivedOverview('default', { view: 'library' }).stats.pricedGames).toBe(2);
+
+    const eaOnly = getValueReceivedOverview('default', { view: 'library', earlyAccess: true });
+    expect(eaOnly.stats.pricedGames).toBe(1);
+    expect(eaOnly.stats.totalSpent).toBe(5);
+    expect(eaOnly.distribution.reduce((sum, d) => sum + d.count, 0)).toBe(1);
+
+    const nonEaOnly = getValueReceivedOverview('default', { view: 'library', earlyAccess: false });
+    expect(nonEaOnly.stats.pricedGames).toBe(1);
+    expect(nonEaOnly.stats.totalSpent).toBe(60);
+
+    // The grid over the same filters agrees on population — the point of the fix.
+    expect(getEnrichedGames({ view: 'library', earlyAccess: true }, 1, 50, 'default').total).toBe(1);
+    expect(getEnrichedGames({ view: 'library', earlyAccess: false }, 1, 50, 'default').total).toBe(1);
+  });
+
+  // A no-baseline game (played, but no price and no HLTB/Steam-median to grade against)
+  // comes back from calculateValueReceived with lens 'none' AND an INERT tier of
+  // 'unrealized'. The grid's SQL ordinal is NULL for those rows and drops them from every
+  // tier filter, so the loop guard must exclude them on `lens` — comparing `vr.tier` alone
+  // would silently over-count the cards against the grid beneath them.
+  it('excludes no-baseline (lens "none") games from a valueReceivedTier filter, matching the grid', () => {
+    const noBaseline = seedGame(testDb, { steamAppId: 892, title: 'No Baseline Game', reviewScore: 60 });
+    seedUserGame(testDb, noBaseline, { isOwned: true, playtimeMinutes: 300 });
+    const shelfware = seedGame(testDb, { steamAppId: 893, title: 'Shelfware Game', reviewScore: 80, hltbMain: 12 });
+    seedUserGame(testDb, shelfware, { isOwned: true, playtimeMinutes: 0 });
+
+    // Unfiltered, the no-baseline game is counted — in the 'none' bucket, not a tier.
+    const unfiltered = getValueReceivedOverview('default');
+    expect(unfiltered.distribution.find((d) => d.bucket === 'none')?.count).toBe(1);
+    expect(unfiltered.distribution.reduce((sum, d) => sum + d.count, 0)).toBe(2);
+
+    const unrealizedOnly = getValueReceivedOverview('default', { view: 'library', valueReceivedTier: 'unrealized' });
+    expect(unrealizedOnly.distribution.find((d) => d.bucket === 'none')?.count).toBe(0);
+    expect(unrealizedOnly.distribution.reduce((sum, d) => sum + d.count, 0)).toBe(1);
+    // The grid's SQL tier ordinal agrees: one game, not two.
+    expect(getEnrichedGames({ view: 'library', valueReceivedTier: 'unrealized' }, 1, 50, 'default').total).toBe(1);
+  });
 });
 
 describe('getDealOutcomeInputs', () => {
