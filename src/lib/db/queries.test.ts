@@ -968,6 +968,61 @@ describe('value received (owned games)', () => {
     // Tier carries an inert placeholder; the UI keys off the 'none' lens, not the tier.
     expect(game?.realizedDollarsPerHour).toBeUndefined();
   });
+
+  // Regression (AY11): an owned+played+unreleased game with no HLTB estimate must
+  // never be graded on a Steam-review-median "playtime" — that data is noise for a
+  // game that isn't out (see engine.ts's resolveEffectivePlaytime doc on
+  // `isReleased`). This has to hold at BOTH surfaces the Dashboard reads:
+  //  - the grid's SQL tier filter (effectiveHoursExpr in queries.ts), which already
+  //    gates on isReleased and excludes this game from every tier, and
+  //  - the per-card badge (valueReceivedTier/Lens, computed in JS), which — before
+  //    this fix — never passed isReleased into getEffectivePlaytimeHours, so it
+  //    silently graded the game "Value Exceeded" off the borrowed median while the
+  //    grid filter excluded the very same game. That contradiction (a card claiming
+  //    a tier the filter denies) is the bug AX8's reviewer reproduced on main.
+  //
+  // Hand-worked expectation, independent of either implementation: Nebula Frontier
+  // is unreleased, has no HLTB main-story estimate, but does have a Steam
+  // playtime-median of 10h and 11h (660min) of recorded playtime. Per the documented
+  // release-gating contract, a not-yet-released game gets NO honest playtime
+  // baseline — hltbMain is null AND the median fallback is suppressed — so
+  // calculateValueReceived's own "no baseline" branch applies: lens 'none', not a
+  // real tier, regardless of the 11h/10h ratio a naive read would compute.
+  it('grid tier filter and per-card badge agree on an unreleased owned game with no HLTB (AY11 regression)', () => {
+    const gameId = seedGame(testDb, {
+      steamAppId: 950,
+      title: 'Nebula Frontier',
+      reviewScore: 85,
+      hltbMain: null,
+      steamPlaytimeMedian: 10,
+      isReleased: false,
+    });
+    seedUserGame(testDb, gameId, { isOwned: true, playtimeMinutes: 660, playtimeSource: 'hltb' });
+
+    // Grid: filtering the library to the 'exceeded' tier must exclude this game — it
+    // has no honest baseline to grade against, unreleased or not.
+    const exceededFiltered = getEnrichedGames(
+      { view: 'library', valueReceivedTier: 'exceeded' }, 1, 50, 'default',
+    );
+    expect(exceededFiltered.games.map((g) => g.title)).not.toContain('Nebula Frontier');
+
+    // Per-card badge: the SAME game, unfiltered, must not claim the 'exceeded' tier
+    // the grid filter just denied it — and must report lens 'none', matching the
+    // hand-worked "no baseline" expectation above.
+    const unfiltered = getEnrichedGames({ view: 'library' }, 1, 50, 'default');
+    const badge = unfiltered.games.find((g) => g.title === 'Nebula Frontier');
+    expect(badge).toBeDefined();
+    expect(badge!.valueReceivedTier).not.toBe('exceeded');
+    expect(badge!.valueReceivedLens).toBe('none');
+
+    // The Dashboard donut (getValueReceivedOverview) is the third consumer of this
+    // same basis — it must bucket the game under 'none' too, not silently count it
+    // toward 'exceeded' while the grid disagrees.
+    const overview = getValueReceivedOverview('default');
+    const counts = Object.fromEntries(overview.distribution.map((d) => [d.bucket, d.count]));
+    expect(counts.exceeded ?? 0).toBe(0);
+    expect(counts.none ?? 0).toBe(1);
+  });
 });
 
 describe('capturePricePaidSuggestions (price-paid suggestion capture)', () => {
@@ -1489,9 +1544,11 @@ describe('getEnrichedGames — Value Received filters (R14)', () => {
     }
 
     // Expected bucket per game via the DONUT's exact per-game logic (getValueReceivedOverview):
-    // effective playtime hours via getEffectivePlaytimeHours (isReleased omitted, exactly as the
-    // donut/badges call it), then calculateValueReceived → lens/tier. This pins the SQL filter to
-    // the same computation the cards + donut show, so they can never silently disagree.
+    // effective playtime hours via getEffectivePlaytimeHours, then calculateValueReceived →
+    // lens/tier. This pins the SQL filter to the same computation the cards + donut show, so
+    // they can never silently disagree. isReleased is omitted here (defaults to unset/released
+    // in every spec above) — it only changes behaviour for an unreleased HLTB-less game, which
+    // is covered separately by the AY11 regression test below.
     const donutBucket = (s: (typeof specs)[number]) => {
       const vr = calculateValueReceived({
         playtimeMinutes: s.mins,
