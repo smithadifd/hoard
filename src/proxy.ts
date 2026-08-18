@@ -51,8 +51,6 @@ function isDemoAllowedAuthPath(pathname: string): boolean {
 const DEMO_BLOCKED: { method: string; prefix: string }[] = [
   { method: 'POST', prefix: '/api/sync' },
   { method: 'POST', prefix: '/api/steam' },
-  // Note: there is no `/api/prices` route — price-history mutation is
-  // `POST /api/games/[id]/prices/history`, already covered by `/api/games`.
   { method: 'POST', prefix: '/api/backup' },
   { method: 'PUT', prefix: '/api/settings' },
   { method: 'PATCH', prefix: '/api/settings' },
