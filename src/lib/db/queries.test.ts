@@ -7,6 +7,7 @@ import { SECRET_SETTING_KEYS } from '@/lib/validations';
 import { __resetSecretsCryptoStateForTests } from '@/lib/settings/secrets';
 import { calculateValueReceived } from '../scoring/valueReceived';
 import { getEffectivePlaytimeHours } from '../scoring/engine';
+import { computeDealOutcome } from '../scoring/dealOutcomes';
 
 // Mock getDb to return our test database
 let testDb: TestDb;
@@ -972,23 +973,36 @@ describe('value received (owned games)', () => {
   // Regression (AY11): an owned+played+unreleased game with no HLTB estimate must
   // never be graded on a Steam-review-median "playtime" — that data is noise for a
   // game that isn't out (see engine.ts's resolveEffectivePlaytime doc on
-  // `isReleased`). This has to hold at BOTH surfaces the Dashboard reads:
+  // `isReleased`). This has to hold at every surface the Dashboard reads:
   //  - the grid's SQL tier filter (effectiveHoursExpr in queries.ts), which already
-  //    gates on isReleased and excludes this game from every tier, and
+  //    gates on isReleased and excludes this game from every tier;
   //  - the per-card badge (valueReceivedTier/Lens, computed in JS), which — before
   //    this fix — never passed isReleased into getEffectivePlaytimeHours, so it
   //    silently graded the game "Value Exceeded" off the borrowed median while the
   //    grid filter excluded the very same game. That contradiction (a card claiming
-  //    a tier the filter denies) is the bug AX8's reviewer reproduced on main.
+  //    a tier the filter denies) is the bug AX8's reviewer reproduced on main;
+  //  - the Dashboard donut (getValueReceivedOverview), the same JS path as the badge;
+  //  - and Deal Outcomes (getDealOutcomeInputs + computeDealOutcome), a THIRD JS call
+  //    site with the identical omission, found by a later review pass on this same
+  //    row: it graded a real predicted $/hr (and a hit/miss verdict) off the
+  //    borrowed median instead of the honest 'unknown' verdict.
   //
-  // Hand-worked expectation, independent of either implementation: Nebula Frontier
-  // is unreleased, has no HLTB main-story estimate, but does have a Steam
+  // Hand-worked expectation, independent of any implementation: Nebula Frontier is
+  // unreleased, has no HLTB main-story estimate, but does have a Steam
   // playtime-median of 10h and 11h (660min) of recorded playtime. Per the documented
   // release-gating contract, a not-yet-released game gets NO honest playtime
   // baseline — hltbMain is null AND the median fallback is suppressed — so
   // calculateValueReceived's own "no baseline" branch applies: lens 'none', not a
   // real tier, regardless of the 11h/10h ratio a naive read would compute.
-  it('grid tier filter and per-card badge agree on an unreleased owned game with no HLTB (AY11 regression)', () => {
+  //
+  // A second unreleased/no-HLTB/median game, Nebula Frontier Early Bundle, adds a
+  // recorded price ($22) purely to exercise Deal Outcomes (which only grades
+  // priced purchases) — hand-worked: at $22 paid, 11h played, that's a real
+  // realized $/hr of $2.00 regardless of this fix (money lens never needs an hours
+  // estimate). The PREDICTED side is what the fix changes: with no honest basis,
+  // predictedDollarsPerHour must be null and the verdict must be 'unknown' — never
+  // a $22/10h = $2.20/hr "hit" borrowed from the same suppressed Steam median.
+  it('grid, per-card badge, donut, and Deal Outcomes agree on an unreleased owned game with no HLTB (AY11 regression)', () => {
     const gameId = seedGame(testDb, {
       steamAppId: 950,
       title: 'Nebula Frontier',
@@ -1015,13 +1029,42 @@ describe('value received (owned games)', () => {
     expect(badge!.valueReceivedTier).not.toBe('exceeded');
     expect(badge!.valueReceivedLens).toBe('none');
 
-    // The Dashboard donut (getValueReceivedOverview) is the third consumer of this
-    // same basis — it must bucket the game under 'none' too, not silently count it
-    // toward 'exceeded' while the grid disagrees.
+    // The Dashboard donut is another consumer of this same basis — it must bucket
+    // the game under 'none' too, not silently count it toward 'exceeded' while the
+    // grid disagrees.
     const overview = getValueReceivedOverview('default');
     const counts = Object.fromEntries(overview.distribution.map((d) => [d.bucket, d.count]));
     expect(counts.exceeded ?? 0).toBe(0);
     expect(counts.none ?? 0).toBe(1);
+
+    // Third surface: Deal Outcomes. Needs a priced purchase to be included at all
+    // (getDealOutcomeInputs only selects owned+priced rows), so a second,
+    // otherwise-identical game carries a recorded price.
+    const bundleId = seedGame(testDb, {
+      steamAppId: 951,
+      title: 'Nebula Frontier Early Bundle',
+      reviewScore: 85,
+      hltbMain: null,
+      steamPlaytimeMedian: 10,
+      isReleased: false,
+    });
+    seedUserGame(testDb, bundleId, {
+      isOwned: true,
+      playtimeMinutes: 660,
+      playtimeSource: 'hltb',
+      pricePaid: 22,
+      pricePaidAt: '2024-01-01',
+    });
+
+    const inputs = getDealOutcomeInputs('default');
+    const bundleInput = inputs.find((i) => i.title === 'Nebula Frontier Early Bundle');
+    expect(bundleInput).toBeDefined();
+    const outcome = computeDealOutcome(bundleInput!);
+    // Realized $/hr is real (money lens needs no hours estimate) — the bug is
+    // specifically about the PREDICTED side and the verdict it drives.
+    expect(outcome.realizedDollarsPerHour).toBe(2);
+    expect(outcome.predictedDollarsPerHour).toBeNull();
+    expect(outcome.verdict).toBe('unknown');
   });
 });
 

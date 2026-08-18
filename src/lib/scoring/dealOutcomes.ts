@@ -43,6 +43,15 @@ export interface DealOutcomeInput {
   playtimeSource: string | null;
   hltbMain: number | null;
   steamPlaytimeMedian: number | null;
+  /**
+   * Release status — MUST be threaded into getEffectivePlaytimeHours below (AY11,
+   * third surface): without it, an unreleased HLTB-less purchase silently borrows
+   * the Steam-review-median "expected hours" and gets graded hit/miss instead of
+   * the honest 'unknown' verdict, exactly the defect this row exists to remove
+   * from the grid (queries.ts effectiveHoursExpr) and the donut/badge
+   * (getValueReceivedOverview / applyValueReceivedToGame).
+   */
+  isReleased?: boolean | null;
   reviewPercent: number | null;
   enjoymentRating: number | null;
   completionStatus: string;
@@ -156,6 +165,7 @@ export function computeDealOutcome(
     playtimeSource: input.playtimeSource,
     hltbMain: input.hltbMain,
     steamPlaytimeMedian: input.steamPlaytimeMedian,
+    isReleased: input.isReleased ?? null,
   });
 
   const vr = calculateValueReceived(

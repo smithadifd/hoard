@@ -5374,7 +5374,8 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
            g.steam_playtime_median as steamPlaytimeMedian,
            g.review_score as reviewScore,
            ug.enjoyment_rating as enjoymentRating,
-           ug.completion_status as completionStatus
+           ug.completion_status as completionStatus,
+           g.is_released as isReleased
     FROM user_games ug
     JOIN games g ON g.id = ug.game_id
     WHERE ug.user_id = ${userId} AND ug.is_owned = 1
@@ -5391,6 +5392,9 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
     reviewScore: number | null;
     enjoymentRating: number | null;
     completionStatus: string;
+    // Raw SQLite integer (0/1) or null — normalized to boolean|null below, same
+    // as every other isReleased read site in this file.
+    isReleased: number | null;
   }>;
 
   if (rows.length === 0) return [];
@@ -5459,6 +5463,10 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
       store: snap?.store ?? null,
       discountPercent: snap?.discountPercent ?? null,
       dealScore: snap?.dealScore ?? null,
+      // AY11 (third surface): threaded into computeDealOutcome's
+      // getEffectivePlaytimeHours call so an unreleased HLTB-less purchase reads
+      // 'unknown', not a Steam-median-derived hit/miss.
+      isReleased: r.isReleased === null ? null : r.isReleased === 1,
     };
   });
 }
