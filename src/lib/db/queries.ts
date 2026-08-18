@@ -5222,32 +5222,44 @@ export interface ValueReceivedOverview {
 }
 
 /**
- * Dashboard rollup of Value Received across the owned library. Computes each game's
+ * Rollup of Value Received across a set of owned games. Computes each game's
  * tier in JS via {@link calculateValueReceived} (the score has no stored column), so
  * the donut and the stat tile stay in lockstep with the per-card badges.
+ *
+ * `filters` is optional; omitted, it reproduces the original unfiltered "every owned
+ * game" query, which the Dashboard relies on for its library-wide numbers. The Library
+ * page passes its own `GameFilters` (the same object `getEnrichedGames` uses for the
+ * grid) via the shared `buildGameFilterConditions`, so these cards can't drift from the
+ * grid beneath them. `valueReceivedTier` is matched against `vr.tier` in the loop below
+ * instead of re-deriving the SQL ordinal.
  */
-export function getValueReceivedOverview(userId: string): ValueReceivedOverview {
+export function getValueReceivedOverview(userId: string, filters?: GameFilters): ValueReceivedOverview {
   const db = getDb();
   const { thresholds } = getScoringConfig();
 
-  const rows = db.all(sql`
-    SELECT ug.playtime_minutes as playtimeMinutes,
-           ug.price_paid as pricePaid,
-           ug.playtime_source as playtimeSource,
-           g.review_score as reviewScore,
-           g.hltb_main as hltbMain,
-           g.steam_playtime_median as steamPlaytimeMedian
-    FROM user_games ug
-    JOIN games g ON g.id = ug.game_id
-    WHERE ug.user_id = ${userId} AND ug.is_owned = 1
-  `) as Array<{
-    playtimeMinutes: number | null;
-    pricePaid: number | null;
-    playtimeSource: string | null;
-    reviewScore: number | null;
-    hltbMain: number | null;
-    steamPlaytimeMedian: number | null;
-  }>;
+  const conditions = filters
+    ? buildGameFilterConditions(filters, userId)
+    : [eq(userGames.userId, userId), eq(userGames.isOwned, true)];
+
+  if (filters?.earlyAccess === true) {
+    conditions.push(sql`${games.isEarlyAccess} = 1`);
+  } else if (filters?.earlyAccess === false) {
+    conditions.push(sql`(${games.isEarlyAccess} IS NULL OR ${games.isEarlyAccess} = 0)`);
+  }
+
+  const rows = db
+    .select({
+      playtimeMinutes: userGames.playtimeMinutes,
+      pricePaid: userGames.pricePaid,
+      playtimeSource: userGames.playtimeSource,
+      reviewScore: games.reviewScore,
+      hltbMain: games.hltbMain,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(and(...conditions))
+    .all();
 
   const buckets: Record<ValueReceivedBucket, number> = {
     exceeded: 0,
@@ -5275,6 +5287,12 @@ export function getValueReceivedOverview(userId: string): ValueReceivedOverview 
       },
       thresholds,
     );
+
+    // Value-tier filter is applied here, against the tier this same call just computed,
+    // rather than re-deriving the SQL ordinal — one source of truth per game, no drift.
+    if (filters?.valueReceivedTier && (vr.lens === 'none' || vr.tier !== filters.valueReceivedTier)) {
+      continue;
+    }
 
     buckets[vr.lens === 'none' ? 'none' : vr.tier]++;
     totalMinutes += Math.max(0, r.playtimeMinutes ?? 0);
