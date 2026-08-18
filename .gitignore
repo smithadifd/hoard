@@ -50,7 +50,8 @@ next-env.d.ts
 CLAUDE.local.md
 
 # implementation plans (local workflow, not app code)
-/plans/
+# real content lives in foundry/plans/hoard — this path is a symlink to it
+/plans
 
 # Serwist (generated service worker files)
 public/sw*
