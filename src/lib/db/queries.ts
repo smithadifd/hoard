@@ -1667,13 +1667,18 @@ function applyValueReceivedToGame(
     interestRatedAt: string | null;
     pricePaidSuggested: number | null;
     pricePaidSuggestionDismissedAt: string | null;
+    // Release status — MUST be threaded into getEffectivePlaytimeHours below (AY11):
+    // without it, an unreleased HLTB-less game silently borrows the Steam-review-median
+    // fallback here even though effectiveHoursExpr (the SQL twin, queries.ts ~1731) and
+    // resolveEffectivePlaytime's own isReleased contract (engine.ts) both suppress it.
+    isReleased?: boolean | null;
   },
 ): void {
   const { thresholds } = getScoringConfig();
   const vr = calculateValueReceived(
     {
       playtimeMinutes: r.playtimeMinutes ?? 0,
-      hltbMainHours: getEffectivePlaytimeHours(r),
+      hltbMainHours: getEffectivePlaytimeHours({ ...r, isReleased: r.isReleased ?? null }),
       reviewPercent: r.reviewScore,
       pricePaid: r.pricePaid,
       enjoymentRating: r.enjoymentRating,
@@ -1722,12 +1727,16 @@ export function getEnrichedGames(
   // getMaxDollarsPerHour can never drift — reviewTierLadder.test.ts pins them together.
   const dphTargetExpr = buildDphTargetSql(games.reviewScore, dphT);
   // Effective playtime basis (hours) — mirrors resolveEffectivePlaytime / getEffectivePlaytimeHours,
-  // the SAME resolver getValueReceivedOverview (the donut) and the per-card badges use (both call it
-  // WITHOUT isReleased, so the released-game fallback below is never suppressed for them): an explicit
-  // steam_reviews preference takes the Steam-review median (then HLTB); otherwise HLTB, falling back to
-  // the median when HLTB is missing. steam_playtime_median is stored in hours, like hltb_main. Without
-  // this, a released HLTB-less game with a review median reads "Realized" on its card AND in the donut,
-  // yet fell out of every tier filter — the surfaces would silently disagree.
+  // the SAME resolver getValueReceivedOverview (the donut) and applyValueReceivedToGame (the
+  // per-card badge) call, AND now (AY11) pass isReleased into, exactly like this SQL does: an
+  // explicit steam_reviews preference takes the Steam-review median (then HLTB); otherwise HLTB,
+  // falling back to the median when HLTB is missing — UNLESS the game is unreleased (isReleased =
+  // 0) and has no HLTB, in which case the fallback is suppressed (an unreleased game's Steam
+  // playtime median is noise, not a playtime estimate — see engine.ts's isReleased doc). Before
+  // AY11, the donut/badge omitted isReleased when calling the shared resolver, so an unreleased
+  // HLTB-less game with a review median silently read a real tier ("Value Exceeded") on its card
+  // AND in the donut while this SQL filter — already correctly gated — excluded it from every tier.
+  // steam_playtime_median is stored in hours, like hltb_main.
   const effectiveHoursExpr = sql`(CASE
     WHEN ${userGames.playtimeSource} = 'steam_reviews' THEN COALESCE(${games.steamPlaytimeMedian}, ${games.hltbMain})
     WHEN ${games.hltbMain} IS NOT NULL THEN ${games.hltbMain}
@@ -5255,6 +5264,10 @@ export function getValueReceivedOverview(userId: string, filters?: GameFilters):
       reviewScore: games.reviewScore,
       hltbMain: games.hltbMain,
       steamPlaytimeMedian: games.steamPlaytimeMedian,
+      // AY11: threaded into getEffectivePlaytimeHours below so the donut can't
+      // silently disagree with the grid's effectiveHoursExpr / the per-card badge
+      // on an unreleased, HLTB-less game.
+      isReleased: games.isReleased,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
@@ -5281,7 +5294,7 @@ export function getValueReceivedOverview(userId: string, filters?: GameFilters):
     const vr = calculateValueReceived(
       {
         playtimeMinutes: r.playtimeMinutes ?? 0,
-        hltbMainHours: getEffectivePlaytimeHours(r),
+        hltbMainHours: getEffectivePlaytimeHours({ ...r, isReleased: r.isReleased ?? null }),
         reviewPercent: r.reviewScore,
         pricePaid: r.pricePaid,
       },
@@ -5361,7 +5374,8 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
            g.steam_playtime_median as steamPlaytimeMedian,
            g.review_score as reviewScore,
            ug.enjoyment_rating as enjoymentRating,
-           ug.completion_status as completionStatus
+           ug.completion_status as completionStatus,
+           g.is_released as isReleased
     FROM user_games ug
     JOIN games g ON g.id = ug.game_id
     WHERE ug.user_id = ${userId} AND ug.is_owned = 1
@@ -5378,6 +5392,9 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
     reviewScore: number | null;
     enjoymentRating: number | null;
     completionStatus: string;
+    // Raw SQLite integer (0/1) or null — normalized to boolean|null below, same
+    // as every other isReleased read site in this file.
+    isReleased: number | null;
   }>;
 
   if (rows.length === 0) return [];
@@ -5446,6 +5463,10 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
       store: snap?.store ?? null,
       discountPercent: snap?.discountPercent ?? null,
       dealScore: snap?.dealScore ?? null,
+      // AY11 (third surface): threaded into computeDealOutcome's
+      // getEffectivePlaytimeHours call so an unreleased HLTB-less purchase reads
+      // 'unknown', not a Steam-median-derived hit/miss.
+      isReleased: r.isReleased === null ? null : r.isReleased === 1,
     };
   });
 }
