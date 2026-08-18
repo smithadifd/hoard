@@ -120,7 +120,6 @@ const RATE_LIMITS: { pattern: RegExp; tier: RateLimitTier }[] = [
   { pattern: /^\/api\/alerts\/test/, tier: { tokensPerMinute: 3, burst: 3 } },
   { pattern: /^\/api\/sync/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/steam/, tier: { tokensPerMinute: 5, burst: 5 } },
-  { pattern: /^\/api\/prices/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/backup/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/hltb/, tier: { tokensPerMinute: 5, burst: 5 } },
   // Outbound-triggering GETs (see RATE_LIMITED_GET_PATTERNS) — bounded but roomy.
