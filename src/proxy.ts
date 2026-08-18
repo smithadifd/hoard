@@ -51,8 +51,6 @@ function isDemoAllowedAuthPath(pathname: string): boolean {
 const DEMO_BLOCKED: { method: string; prefix: string }[] = [
   { method: 'POST', prefix: '/api/sync' },
   { method: 'POST', prefix: '/api/steam' },
-  // Note: there is no `/api/prices` route — price-history mutation is
-  // `POST /api/games/[id]/prices/history`, already covered by `/api/games`.
   { method: 'POST', prefix: '/api/backup' },
   { method: 'PUT', prefix: '/api/settings' },
   { method: 'PATCH', prefix: '/api/settings' },
@@ -122,7 +120,6 @@ const RATE_LIMITS: { pattern: RegExp; tier: RateLimitTier }[] = [
   { pattern: /^\/api\/alerts\/test/, tier: { tokensPerMinute: 3, burst: 3 } },
   { pattern: /^\/api\/sync/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/steam/, tier: { tokensPerMinute: 5, burst: 5 } },
-  { pattern: /^\/api\/prices/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/backup/, tier: { tokensPerMinute: 5, burst: 5 } },
   { pattern: /^\/api\/hltb/, tier: { tokensPerMinute: 5, burst: 5 } },
   // Outbound-triggering GETs (see RATE_LIMITED_GET_PATTERNS) — bounded but roomy.
