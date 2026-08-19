@@ -2500,28 +2500,49 @@ describe('release queries', () => {
   });
 
   describe('getGamesForReleaseCheck', () => {
-    it('re-syncs owned and wishlisted unreleased games, excluding released and untracked ones (AZ14 cross-state regression)', () => {
+    it('re-syncs an owned game only when isReleased is explicitly stale-false, never when NULL/unresolved (AZ14 cross-state regression)', () => {
       // AZ14: the WHERE clause used to scope to `userGames.isWishlisted = true`
       // only. An OWNED (not wishlisted) game whose `isReleased` flag went
       // stale-false was silently skipped forever — never re-synced, never
-      // corrected, wrongly stuck in "None". This test seeds every relevant
-      // (isOwned, isWishlisted, isReleased) combination and asserts the exact
-      // literal set of titles the query must return.
+      // corrected, wrongly stuck in "None".
+      //
+      // The naive fix (owned OR wishlisted, no isReleased gate on the owned
+      // leg) was rejected on review: library.ts's sync never populates
+      // isReleased at all, so NULL is the steady-state for most owned games,
+      // not a staleness signal. Measured against a real dev DB, admitting
+      // owned+NULL grew the result 194 -> 541 rows to reach a single
+      // genuinely-stale case. The owned leg must therefore require
+      // isReleased = false explicitly — NULL stays excluded.
+      //
+      // This test seeds every relevant (isOwned, isWishlisted, isReleased)
+      // combination and asserts the exact literal set of titles returned.
 
-      // Owned only, unreleased — THE regression case: must now be included.
-      const ownedOnly = seedGame(testDb, { steamAppId: 100, title: 'Owned Unreleased', isReleased: false });
-      seedUserGame(testDb, ownedOnly, { isOwned: true, isWishlisted: false });
+      // Owned only, isReleased = false — THE chartered regression case: must
+      // be included.
+      const ownedStaleFalse = seedGame(testDb, { steamAppId: 100, title: 'Owned Stale-False', isReleased: false });
+      seedUserGame(testDb, ownedStaleFalse, { isOwned: true, isWishlisted: false });
 
-      // Wishlisted only, unreleased — pre-existing behavior, must still work.
-      const wishlistedOnly = seedGame(testDb, { steamAppId: 200, title: 'Wishlisted Unreleased', isReleased: false });
-      seedUserGame(testDb, wishlistedOnly, { isOwned: false, isWishlisted: true });
+      // Owned only, isReleased = NULL (unresolved/never synced by library.ts)
+      // — must stay EXCLUDED. This is the flipped assertion from the rejected
+      // wide fix: owned+NULL is the 346-row population that must NOT be swept
+      // in to reach the 1 genuinely-stale game above.
+      const ownedUnknown = seedGame(testDb, { steamAppId: 150, title: 'Owned Unknown' });
+      seedUserGame(testDb, ownedUnknown, { isOwned: true, isWishlisted: false });
 
-      // Owned AND wishlisted, unreleased (isReleased unknown/null) — must
-      // appear exactly once (selectDistinct dedup), not twice.
-      const ownedAndWishlisted = seedGame(testDb, { steamAppId: 300, title: 'Owned And Wishlisted Unreleased' });
-      seedUserGame(testDb, ownedAndWishlisted, { isOwned: true, isWishlisted: true });
+      // Wishlisted only, isReleased = false — pre-existing behavior, must
+      // still work.
+      const wishlistedStaleFalse = seedGame(testDb, { steamAppId: 200, title: 'Wishlisted Stale-False', isReleased: false });
+      seedUserGame(testDb, wishlistedStaleFalse, { isOwned: false, isWishlisted: true });
 
-      // Owned, but already released — must be excluded.
+      // Wishlisted only, isReleased = NULL — pre-existing behavior, must
+      // still work: unlike the owned leg, the wishlisted leg has no
+      // isReleased gate because wishlist.ts is the only writer of isReleased
+      // for newly-tracked games, so NULL there means "not yet synced," not
+      // "steady-state noise."
+      const wishlistedUnknown = seedGame(testDb, { steamAppId: 250, title: 'Wishlisted Unknown' });
+      seedUserGame(testDb, wishlistedUnknown, { isOwned: false, isWishlisted: true });
+
+      // Owned, but already released — must be excluded regardless of tracking.
       const ownedReleased = seedGame(testDb, { steamAppId: 400, title: 'Owned Released', isReleased: true });
       seedUserGame(testDb, ownedReleased, { isOwned: true, isWishlisted: false });
 
@@ -2530,10 +2551,24 @@ describe('release queries', () => {
       const watchlistOnly = seedGame(testDb, { steamAppId: 500, title: 'Watchlist Only Unreleased', isReleased: false });
       seedUserGame(testDb, watchlistOnly, { isOwned: false, isWishlisted: false, isWatchlisted: true });
 
+      // Two different users tracking the same wishlisted+unreleased game —
+      // the join produces two user_games rows for one game, so this is a
+      // genuine (not merely structural) selectDistinct dedup case: swapping
+      // selectDistinct for select on the query would make this game appear
+      // twice in the result and fail the exact-array assertion below.
+      const multiUserWishlisted = seedGame(testDb, { steamAppId: 600, title: 'Multi-User Wishlisted Unreleased', isReleased: false });
+      seedUserGame(testDb, multiUserWishlisted, { userId: 'userAlpha', isOwned: false, isWishlisted: true });
+      seedUserGame(testDb, multiUserWishlisted, { userId: 'userBeta', isOwned: false, isWishlisted: true });
+
       const titles = getGamesForReleaseCheck().map((g) => g.title).sort();
 
       expect(titles).toEqual(
-        ['Owned And Wishlisted Unreleased', 'Owned Unreleased', 'Wishlisted Unreleased'].sort()
+        [
+          'Owned Stale-False',
+          'Wishlisted Stale-False',
+          'Wishlisted Unknown',
+          'Multi-User Wishlisted Unreleased',
+        ].sort()
       );
     });
   });
