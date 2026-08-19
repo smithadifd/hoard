@@ -4388,7 +4388,10 @@ export function getUnreleasedCount(userId: string): number {
 
 /**
  * Get games whose isReleased status needs checking (for release status sync).
- * Only checks wishlisted games to avoid unnecessary API calls.
+ * Checks games the user is actually tracking — owned OR wishlisted — to avoid
+ * unnecessary API calls on games nobody cares about (e.g. watchlist-only).
+ * AZ14: this used to scope to isWishlisted only, so an OWNED (non-wishlisted)
+ * game with a stale-false isReleased flag was never re-checked.
  */
 export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: number; title: string }> {
   const db = getDb();
@@ -4403,7 +4406,7 @@ export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: numbe
     .where(
       and(
         or(eq(games.isReleased, false), isNull(games.isReleased)),
-        eq(userGames.isWishlisted, true),
+        or(eq(userGames.isWishlisted, true), eq(userGames.isOwned, true)),
       )
     )
     .all();

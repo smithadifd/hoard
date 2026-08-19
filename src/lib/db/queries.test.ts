@@ -71,6 +71,7 @@ import {
   getLastSuccessfulSyncBySource,
   getFirstUserId,
   getUnreleasedCount,
+  getGamesForReleaseCheck,
   markGameAsReleased,
   updateReleaseStatus,
   getGamesForMetadataRefresh,
@@ -2495,6 +2496,45 @@ describe('release queries', () => {
       const count = getUnreleasedCount('default');
       // g1 (false) + g3 (null) = 2
       expect(count).toBe(2);
+    });
+  });
+
+  describe('getGamesForReleaseCheck', () => {
+    it('re-syncs owned and wishlisted unreleased games, excluding released and untracked ones (AZ14 cross-state regression)', () => {
+      // AZ14: the WHERE clause used to scope to `userGames.isWishlisted = true`
+      // only. An OWNED (not wishlisted) game whose `isReleased` flag went
+      // stale-false was silently skipped forever — never re-synced, never
+      // corrected, wrongly stuck in "None". This test seeds every relevant
+      // (isOwned, isWishlisted, isReleased) combination and asserts the exact
+      // literal set of titles the query must return.
+
+      // Owned only, unreleased — THE regression case: must now be included.
+      const ownedOnly = seedGame(testDb, { steamAppId: 100, title: 'Owned Unreleased', isReleased: false });
+      seedUserGame(testDb, ownedOnly, { isOwned: true, isWishlisted: false });
+
+      // Wishlisted only, unreleased — pre-existing behavior, must still work.
+      const wishlistedOnly = seedGame(testDb, { steamAppId: 200, title: 'Wishlisted Unreleased', isReleased: false });
+      seedUserGame(testDb, wishlistedOnly, { isOwned: false, isWishlisted: true });
+
+      // Owned AND wishlisted, unreleased (isReleased unknown/null) — must
+      // appear exactly once (selectDistinct dedup), not twice.
+      const ownedAndWishlisted = seedGame(testDb, { steamAppId: 300, title: 'Owned And Wishlisted Unreleased' });
+      seedUserGame(testDb, ownedAndWishlisted, { isOwned: true, isWishlisted: true });
+
+      // Owned, but already released — must be excluded.
+      const ownedReleased = seedGame(testDb, { steamAppId: 400, title: 'Owned Released', isReleased: true });
+      seedUserGame(testDb, ownedReleased, { isOwned: true, isWishlisted: false });
+
+      // Neither owned nor wishlisted (e.g. watchlist-only) — not tracked as
+      // library/wishlist, must stay excluded even though isReleased is false.
+      const watchlistOnly = seedGame(testDb, { steamAppId: 500, title: 'Watchlist Only Unreleased', isReleased: false });
+      seedUserGame(testDb, watchlistOnly, { isOwned: false, isWishlisted: false, isWatchlisted: true });
+
+      const titles = getGamesForReleaseCheck().map((g) => g.title).sort();
+
+      expect(titles).toEqual(
+        ['Owned And Wishlisted Unreleased', 'Owned Unreleased', 'Wishlisted Unreleased'].sort()
+      );
     });
   });
 
