@@ -4388,7 +4388,18 @@ export function getUnreleasedCount(userId: string): number {
 
 /**
  * Get games whose isReleased status needs checking (for release status sync).
- * Only checks wishlisted games to avoid unnecessary API calls.
+ * Wishlisted games are checked whenever their release status is unresolved
+ * (false OR unknown/NULL) — wishlist.ts is the only writer of isReleased for
+ * newly-tracked games, so NULL there just means "not yet synced."
+ * Owned-only games are checked ONLY when isReleased is explicitly false, NOT
+ * when it's NULL: library.ts's sync never sets isReleased at all, so NULL is
+ * the steady-state for most owned games and is not a staleness signal.
+ * Measured against a real dev DB: widening owned-only admission to NULL too
+ * (rather than gating on isReleased=false) would have grown this query's
+ * result from 194 to 541 rows to reach a single genuinely-stale case — nearly
+ * 3x the twice-daily Steam API budget for +346 rows that were never stale.
+ * AZ14: this used to scope to isWishlisted only, so an OWNED (non-wishlisted)
+ * game with a stale-false isReleased flag was never re-checked.
  */
 export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: number; title: string }> {
   const db = getDb();
@@ -4403,7 +4414,10 @@ export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: numbe
     .where(
       and(
         or(eq(games.isReleased, false), isNull(games.isReleased)),
-        eq(userGames.isWishlisted, true),
+        or(
+          eq(userGames.isWishlisted, true),
+          and(eq(userGames.isOwned, true), eq(games.isReleased, false)),
+        ),
       )
     )
     .all();
