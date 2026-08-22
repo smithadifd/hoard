@@ -88,6 +88,25 @@ deploy() {
 set -euo pipefail
 $REMOTE_DOCKER_PATH
 
+# --- NAS root-partition guard --------------------------------------------
+# docker-compose v1 is a PyInstaller bundle: every run unpacks ~24MB into
+# /var/tmp and removes it on a clean exit. The bootloader hardcodes /var/tmp
+# and ignores TMPDIR (verified 2026-08-22), so it cannot be redirected onto a
+# data volume. Runs killed mid-flight leak the directory, and DSM's root
+# partition is only 2.3G: twelve leaks filled it and broke this deploy with a
+# bare exit 255 while the app stayed up on its old image. Prune leaks older
+# than a day (never a live run), then fail loudly if root is too tight to
+# unpack into, so the next failure names its cause.
+find /var/tmp -maxdepth 1 -name '_MEI*' -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
+_root_avail=\$(df -Pk / | awk 'NR==2 {print \$4}')
+if [ "\$_root_avail" -lt 153600 ]; then
+    echo "ERROR: NAS root has \$((_root_avail / 1024))M free, need >=150M." >&2
+    echo "docker-compose cannot unpack itself. Aborting before it fails opaquely." >&2
+    echo "Fix: ssh synology, then remove stale /var/tmp/_MEI* dirs." >&2
+    exit 90
+fi
+# -------------------------------------------------------------------------
+
 echo "--- Setting up project directory ---"
 if [ ! -d "$REMOTE_PATH/.git" ]; then
     echo "Cloning repository..."
