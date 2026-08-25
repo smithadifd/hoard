@@ -167,7 +167,7 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
               className={`flex items-center gap-1.5 text-xs pt-0.5 ${game.receivedExpectedValue ? 'text-deal-good' : 'text-muted-foreground'}`}
             >
               {game.receivedExpectedValue ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-              <span>{game.receivedExpectedValue ? 'Received expected value' : 'Expected value not yet reached'}</span>
+              <span>{game.receivedExpectedValue ? 'Paid a fair rate' : "Hasn't paid a fair rate yet"}</span>
             </div>
           )}
         </div>
