@@ -48,7 +48,7 @@ export default async function DealOutcomesPage() {
         </Link>
         <h1 className="text-3xl font-headline font-extrabold tracking-tight">Deal Outcomes</h1>
         <p className="text-muted-foreground mt-1">
-          Did the deal pay off? Expected value at purchase vs what you actually got, across{' '}
+          Did the deal pay off? What the price implied at purchase vs what you actually played, across{' '}
           {report.games.length} priced game{report.games.length === 1 ? '' : 's'}.
         </p>
       </div>
@@ -81,8 +81,8 @@ export default async function DealOutcomesPage() {
               <span className="font-semibold text-foreground">Store, discount, and deal-score breakdowns are approximate.</span>{' '}
               Hoard has no true purchase date, so purchase-time context is inferred from the price on
               record when you saved what you paid — it can be off for a price entered well after you
-              bought the game. The per-game verdict and hit rate compare realized vs predicted{' '}
-              $/hour and don&apos;t depend on this, so they stay exact. Games with no matching price
+              bought the game. The per-game verdict and played-it-through rate compare realized vs{' '}
+              predicted $/hour and don&apos;t depend on this, so they stay exact. Games with no matching price
               on record are shown as <span className="font-medium">Unknown</span>.
             </p>
           </div>

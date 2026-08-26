@@ -7,7 +7,7 @@ The [deal score](/architecture/scoring-engine/) answers a forward-looking questi
 
 It shows up as a badge on owned-game cards (where the buy-oriented deal badge would otherwise be blank, since Hoard only price-syncs wishlisted and watchlisted games) and as a breakdown card on the game detail page. Wishlist games keep the deal score; owned games lead with value received.
 
-It also drives a set of **Library sorts** — *Value Received* (tier), *Realized $/hr*, *Completion %*, and *Price Paid* — and two dashboard cards: a **Value Received** donut breaking your owned library down by tier, and a **Spending & Value** tile rolling up total spent, hours played, blended $/hour, and how often you've reached expected value.
+It also drives a set of **Library sorts** — *Value Received* (tier), *Realized $/hr*, *Completion %*, and *Price Paid* — and two dashboard cards: a **Value Received** donut breaking your owned library down by tier, and a **Spending & Value** tile rolling up total spent, hours played, blended $/hour, and how often you've paid a fair rate.
 
 ## The two lenses
 
@@ -32,7 +32,7 @@ On a game's detail page, the **What you paid** card lets you enter the purchase 
 
 For an Overwhelmingly Positive game the target is $4/hour, so a $24.99 game you've played 41 hours sits at $0.61/hour — value exceeded, with plenty of room to spare. The card also shows your **break-even point**: the hours you'd need to play to reach the target for that review tier.
 
-"Received expected value" means your realized $/hour is at or under the target. Falling past twice the target reads as unrealized; getting it for half the target or less reads as exceeded — the same 0.5×/1×/2× bands the forward-looking value score uses, so a game that was a good-value *buy* reads as "realized" once you've played it through.
+"Paid a fair rate" means your realized $/hour is at or under the target. Falling past twice the target reads as unrealized; getting it for half the target or less reads as exceeded — the same 0.5×/1×/2× bands the forward-looking value score uses, so a game that was a good-value *buy* reads as "realized" once you've played it through. This is a different question from the Deal Outcomes report's "Played it through," which grades hours played against the purchase-time estimate rather than $/hour against a fixed target — the two can land on different percentages over different games without either being wrong.
 
 Prices are assumed to be in USD, matching the rest of Hoard's pricing.
 
@@ -67,7 +67,7 @@ If you'd rated your pre-purchase **interest** (the "bet") before buying, the det
 
 - **Never played** is always *unrealized*, regardless of price — a game you paid for and never opened has returned none of its value yet. (Rating it is moot until you've played it.)
 - **Free games** (price recorded as $0) stay on the time lens. Hoard won't report "$0.00/hour."
-- **Deal Outcomes breakdowns are approximate.** The Deal Outcomes report groups deals by store, discount depth, and deal-score band using purchase-time context inferred from the price on record when you saved what you paid (Hoard has no true purchase date), so those three breakdowns can be off for a price entered well after purchase — the per-game verdict and hit rate (realized vs predicted $/hour) don't depend on it and stay exact.
+- **Deal Outcomes breakdowns are approximate.** The Deal Outcomes report groups deals by store, discount depth, and deal-score band using purchase-time context inferred from the price on record when you saved what you paid (Hoard has no true purchase date), so those three breakdowns can be off for a price entered well after purchase — the per-game verdict and played-it-through rate (realized vs predicted $/hour) don't depend on it and stay exact.
 - **No HowLongToBeat data and no recorded price** has no honest baseline to grade against — there's no main-story estimate to measure completion, and no price for $/hour. Rather than invent a tier from raw hours (which reads misleadingly as "Approaching" off 15 minutes, or "Exceeded" off a sandbox game you've sunk 100 hours into), the badge shows a neutral **Played Xh** chip with no value claim. Add a duration *or* a price and the game grades normally — the money lens needs no duration at all. A post-play **rating** also resolves it: your verdict needs no baseline.
 
 ## In the backlog
