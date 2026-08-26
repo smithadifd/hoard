@@ -3,7 +3,9 @@ import type { ValueReceivedOverview } from '@/lib/db/queries';
 
 /**
  * Spending-and-value rollup for the owned library: what you've put in, what you've
- * played, your blended cost-per-hour, and how often you've reached expected value.
+ * played, your blended cost-per-hour, and how often you paid a fair rate (realized
+ * $/hr at or under your review-tier target — a different question from Deal
+ * Outcomes' "Played it through", which grades hours played against the estimate).
  * Server component — pure presentation of {@link getValueReceivedOverview} stats.
  */
 export function ValueSummaryCard({ stats }: { stats: ValueReceivedOverview['stats'] }) {
@@ -32,9 +34,9 @@ export function ValueSummaryCard({ stats }: { stats: ValueReceivedOverview['stat
     },
     {
       icon: <Target className="h-4 w-4" />,
-      label: 'Expected Value',
+      label: 'Paid a Fair Rate',
       value: hitRate != null ? `${hitRate}%` : '—',
-      sub: hitRate != null ? `${expectedValueHits} of ${moneyLensGames} games` : 'needs price + playtime',
+      sub: hitRate != null ? `${expectedValueHits} of ${moneyLensGames} priced+played games at/under target` : 'needs price + playtime',
     },
   ];
 

@@ -92,10 +92,10 @@ const TIME_PHRASE: Record<ValueReceivedTier, string> = {
 };
 
 const MONEY_PHRASE: Record<ValueReceivedTier, string> = {
-  exceeded: 'well past expected value',
-  realized: 'expected value reached',
-  approaching: 'approaching expected value',
-  unrealized: 'below expected value so far',
+  exceeded: 'well past a fair rate',
+  realized: 'paid a fair rate',
+  approaching: 'approaching a fair rate',
+  unrealized: 'below a fair rate so far',
 };
 
 export function valueReceivedTierLabel(tier: ValueReceivedTier): string {
