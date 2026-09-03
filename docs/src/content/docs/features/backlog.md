@@ -93,7 +93,7 @@ The backlog uses the same deal score computed by the [scoring engine](/architect
 
 If you want to surface the best deals in your backlog specifically, add `minInterest` and sort by deal score manually using the sort controls.
 
-<!-- Screenshot placeholder: Backlog page with Date Night preset active and PickForMePanel visible -->
+![Backlog page with the Date Night preset active and the Pick For Me panel visible](../../../assets/backlog-date-night.png)
 
 ## Related
 

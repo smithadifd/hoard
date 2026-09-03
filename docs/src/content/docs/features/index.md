@@ -5,7 +5,7 @@ description: A tour of every page in Hoard — what each one shows and what you 
 
 Hoard has six main pages: Dashboard, Library, Wishlist, Releases, Backlog, and Watchlist. Each one reads from the local SQLite database, so they're fast and work even when upstream APIs are unavailable.
 
-<!-- Screenshot placeholder: Dashboard -->
+![Hoard dashboard showing library, wishlist, and playtime stats, genre breakdown and deal score charts, and recent activity](../../../assets/dashboard.png)
 
 ## Dashboard (`/`)
 
