@@ -133,7 +133,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
             e.preventDefault();
             inputRef.current?.focus();
           }}
-          className="fixed z-50 top-0 left-0 right-0 mx-auto mt-0 sm:mt-[10vh] w-full sm:max-w-2xl max-h-screen sm:max-h-[80vh] flex flex-col bg-surface-base border-b sm:border border-white/[0.08] sm:rounded-xl shadow-2xl overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          className="safe-top fixed z-50 top-0 left-0 right-0 mx-auto mt-0 sm:mt-[10vh] w-full sm:max-w-2xl max-h-screen sm:max-h-[80vh] flex flex-col bg-surface-base border-b sm:border border-white/[0.08] sm:rounded-xl shadow-2xl overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
         >
           <Dialog.Title className="sr-only">Search games</Dialog.Title>
 
@@ -146,7 +146,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
               value={query}
               onChange={(e) => handleQueryChange(e.target.value)}
               placeholder="Search your library and Steam..."
-              className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
+              className="flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none"
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
