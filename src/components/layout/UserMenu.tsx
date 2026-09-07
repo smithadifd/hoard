@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Settings, LogOut, Activity, Shield, Cpu } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface UserMenuProps {
   userName: string;
@@ -31,6 +32,7 @@ function MenuLink({ href, icon: Icon, label, onClick }: {
 export function UserMenu({ userName, userEmail }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -45,7 +47,11 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
   const handleSignOut = async () => {
     await authClient.signOut({
       fetchOptions: {
-        onSuccess: () => { window.location.href = '/login'; },
+        onSuccess: () => {
+          router.push('/login');
+          // Drop cached RSC payloads so no authenticated content survives sign-out.
+          router.refresh();
+        },
       },
     });
   };
