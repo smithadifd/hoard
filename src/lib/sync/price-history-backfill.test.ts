@@ -9,8 +9,10 @@ vi.mock('../db/queries', () => ({
   createSyncLog: vi.fn(() => 1),
   completeSyncLog: vi.fn(),
   getGamesForPriceHistoryBackfill: vi.fn(),
+  getPriceHistoryRetryCandidates: vi.fn(() => []),
   markPriceHistoryBackfilled: vi.fn(),
   incrementPriceHistoryMissCount: vi.fn(),
+  PRICE_HISTORY_GIVE_UP_MISSES: 3,
 }));
 
 import { backfillPriceHistory } from './prices-history';
@@ -18,6 +20,7 @@ import {
   createSyncLog,
   completeSyncLog,
   getGamesForPriceHistoryBackfill,
+  getPriceHistoryRetryCandidates,
   markPriceHistoryBackfilled,
   incrementPriceHistoryMissCount,
 } from '../db/queries';
@@ -25,6 +28,7 @@ import { syncPriceHistoryBackfill, primePriceHistory } from './price-history-bac
 
 const mockBackfill = vi.mocked(backfillPriceHistory);
 const mockGetGames = vi.mocked(getGamesForPriceHistoryBackfill);
+const mockGetRetry = vi.mocked(getPriceHistoryRetryCandidates);
 const mockMarkBackfilled = vi.mocked(markPriceHistoryBackfilled);
 const mockIncrementMiss = vi.mocked(incrementPriceHistoryMissCount);
 const mockCompleteSyncLog = vi.mocked(completeSyncLog);
@@ -47,8 +51,10 @@ describe('price-history-backfill orchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-11T05:00:00Z'));
     mockCreateSyncLog.mockReturnValue(1);
     mockBackfill.mockResolvedValue({ inserted: 3 } as never);
+    mockGetRetry.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -155,5 +161,64 @@ describe('price-history-backfill orchestrator', () => {
     expect(mockBackfill).not.toHaveBeenCalled();
     expect(result.stats.attempted).toBe(0);
     expect(result.message).toBe('All eligible games already backfilled');
+  });
+
+  // Reach-aware retry pool (S5). Repro case from the ticket: "The Darkside Detective:
+  // A Fumble in the Dark", released Apr 15, 2021, Hoard history from 2026-02-06,
+  // stamped "backfilled" on 2026-06-01. Now is 2026-09-11 (set in beforeEach).
+  describe('stamped-but-short retry pool', () => {
+    const repro = {
+      id: 7,
+      title: 'The Darkside Detective: A Fumble in the Dark',
+      itadGameId: 'itad-darkside-2',
+      releaseDate: 'Apr 15, 2021',
+      earliestSnapshotDate: '2026-02-06',
+      priceHistoryBackfilledAt: new Date('2026-06-01T05:00:00Z'),
+      priceHistoryMissCount: 0,
+    };
+
+    it('re-backfills the repro game from the provider epoch once the never-backfilled batch has room', async () => {
+      mockGetGames.mockReturnValue([]);
+      mockGetRetry.mockReturnValue([repro]);
+
+      const promise = syncPriceHistoryBackfill();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      // Asked for stamps older than the 30-day cooldown: 2026-09-11 minus 30 days = 2026-08-12.
+      const cutoff: Date = mockGetRetry.mock.calls[0][0];
+      expect(cutoff.toISOString().slice(0, 10)).toBe('2026-08-12');
+      expect(mockBackfill).toHaveBeenCalledTimes(1);
+      const [gameId, opts] = mockBackfill.mock.calls[0];
+      expect(gameId).toBe(7);
+      // since must not trail the launch day (2021-04-15).
+      expect(opts!.since!.toISOString().slice(0, 10) <= '2021-04-15').toBe(true);
+      expect(mockMarkBackfilled).toHaveBeenCalledWith(7);
+      expect(result.stats).toMatchObject({ attempted: 1, succeeded: 1, failed: 0 });
+    });
+
+    it('leaves a stamped game alone when its history already reaches launch', async () => {
+      mockGetGames.mockReturnValue([]);
+      mockGetRetry.mockReturnValue([{ ...repro, earliestSnapshotDate: '2021-04-15' }]);
+
+      const promise = syncPriceHistoryBackfill();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(mockBackfill).not.toHaveBeenCalled();
+      expect(mockMarkBackfilled).not.toHaveBeenCalled();
+      expect(result.stats.attempted).toBe(0);
+    });
+
+    it('never-backfilled games go first; the retry pool only fills the remaining slots', async () => {
+      mockGetGames.mockReturnValueOnce([game(1)]).mockReturnValue([]);
+      mockGetRetry.mockReturnValue([repro]);
+
+      const promise = syncPriceHistoryBackfill();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockBackfill.mock.calls.map((c) => c[0])).toEqual([1, 7]);
+    });
   });
 });

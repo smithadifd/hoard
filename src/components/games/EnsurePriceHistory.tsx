@@ -8,10 +8,11 @@ interface EnsurePriceHistoryProps {
 }
 
 /**
- * Invisible client component that triggers a one-shot, idempotent price-history
- * backfill on mount (resolve ITAD link → pull full history). Rendered only when the
- * game is eligible (never backfilled, miss-count under the give-up threshold), so the
- * server route's guards plus this guarded mount keep it to one real fetch per game.
+ * Invisible client component that triggers the idempotent price-history self-heal
+ * on mount (resolve ITAD link → pull full history). Fires at most once per mount;
+ * the server route decides whether a pull is actually due (never backfilled, or
+ * stamped but the stored history falls short of launch and the retry cooldown has
+ * lapsed) and answers with a cheap no-op otherwise.
  * Refreshes the page when snapshots were actually inserted, so the chart appears.
  */
 export function EnsurePriceHistory({ gameId }: EnsurePriceHistoryProps) {

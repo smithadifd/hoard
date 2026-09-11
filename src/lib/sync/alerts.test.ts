@@ -29,6 +29,7 @@ import {
   localDateKey,
   evaluateExplicitAlerts,
   evaluateAutoAlertCandidates,
+  buildShortHistoryInApp,
 } from './alerts';
 import type { PendingNotification } from './alerts';
 import { getEffectiveConfig } from '../config';
@@ -90,6 +91,9 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
     snapshotCount: 10,
     // Default null = "unknown snapshot age", which never suppresses the new-ATL bypass.
     latestSnapshotAt: null as string | null,
+    // Default null = launch unknown, so the short-history check never fires unless a test sets both.
+    releaseDate: null as string | null,
+    earliestSnapshotDate: null as string | null,
     ...overrides,
   };
 }
@@ -275,6 +279,62 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(1);
   });
 
+  // S7 — the short-history notice is its own digest kind: never a price alert, never the
+  // ATL roundup. Repro game: launched Apr 15, 2021, history since 2026-02-06.
+  it('sends a short-history digest (not a price alert, not the ATL roundup) for the repro game', async () => {
+    mockGetAutoAlertCandidates.mockReturnValue([
+      makeCandidate({
+        gameId: 795420,
+        title: 'The Darkside Detective: A Fumble in the Dark',
+        currentPrice: 3.99, regularPrice: 12.99, discountPercent: 69,
+        historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.54,
+        releaseDate: 'Apr 15, 2021', earliestSnapshotDate: '2026-02-06',
+      }),
+    ]);
+    const mockDiscord = makeMockDiscord();
+    mockGetDiscordClient.mockReturnValue(mockDiscord);
+
+    const result = await checkPriceAlerts();
+
+    expect(mockDiscord.sendPriceAlert).not.toHaveBeenCalled();
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledTimes(1);
+    expect(mockDiscord.sendAtlDigest).toHaveBeenCalledWith(
+      [expect.objectContaining({
+        title: 'The Darkside Detective: A Fumble in the Dark',
+        currentPrice: 3.99,
+        historySince: '2026-02-06',
+        launchLabel: 'Apr 15, 2021',
+      })],
+      'short-history',
+    );
+    // Consumes the auto-alert slot like a digest entry, and marks today's digest as sent
+    // so a second run later today does not repeat the notice.
+    expect(_mockUpdateAutoNotified).toHaveBeenCalledWith(795420, 'user-1');
+    expect(mockSetSetting).toHaveBeenCalledWith('last_atl_digest_date', '2026-06-03', expect.any(String));
+    expect(result.stats.succeeded).toBe(1);
+  });
+
+  it('buildShortHistoryInApp names the games and does not carry the `games` key that opens the ATL modal', () => {
+    const payload = buildShortHistoryInApp([
+      {
+        gameId: 795420, title: 'The Darkside Detective: A Fumble in the Dark',
+        currentPrice: 3.99, regularPrice: 12.99, discountPercent: 69, store: 'Steam', storeUrl: 'https://store/795420',
+        historySince: '2026-02-06', launchLabel: 'Apr 15, 2021', shortfallDays: 1758,
+      },
+    ]);
+    expect(payload.title).toBe('1 game at a low price — history too short to trust');
+    expect(payload.body).toContain('The Darkside Detective: A Fumble in the Dark');
+    expect(payload.body).toContain('2026-02-06');
+    expect(payload.body).toContain('Apr 15, 2021');
+    expect(payload.link).toBe('/wishlist');
+    expect(payload.metadata).not.toHaveProperty('games');
+    expect(payload.metadata).toMatchObject({
+      kind: 'short-history',
+      count: 1,
+      shortHistoryGames: [expect.objectContaining({ gameId: 795420, historySince: '2026-02-06', launchLabel: 'Apr 15, 2021' })],
+    });
+  });
+
   it('sends digest for still-at-ATL (same historicalLowPrice as previous)', async () => {
     const alert = makeAlert({
       currentPrice: 4.99,
@@ -421,6 +481,8 @@ describe('checkPriceAlerts', () => {
         snapshotCount: 1,
         // null = unknown snapshot age; alerts.ts:64 treats null and undefined alike.
         latestSnapshotAt: null as string | null,
+        releaseDate: null,
+        earliestSnapshotDate: null,
       },
     ]);
     mockGetSetting.mockImplementation((key) =>
@@ -735,6 +797,8 @@ describe('checkPriceAlerts', () => {
         snapshotCount: 200,
         // null = unknown snapshot age; alerts.ts:64 treats null and undefined alike.
         latestSnapshotAt: null as string | null,
+        releaseDate: null,
+        earliestSnapshotDate: null,
       },
       {
         gameId: 101,
@@ -755,6 +819,8 @@ describe('checkPriceAlerts', () => {
         snapshotCount: 200,
         // null = unknown snapshot age; alerts.ts:64 treats null and undefined alike.
         latestSnapshotAt: null as string | null,
+        releaseDate: null,
+        earliestSnapshotDate: null,
       },
     ]);
     const mockDiscord = makeMockDiscord();
@@ -1265,7 +1331,7 @@ function referenceAutoDecisions(
 }
 
 interface Decision {
-  type: 'individual' | 'digest';
+  type: 'individual' | 'digest' | 'short-history';
   gameId: number;
   individualKind?: 'new-atl' | 'priority';
 }
@@ -1292,6 +1358,8 @@ function makeCandidate(overrides: Record<string, unknown> = {}) {
     prevHistoricalLowPrice: null as number | null,
     snapshotCount: 10,
     latestSnapshotAt: null as string | null,
+    releaseDate: null as string | null,
+    earliestSnapshotDate: null as string | null,
     ...overrides,
   };
 }
@@ -1399,7 +1467,7 @@ describe('evaluateExplicitAlerts (extraction fidelity)', () => {
 
   it('handles an empty alert list (no notifications, zero counts)', () => {
     const real = evaluateExplicitAlerts([], minSnapshots, now, alertThrottleHours, true);
-    expect(real).toEqual({ notifications: [], throttled: 0, insufficientHistory: 0 });
+    expect(real).toEqual({ notifications: [], throttled: 0, insufficientHistory: 0, shortHistory: 0 });
   });
 });
 
@@ -1478,7 +1546,7 @@ describe('evaluateAutoAlertCandidates (extraction fidelity)', () => {
 
   it('handles an empty candidate list (no notifications, zero counts)', () => {
     const real = evaluateAutoAlertCandidates([], minSnapshots, now, alertThrottleHours, true, effectiveUserId);
-    expect(real).toEqual({ notifications: [], throttled: 0, insufficientHistory: 0 });
+    expect(real).toEqual({ notifications: [], throttled: 0, insufficientHistory: 0, shortHistory: 0 });
   });
 
   it('onSent callbacks route to updateAutoAlertLastNotified (not updateAlertLastNotified) for the effective user', () => {
@@ -1486,5 +1554,131 @@ describe('evaluateAutoAlertCandidates (extraction fidelity)', () => {
     const real = evaluateAutoAlertCandidates(candidates, minSnapshots, now, alertThrottleHours, true, effectiveUserId);
     real.notifications[0].onSent();
     expect(_mockUpdateAutoNotified).toHaveBeenCalledWith(60, effectiveUserId);
+  });
+});
+
+// ============================================================================
+// S6 — short-history check replaces an ATL the stored history cannot back.
+// Repro case from the ticket: "The Darkside Detective: A Fumble in the Dark",
+// released Apr 15, 2021; Hoard's snapshots begin 2026-02-06 (1758 days later).
+// ============================================================================
+describe('short-history check (S6)', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  const minSnapshots = 3;
+  const alertThrottleHours = 24;
+  const effectiveUserId = 'user-1';
+  const REPRO = { releaseDate: 'Apr 15, 2021', earliestSnapshotDate: '2026-02-06', launchDay: '2021-04-15' };
+
+  describe('evaluateAutoAlertCandidates', () => {
+    const atLow = {
+      gameId: 795420,
+      title: 'The Darkside Detective: A Fumble in the Dark',
+      currentPrice: 3.99,
+      historicalLowPrice: 3.99,
+      prevHistoricalLowPrice: 4.54, // provider low dropped → would be a "new ATL"
+      discountPercent: 69,
+      regularPrice: 12.99,
+      snapshotCount: 10, // well past the min-snapshot gate; span, not count, is the problem
+    };
+
+    it('replaces the new-ATL alert with one short-history notice when history starts 2026-02-06 for an Apr 15, 2021 launch', () => {
+      const real = evaluateAutoAlertCandidates(
+        [makeCandidate({ ...atLow, ...REPRO })],
+        minSnapshots, now, alertThrottleHours, true, effectiveUserId,
+      );
+      expect(real.notifications.filter((n) => n.type === 'individual' || n.type === 'digest')).toEqual([]);
+      expect(real.shortHistory).toBe(1);
+      expect(real.insufficientHistory).toBe(0);
+      expect(real.notifications).toHaveLength(1);
+      const [notice] = real.notifications;
+      expect(notice.type).toBe('short-history');
+      expect(notice.gameId).toBe(795420);
+      expect(notice.shortHistoryGame).toMatchObject({
+        gameId: 795420,
+        title: 'The Darkside Detective: A Fumble in the Dark',
+        currentPrice: 3.99,
+        discountPercent: 69,
+        historySince: '2026-02-06',
+        launchLabel: 'Apr 15, 2021',
+        shortfallDays: 1758,
+      });
+    });
+
+    it('lets the same game through as a new ATL once its history reaches the launch day', () => {
+      const real = evaluateAutoAlertCandidates(
+        [makeCandidate({ ...atLow, releaseDate: REPRO.releaseDate, earliestSnapshotDate: REPRO.launchDay })],
+        minSnapshots, now, alertThrottleHours, true, effectiveUserId,
+      );
+      expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 795420, individualKind: 'new-atl' }]);
+      expect(real.shortHistory).toBe(0);
+    });
+
+    it('also keeps a short-history game out of the still-at-ATL digest', () => {
+      const real = evaluateAutoAlertCandidates(
+        [makeCandidate({ ...atLow, prevHistoricalLowPrice: 3.99, ...REPRO })],
+        minSnapshots, now, alertThrottleHours, true, effectiveUserId,
+      );
+      expect(real.notifications.map((n) => n.type)).toEqual(['short-history']);
+    });
+
+    it('holds the notice for the daily digest run (none on a non-digest run) and still counts it', () => {
+      const real = evaluateAutoAlertCandidates(
+        [makeCandidate({ ...atLow, ...REPRO })],
+        minSnapshots, now, alertThrottleHours, false, effectiveUserId,
+      );
+      expect(real.notifications).toEqual([]);
+      expect(real.shortHistory).toBe(1);
+    });
+
+    it('a free game is still announced — price 0 is not an all-time-low claim', () => {
+      const real = evaluateAutoAlertCandidates(
+        [makeCandidate({ ...atLow, currentPrice: 0, ...REPRO })],
+        minSnapshots, now, alertThrottleHours, true, effectiveUserId,
+      );
+      expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 795420, individualKind: 'priority' }]);
+    });
+
+    it('onSent for the notice consumes the auto-alert throttle slot like a digest entry', () => {
+      const real = evaluateAutoAlertCandidates(
+        [makeCandidate({ ...atLow, ...REPRO })],
+        minSnapshots, now, alertThrottleHours, true, effectiveUserId,
+      );
+      real.notifications[0].onSent();
+      expect(_mockUpdateAutoNotified).toHaveBeenCalledWith(795420, effectiveUserId);
+    });
+  });
+
+  describe('evaluateExplicitAlerts', () => {
+    const atLow = {
+      id: 9, gameId: 795420, title: 'The Darkside Detective: A Fumble in the Dark',
+      currentPrice: 3.99, historicalLowPrice: 3.99, prevHistoricalLowPrice: 4.54, isHistoricalLow: true,
+      discountPercent: 69, regularPrice: 12.99, targetPrice: null, notifyOnThreshold: false, notifyOnAllTimeLow: true,
+      snapshotCount: 10,
+    };
+
+    it('replaces the ATL alert with a short-history notice for the repro game', () => {
+      const real = evaluateExplicitAlerts([makeAlert({ ...atLow, ...REPRO })], minSnapshots, now, alertThrottleHours, true);
+      expect(real.notifications.map((n) => n.type)).toEqual(['short-history']);
+      expect(real.shortHistory).toBe(1);
+      expect(real.notifications[0].shortHistoryGame).toMatchObject({ historySince: '2026-02-06', launchLabel: 'Apr 15, 2021' });
+      real.notifications[0].onSent();
+      expect(mockUpdateNotified).toHaveBeenCalledWith(9);
+    });
+
+    it('fires the ATL alert as before once history reaches launch', () => {
+      const real = evaluateExplicitAlerts(
+        [makeAlert({ ...atLow, releaseDate: REPRO.releaseDate, earliestSnapshotDate: REPRO.launchDay })],
+        minSnapshots, now, alertThrottleHours, true,
+      );
+      expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 795420, individualKind: 'new-atl' }]);
+    });
+
+    it('an explicit target-price hit still pings — the user set that price, it is not an ATL claim', () => {
+      const real = evaluateExplicitAlerts(
+        [makeAlert({ ...atLow, targetPrice: 5, notifyOnThreshold: true, ...REPRO })],
+        minSnapshots, now, alertThrottleHours, true,
+      );
+      expect(toDecisions(real.notifications)).toEqual([{ type: 'individual', gameId: 795420, individualKind: 'priority' }]);
+    });
   });
 });
