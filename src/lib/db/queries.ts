@@ -2955,11 +2955,16 @@ export function markPriceHistoryBackfilled(gameId: number): void {
 }
 
 export function incrementPriceHistoryMissCount(gameId: number): void {
-  // Single atomic UPDATE: increment the miss count and, if that pushes the
-  // game over the give-up threshold, stamp `price_history_backfilled_at` in
-  // the same statement so the candidate query stops picking it up. Doing
-  // both in one statement avoids a race when two callers (cron + manual
-  // trigger) operate on the same game.
+  // Single atomic UPDATE: increment the miss count and, if that puts the game
+  // at/over the give-up threshold, stamp `price_history_backfilled_at` in the
+  // same statement so the candidate query stops picking it up. Doing both in
+  // one statement avoids a race when two callers (cron + manual trigger)
+  // operate on the same game.
+  //
+  // The stamp is (re)written on EVERY miss at/over the threshold, not only when
+  // it was NULL: a stamped-but-short game is retried once its stamp is older
+  // than BACKFILL_RETRY_COOLDOWN_DAYS, so a failed retry must move the stamp
+  // forward or the next page open / nightly run would retry it again at once.
   const db = getDb();
   const nowMs = Date.now();
   db.run(sql`
@@ -2968,12 +2973,71 @@ export function incrementPriceHistoryMissCount(gameId: number): void {
       price_history_miss_count = COALESCE(price_history_miss_count, 0) + 1,
       price_history_backfilled_at = CASE
         WHEN COALESCE(price_history_miss_count, 0) + 1 >= ${PRICE_HISTORY_GIVE_UP_MISSES}
-          AND price_history_backfilled_at IS NULL
         THEN ${nowMs}
         ELSE price_history_backfilled_at
       END
     WHERE id = ${gameId}
   `);
+}
+
+/**
+ * Stamped games whose backfill stamp is older than `stampedBefore` — the retry
+ * pool for the reach-aware self-heal. Returns the launch string and earliest
+ * snapshot day so the caller can apply `assessHistoryReach` (release dates are
+ * Steam free-text; the rule lives in JS, not here). Same library scope as
+ * `getGamesForPriceHistoryBackfill`; never-backfilled games are NOT included
+ * (they are that query's job). Bounded by library size — one read per run.
+ */
+export function getPriceHistoryRetryCandidates(
+  stampedBefore: Date,
+  userId?: string,
+): Array<{
+  id: number;
+  title: string;
+  itadGameId: string;
+  releaseDate: string | null;
+  earliestSnapshotDate: string | null;
+  priceHistoryBackfilledAt: Date;
+  priceHistoryMissCount: number;
+}> {
+  const db = getDb();
+  const rows = db
+    .selectDistinct({
+      id: games.id,
+      title: games.title,
+      itadGameId: games.itadGameId,
+      releaseDate: games.releaseDate,
+      earliestSnapshotDate: sql<string | null>`(SELECT MIN(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id})`,
+      priceHistoryBackfilledAt: games.priceHistoryBackfilledAt,
+      priceHistoryMissCount: games.priceHistoryMissCount,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        sql`${games.priceHistoryBackfilledAt} IS NOT NULL`,
+        sql`${games.priceHistoryBackfilledAt} < ${stampedBefore.getTime()}`,
+        sql`${games.itadGameId} IS NOT NULL`,
+        or(
+          eq(userGames.isOwned, true),
+          eq(userGames.isWishlisted, true),
+          eq(userGames.isWatchlisted, true),
+        ),
+        ...(userId !== undefined ? [eq(userGames.userId, userId)] : []),
+      ),
+    )
+    // Oldest stamp first: the games that have waited longest get the retry slots.
+    .orderBy(games.priceHistoryBackfilledAt)
+    .all();
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    itadGameId: r.itadGameId as string,
+    releaseDate: r.releaseDate ?? null,
+    earliestSnapshotDate: r.earliestSnapshotDate ?? null,
+    priceHistoryBackfilledAt: r.priceHistoryBackfilledAt as Date,
+    priceHistoryMissCount: r.priceHistoryMissCount ?? 0,
+  }));
 }
 
 export function insertPriceSnapshot(data: {
@@ -3081,13 +3145,19 @@ export function gameExists(gameId: number): boolean {
   );
 }
 
-/** Game fields needed to drive the on-demand price-history backfill (ensure-history route). */
+/**
+ * Game fields needed to drive the on-demand price-history backfill (ensure-history
+ * route): the backfill stamp/miss-count plus the launch string and earliest
+ * snapshot day the route feeds to `assessHistoryReach`.
+ */
 export function getGameBackfillState(gameId: number): {
   id: number;
   steamAppId: number;
   itadGameId: string | null;
   priceHistoryBackfilledAt: Date | null;
   priceHistoryMissCount: number;
+  releaseDate: string | null;
+  earliestSnapshotDate: string | null;
 } | null {
   const db = getDb();
   const row = db
@@ -3097,12 +3167,19 @@ export function getGameBackfillState(gameId: number): {
       itadGameId: games.itadGameId,
       priceHistoryBackfilledAt: games.priceHistoryBackfilledAt,
       priceHistoryMissCount: games.priceHistoryMissCount,
+      releaseDate: games.releaseDate,
+      earliestSnapshotDate: sql<string | null>`(SELECT MIN(ps.snapshot_date) FROM price_snapshots ps WHERE ps.game_id = ${games.id})`,
     })
     .from(games)
     .where(eq(games.id, gameId))
     .get();
   if (!row) return null;
-  return { ...row, priceHistoryMissCount: row.priceHistoryMissCount ?? 0 };
+  return {
+    ...row,
+    priceHistoryMissCount: row.priceHistoryMissCount ?? 0,
+    releaseDate: row.releaseDate ?? null,
+    earliestSnapshotDate: row.earliestSnapshotDate ?? null,
+  };
 }
 
 export function getLatestPriceSnapshots(gameIds: number[]): Map<number, PriceSnapshotRow> {
@@ -4710,6 +4787,10 @@ export interface ActiveAlertRow extends PriceAlertRow {
   // When the latest snapshot was recorded — used to suppress re-firing a "new ATL"
   // on a second same-day run, when the daily-deduped snapshot hasn't advanced.
   latestSnapshotAt: string | null;
+  // Launch (Steam free-text) and the earliest stored snapshot day — the inputs to
+  // the short-history check that replaces an ATL claim the history can't back.
+  releaseDate: string | null;
+  earliestSnapshotDate: string | null;
 }
 
 export interface AlertWithGame extends PriceAlertRow {
@@ -4819,6 +4900,8 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     prevHistoricalLowPrice: number | null;
     snapshotCount: number;
     latestSnapshotAt: string | null;
+    releaseDate: string | null;
+    earliestSnapshotDate: string | null;
   }
 
   const rows = db.all(sql`
@@ -4850,7 +4933,9 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
        ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
        LIMIT 1) as prevHistoricalLowPrice,
       (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount,
-      ps.created_at as latestSnapshotAt
+      ps.created_at as latestSnapshotAt,
+      g.release_date as releaseDate,
+      (SELECT MIN(ps_first.snapshot_date) FROM price_snapshots ps_first WHERE ps_first.game_id = g.id) as earliestSnapshotDate
     FROM price_alerts pa
     INNER JOIN games g ON pa.game_id = g.id
     INNER JOIN user_games ug ON g.id = ug.game_id AND ug.user_id = ${userId}
@@ -4888,6 +4973,8 @@ export function getActivePriceAlerts(userId: string): ActiveAlertRow[] {
     prevHistoricalLowPrice: r.prevHistoricalLowPrice,
     snapshotCount: r.snapshotCount,
     latestSnapshotAt: r.latestSnapshotAt,
+    releaseDate: r.releaseDate,
+    earliestSnapshotDate: r.earliestSnapshotDate,
   }));
 }
 
@@ -5051,6 +5138,10 @@ export interface AutoAlertCandidate {
   // When the latest snapshot was recorded — used to suppress re-firing a "new ATL"
   // on a second same-day run, when the daily-deduped snapshot hasn't advanced.
   latestSnapshotAt: string | null;
+  // Launch (Steam free-text) and the earliest stored snapshot day — the inputs to
+  // the short-history check that replaces an ATL claim the history can't back.
+  releaseDate: string | null;
+  earliestSnapshotDate: string | null;
 }
 
 /**
@@ -5078,6 +5169,8 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
     prevHistoricalLowPrice: number | null;
     snapshotCount: number;
     latestSnapshotAt: string | null;
+    releaseDate: string | null;
+    earliestSnapshotDate: string | null;
   }
 
   const rows = db.all(sql`
@@ -5104,7 +5197,9 @@ export function getAutoAlertCandidates(userId: string, minDealScore: number): Au
        ORDER BY ps_prev.snapshot_date DESC, ps_prev.id DESC
        LIMIT 1) as prevHistoricalLowPrice,
       (SELECT COUNT(*) FROM price_snapshots ps_all WHERE ps_all.game_id = g.id) as snapshotCount,
-      ps.created_at as latestSnapshotAt
+      ps.created_at as latestSnapshotAt,
+      g.release_date as releaseDate,
+      (SELECT MIN(ps_first.snapshot_date) FROM price_snapshots ps_first WHERE ps_first.game_id = g.id) as earliestSnapshotDate
     FROM user_games ug
     INNER JOIN games g ON ug.game_id = g.id
     INNER JOIN price_snapshots ps ON g.id = ps.game_id
