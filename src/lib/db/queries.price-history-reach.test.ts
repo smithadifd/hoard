@@ -109,7 +109,7 @@ describe('alert rows carry launch + earliest snapshot (S9)', () => {
   });
 });
 
-describe('incrementPriceHistoryMissCount refreshes the stamp at/over the give-up threshold (S10)', () => {
+describe('incrementPriceHistoryMissCount restarts the cooldown on any retry-path miss (S10)', () => {
   it('a miss on an already-given-up game moves the stamp forward so the cooldown restarts', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-11T12:00:00Z'));
@@ -127,13 +127,27 @@ describe('incrementPriceHistoryMissCount refreshes the stamp at/over the give-up
     }
   });
 
-  it('a miss under the threshold leaves an existing stamp alone', () => {
-    const stamp = new Date('2026-06-01T05:00:00Z');
-    const gameId = seedRepro({ backfilledAt: stamp, missCount: 0 });
+  it('a first miss on a stamped game (retry path, count 0 → 1) also refreshes the stamp', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-11T12:00:00Z'));
+    try {
+      const gameId = seedRepro({ backfilledAt: new Date('2026-06-01T05:00:00Z'), missCount: 0 });
+      incrementPriceHistoryMissCount(gameId);
+      const row = testDb.select({ stamp: schema.games.priceHistoryBackfilledAt, misses: schema.games.priceHistoryMissCount })
+        .from(schema.games).where(eq(schema.games.id, gameId)).get()!;
+      expect(row.misses).toBe(1);
+      expect(row.stamp).toEqual(new Date('2026-09-11T12:00:00Z'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a miss under the threshold on a never-stamped game leaves the stamp NULL (first-pass semantics unchanged)', () => {
+    const gameId = seedRepro({ backfilledAt: null, missCount: 0 });
     incrementPriceHistoryMissCount(gameId);
     const row = testDb.select({ stamp: schema.games.priceHistoryBackfilledAt, misses: schema.games.priceHistoryMissCount })
       .from(schema.games).where(eq(schema.games.id, gameId)).get()!;
     expect(row.misses).toBe(1);
-    expect(row.stamp).toEqual(stamp);
+    expect(row.stamp).toBeNull();
   });
 });

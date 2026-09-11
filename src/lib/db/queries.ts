@@ -2961,10 +2961,16 @@ export function incrementPriceHistoryMissCount(gameId: number): void {
   // one statement avoids a race when two callers (cron + manual trigger)
   // operate on the same game.
   //
-  // The stamp is (re)written on EVERY miss at/over the threshold, not only when
-  // it was NULL: a stamped-but-short game is retried once its stamp is older
-  // than BACKFILL_RETRY_COOLDOWN_DAYS, so a failed retry must move the stamp
-  // forward or the next page open / nightly run would retry it again at once.
+  // Two regimes share this statement:
+  // - Never stamped (the first-pass path): the stamp stays NULL until the miss
+  //   count reaches the give-up threshold, then it is written (give-up).
+  // - Already stamped (the retry path — a stamped-but-short game whose stamp
+  //   aged past BACKFILL_RETRY_COOLDOWN_DAYS): EVERY attempt restarts the
+  //   cooldown, so the stamp is refreshed on any miss regardless of the count.
+  //   Otherwise a retry that fails with the count still under the threshold
+  //   would leave the old stamp in place and be retried again on the very next
+  //   page open / nightly selection, breaking the one-call-per-cooldown bound.
+  //   (A successful retry refreshes it via markPriceHistoryBackfilled.)
   const db = getDb();
   const nowMs = Date.now();
   db.run(sql`
@@ -2972,7 +2978,8 @@ export function incrementPriceHistoryMissCount(gameId: number): void {
     SET
       price_history_miss_count = COALESCE(price_history_miss_count, 0) + 1,
       price_history_backfilled_at = CASE
-        WHEN COALESCE(price_history_miss_count, 0) + 1 >= ${PRICE_HISTORY_GIVE_UP_MISSES}
+        WHEN price_history_backfilled_at IS NOT NULL
+          OR COALESCE(price_history_miss_count, 0) + 1 >= ${PRICE_HISTORY_GIVE_UP_MISSES}
         THEN ${nowMs}
         ELSE price_history_backfilled_at
       END

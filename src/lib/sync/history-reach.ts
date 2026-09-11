@@ -123,9 +123,9 @@ export interface SelfHealState {
  *   already sits at the give-up threshold (gave-up, the pre-existing no-op).
  * - Stamped and history reaches launch (or launch unknown) → already-backfilled, forever.
  * - Stamped but short → due once the stamp is older than the cooldown; otherwise
- *   cooling-down (gave-up when the miss count is at the give-up threshold — the
- *   stamp is refreshed on every miss at/over it, so a permanently failing game
- *   costs one attempt per cooldown).
+ *   cooling-down (gave-up when the miss count is at the give-up threshold). Every
+ *   retry attempt — success or miss, whatever the count — refreshes the stamp, so
+ *   a game costs at most one attempt per cooldown.
  */
 export function selfHealDisposition(
   state: SelfHealState,
