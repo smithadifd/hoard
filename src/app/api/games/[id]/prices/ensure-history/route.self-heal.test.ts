@@ -139,6 +139,23 @@ describe('ensure-history self-heal reaches launch without the manual button (S3)
     expect(mockGetPriceHistory).not.toHaveBeenCalled();
   });
 
+  it('a failed retry (stamp 31 days old, miss count 0, provider 429) restarts the cooldown: a second open the same day makes zero provider calls', async () => {
+    // 2026-09-11 minus 31 days = 2026-08-11.
+    const gameId = seedRepro({ stampedAt: new Date('2026-08-11T12:00:00Z') });
+    mockGetPriceHistory.mockRejectedValue(new Error('ITAD API error: 429 Too Many Requests'));
+
+    const first = await post(gameId);
+    expect(first.status).toBe(500);
+    expect(mockGetPriceHistory).toHaveBeenCalledTimes(1);
+    expect(stampOf(gameId)).toBe(REPRO.now.getTime());
+
+    const second = await post(gameId);
+    const body = await second.json();
+    expect(body.data.status).toBe('cooling-down');
+    expect(mockGetPriceHistory).toHaveBeenCalledTimes(1);
+    expect(earliestSnapshotDate(gameId)).toBe(REPRO.earliestSnapshot);
+  });
+
   it('a stamped-but-short game inside the 30-day cooldown is not retried yet', async () => {
     const gameId = seedRepro({ stampedAt: new Date('2026-09-01T05:00:00Z') });
     const res = await post(gameId);
