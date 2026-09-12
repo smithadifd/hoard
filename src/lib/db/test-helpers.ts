@@ -296,6 +296,9 @@ export function seedGame(
       isReleased: overrides.isReleased,
       isEarlyAccess: overrides.isEarlyAccess,
       metadataLastUpdated: overrides.metadataLastUpdated,
+      itadGameId: overrides.itadGameId,
+      priceHistoryBackfilledAt: overrides.priceHistoryBackfilledAt,
+      priceHistoryMissCount: overrides.priceHistoryMissCount,
     })
     .returning({ id: schema.games.id })
     .get();

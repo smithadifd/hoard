@@ -58,6 +58,7 @@ describe('POST /api/games/:id/prices/ensure-history', () => {
     mockState.mockReturnValue({
       id: 1, steamAppId: 440, itadGameId: 'tf2',
       priceHistoryBackfilledAt: new Date(), priceHistoryMissCount: 0,
+      releaseDate: null, earliestSnapshotDate: null,
     });
     const res = await post('1');
     const body = await res.json();
@@ -70,6 +71,7 @@ describe('POST /api/games/:id/prices/ensure-history', () => {
     mockState.mockReturnValue({
       id: 1, steamAppId: 440, itadGameId: null,
       priceHistoryBackfilledAt: null, priceHistoryMissCount: 3,
+      releaseDate: null, earliestSnapshotDate: null,
     });
     const res = await post('1');
     const body = await res.json();
@@ -81,6 +83,7 @@ describe('POST /api/games/:id/prices/ensure-history', () => {
     mockState.mockReturnValue({
       id: 1, steamAppId: 440, itadGameId: null,
       priceHistoryBackfilledAt: null, priceHistoryMissCount: 0,
+      releaseDate: null, earliestSnapshotDate: null,
     });
     mockLookup.mockResolvedValue({ found: true, game: { id: 'tf2' } });
     mockBackfill.mockResolvedValue({ gameId: 1, events: 12, inserted: 10, skipped: 2, syncLogId: 1 });
@@ -99,6 +102,7 @@ describe('POST /api/games/:id/prices/ensure-history', () => {
     mockState.mockReturnValue({
       id: 1, steamAppId: 440, itadGameId: null,
       priceHistoryBackfilledAt: null, priceHistoryMissCount: 0,
+      releaseDate: null, earliestSnapshotDate: null,
     });
     mockLookup.mockResolvedValue({ found: false, game: null });
 
@@ -115,6 +119,7 @@ describe('POST /api/games/:id/prices/ensure-history', () => {
     mockState.mockReturnValue({
       id: 1, steamAppId: 440, itadGameId: 'tf2',
       priceHistoryBackfilledAt: null, priceHistoryMissCount: 1,
+      releaseDate: null, earliestSnapshotDate: null,
     });
     mockBackfill.mockRejectedValue(new Error('ITAD 500'));
 

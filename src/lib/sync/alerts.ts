@@ -12,6 +12,7 @@
 
 import { getEffectiveConfig } from '../config';
 import { getDiscordClient } from '../discord/client';
+import { assessHistoryReach, isHistoryShort } from './history-reach';
 import { milestones } from '../onboarding/milestones';
 import { emitNotification } from '../notifications/dispatch';
 import type { NotificationPayload } from '../notifications/types';
@@ -109,8 +110,20 @@ export interface DigestGame {
   storeUrl: string;
 }
 
+/**
+ * A game at the provider's low whose stored history is too short of its launch to
+ * back the claim. Surfaced as a short-history notice instead of an ATL alert.
+ */
+export interface ShortHistoryGame extends DigestGame {
+  /** Earliest stored snapshot day (YYYY-MM-DD). */
+  historySince: string;
+  /** Launch as Steam reports it (free-text), for the notice. */
+  launchLabel: string;
+  shortfallDays: number;
+}
+
 export interface PendingNotification {
-  type: 'individual' | 'digest';
+  type: 'individual' | 'digest' | 'short-history';
   // Internal games.id, so the in-app notification can deep-link to the detail page.
   gameId: number;
   // For individual alerts
@@ -121,8 +134,33 @@ export interface PendingNotification {
   individualKind?: 'new-atl' | 'priority';
   // For digest
   digestGame?: DigestGame;
+  // For the short-history notice
+  shortHistoryGame?: ShortHistoryGame;
   // Callback to mark as notified on success
   onSent: () => void;
+}
+
+/**
+ * Build the short-history notice entry for a game at the provider's low whose
+ * stored history does not reach its launch. Returns null when the history is
+ * long enough (or the launch is unknown — nothing to judge against).
+ */
+function shortHistoryEntry(row: ActiveAlertRow | AutoAlertCandidate): ShortHistoryGame | null {
+  const reach = assessHistoryReach(row);
+  if (!isHistoryShort(reach)) return null;
+  return {
+    gameId: row.gameId,
+    title: row.title,
+    currentPrice: row.currentPrice,
+    regularPrice: row.regularPrice,
+    discountPercent: row.discountPercent,
+    store: row.store,
+    // Same fallback buildAlertPayload uses for the deal embeds.
+    storeUrl: row.storeUrl ?? `https://store.steampowered.com/app/${row.steamAppId}`,
+    historySince: reach.earliestSnapshotDate ?? 'never',
+    launchLabel: reach.launchLabel ?? 'unknown',
+    shortfallDays: reach.shortfallDays ?? 0,
+  };
 }
 
 function buildAlertPayload(alert: ActiveAlertRow | AutoAlertCandidate, dealScore?: number) {
@@ -204,6 +242,39 @@ function buildDigestInApp(digestGames: DigestGame[], kind: 'new' | 'still'): Not
   };
 }
 
+/**
+ * One in-app notice for the games whose low the stored history cannot back. Deliberately
+ * NOT the ATL digest shape: the bell's digest modal keys on `metadata.games` and titles
+ * itself "at all-time low", which is the very claim this notice withholds.
+ */
+export function buildShortHistoryInApp(games: ShortHistoryGame[]): NotificationPayload {
+  const count = games.length;
+  const describe = (g: ShortHistoryGame) => `${g.title} (history since ${g.historySince}, launched ${g.launchLabel})`;
+  const named = games.slice(0, 3).map(describe);
+  const remainder = count - named.length;
+  const body = remainder > 0 ? `${named.join('; ')}; and ${remainder} more` : named.join('; ');
+  return {
+    title: `${count} game${count === 1 ? '' : 's'} at a low price — history too short to trust`,
+    body,
+    link: '/wishlist',
+    metadata: {
+      kind: 'short-history',
+      count,
+      shortHistoryGames: games.map((g) => ({
+        gameId: g.gameId,
+        title: g.title,
+        currentPrice: g.currentPrice,
+        discountPercent: g.discountPercent,
+        store: g.store,
+        storeUrl: g.storeUrl,
+        historySince: g.historySince,
+        launchLabel: g.launchLabel,
+        shortfallDays: g.shortfallDays,
+      })),
+    },
+  };
+}
+
 /** Aggregate result of evaluating one pass (explicit alerts or auto candidates). */
 export interface AlertEvaluationResult {
   notifications: PendingNotification[];
@@ -211,6 +282,8 @@ export interface AlertEvaluationResult {
   throttled: number;
   /** Skipped because too few snapshots exist to trust an ATL claim. */
   insufficientHistory: number;
+  /** ATL claims replaced by a short-history notice: the stored span falls short of launch. */
+  shortHistory: number;
 }
 
 /**
@@ -230,6 +303,7 @@ export function evaluateExplicitAlerts(
 ): AlertEvaluationResult {
   let throttled = 0;
   let insufficientHistory = 0;
+  let shortHistory = 0;
   const pending: PendingNotification[] = [];
 
   for (const alert of activeAlerts) {
@@ -248,7 +322,15 @@ export function evaluateExplicitAlerts(
     // Threshold and free triggers remain unguarded — those are explicit prices the user set.
     const atlGated = alert.notifyOnAllTimeLow && alert.isHistoricalLow && alert.snapshotCount < minSnapshots;
     if (atlGated) insufficientHistory++;
-    const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated;
+    // Second gate: the stored span must plausibly reach the game's launch. A history
+    // that starts years after release cannot back an all-time-low claim, so the ATL
+    // is withheld and a short-history notice goes out instead (digest cadence).
+    const shortEntry =
+      alert.notifyOnAllTimeLow && alert.isHistoricalLow && !atlGated
+        ? shortHistoryEntry(alert)
+        : null;
+    if (shortEntry) shortHistory++;
+    const atlTriggered = !!alert.notifyOnAllTimeLow && !!alert.isHistoricalLow && !atlGated && !shortEntry;
     // A new ATL only counts as "new" once per snapshot. The daily-deduped snapshot
     // doesn't advance on a second same-day run, so without this guard isNewAtl would
     // keep seeing the previous-day baseline and re-fire the same alert every run.
@@ -258,7 +340,19 @@ export function evaluateExplicitAlerts(
       !alreadyNotifiedForSnapshot(alert.lastNotifiedAt, alert.latestSnapshotAt);
 
     const shouldNotify = isFree || triggeredByThreshold || atlTriggered;
-    if (!shouldNotify) continue;
+    if (!shouldNotify) {
+      // Nothing explicit fired; if the ATL was withheld for short history and this is
+      // a real discount, say so once a day rather than staying silent about the low.
+      if (shortEntry && digestSend && alert.discountPercent > 0) {
+        pending.push({
+          type: 'short-history',
+          gameId: alert.gameId,
+          shortHistoryGame: shortEntry,
+          onSent: () => updateAlertLastNotified(alert.id),
+        });
+      }
+      continue;
+    }
 
     const routeIndividual = isFree || triggeredByThreshold || isNew;
 
@@ -308,7 +402,7 @@ export function evaluateExplicitAlerts(
     // else: at "ATL" because regular price never dropped — not a deal, skip silently
   }
 
-  return { notifications: pending, throttled, insufficientHistory };
+  return { notifications: pending, throttled, insufficientHistory, shortHistory };
 }
 
 /**
@@ -328,6 +422,7 @@ export function evaluateAutoAlertCandidates(
 ): AlertEvaluationResult {
   let throttled = 0;
   let insufficientHistory = 0;
+  let shortHistory = 0;
   const pending: PendingNotification[] = [];
 
   for (const candidate of candidates) {
@@ -338,6 +433,25 @@ export function evaluateAutoAlertCandidates(
     }
 
     const isFree = candidate.currentPrice === 0;
+
+    // Second gate (see the explicit pass): a span that starts long after launch cannot
+    // back the ATL; withhold it and queue a once-daily short-history notice instead.
+    // Free stays unguarded — price 0 is not an all-time-low claim.
+    if (!isFree) {
+      const shortEntry = shortHistoryEntry(candidate);
+      if (shortEntry) {
+        shortHistory++;
+        if (digestSend && candidate.discountPercent > 0) {
+          pending.push({
+            type: 'short-history',
+            gameId: candidate.gameId,
+            shortHistoryGame: shortEntry,
+            onSent: () => updateAutoAlertLastNotified(candidate.gameId, effectiveUserId),
+          });
+        }
+        continue;
+      }
+    }
     // See the explicit-alert path: gate the new-ATL bypass to once per snapshot so a
     // second same-day run doesn't re-fire against the unchanged daily snapshot.
     const isNew =
@@ -387,7 +501,7 @@ export function evaluateAutoAlertCandidates(
     // else: at "ATL" because regular price never dropped — not a deal, skip silently
   }
 
-  return { notifications: pending, throttled, insufficientHistory };
+  return { notifications: pending, throttled, insufficientHistory, shortHistory };
 }
 
 export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: string): Promise<SyncResult> {
@@ -431,6 +545,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     );
     const throttled = explicitResult.throttled;
     let insufficientHistory = explicitResult.insufficientHistory;
+    let shortHistory = explicitResult.shortHistory;
     const pending: PendingNotification[] = [...explicitResult.notifications];
 
     // Auto ATL deal alerts
@@ -452,6 +567,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
       pending.push(...autoResult.notifications);
       autoThrottled = autoResult.throttled;
       insufficientHistory += autoResult.insufficientHistory;
+      shortHistory += autoResult.shortHistory;
     }
 
     // Send individual alerts
@@ -459,6 +575,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     let firstDealFiredThisRun = false;
     const individualAlerts = pending.filter((p) => p.type === 'individual');
     const digestAlerts = pending.filter((p) => p.type === 'digest');
+    const shortHistoryAlerts = pending.filter((p) => p.type === 'short-history');
 
     // Partition: only generic new-ATL alerts are burst-foldable. Free games and explicit
     // threshold hits are rare and high-signal, so they always ping individually — never buried.
@@ -538,6 +655,7 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
     }
 
     // Send digest — one fan-out for the whole batch (one Discord embed, one in-app summary)
+    let dailyDigestSent = false;
     if (digestAlerts.length > 0) {
       const digestGames = digestAlerts.map((d) => d.digestGame!);
       const { inAppDelivered, discordDelivered } = await emitNotification({
@@ -550,18 +668,43 @@ export async function checkPriceAlerts(onProgress?: ProgressCallback, userId?: s
         for (const item of digestAlerts) {
           item.onSent();
         }
-        // Record the date so off-cycle runs later today don't re-send the digest.
-        setSetting(LAST_DIGEST_DATE_KEY, digestDateKey, 'Last date (server-local) the still-at-ATL digest was sent');
+        dailyDigestSent = true;
         notifiedCount += digestAlerts.length;
         console.log(`[AlertCheck] Digest sent: ${digestAlerts.length} still-at-ATL games`);
       }
+    }
+
+    // Short-history notice — games at the provider's low whose stored history starts too
+    // long after launch to back an ATL claim. Same once-daily cadence and channel routing as
+    // the roundup (deal-digest), framed as "history too short" instead of "at all-time low".
+    if (shortHistoryAlerts.length > 0) {
+      const shortGames = shortHistoryAlerts.map((d) => d.shortHistoryGame!);
+      const { inAppDelivered, discordDelivered } = await emitNotification({
+        category: 'deal-digest',
+        userId: effectiveUserId,
+        inApp: buildShortHistoryInApp(shortGames),
+        discord: () => discord.sendAtlDigest(shortGames, 'short-history'),
+      });
+      if (inAppDelivered || discordDelivered) {
+        for (const item of shortHistoryAlerts) {
+          item.onSent();
+        }
+        dailyDigestSent = true;
+        notifiedCount += shortHistoryAlerts.length;
+        console.log(`[AlertCheck] Short-history notice sent: ${shortHistoryAlerts.length} games`);
+      }
+    }
+
+    // Record the date so off-cycle runs later today don't re-send either daily digest.
+    if (dailyDigestSent) {
+      setSetting(LAST_DIGEST_DATE_KEY, digestDateKey, 'Last date (server-local) the still-at-ATL digest was sent');
     }
 
     const totalThrottled = throttled + autoThrottled;
     const totalSkipped = totalThrottled + insufficientHistory;
     const totalAttempted = pending.length + totalSkipped;
     console.log(
-      `[AlertCheck] Sent ${notifiedCount} notifications (${digestAlerts.length} in digest), ${totalThrottled} throttled, ${insufficientHistory} skipped for insufficient history`,
+      `[AlertCheck] Sent ${notifiedCount} notifications (${digestAlerts.length} in digest, ${shortHistoryAlerts.length} short-history), ${totalThrottled} throttled, ${insufficientHistory} skipped for insufficient history, ${shortHistory} ATL claims withheld for short history`,
     );
     completeSyncLog(syncLogId, 'success', notifiedCount, undefined, totalAttempted, 0);
     return { stats: { attempted: totalAttempted, succeeded: notifiedCount, failed: 0, skipped: totalSkipped }, syncLogId };

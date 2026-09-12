@@ -1,4 +1,5 @@
 import { backfillPriceHistory } from '@/lib/sync/prices-history';
+import { assessHistoryReach, selfHealDisposition } from '@/lib/sync/history-reach';
 import { getITADClient } from '@/lib/itad/client';
 import {
   getGameBackfillState,
@@ -26,11 +27,13 @@ const inFlight = new Set<number>();
 /**
  * POST /api/games/:id/prices/ensure-history
  *
- * Idempotent, once-per-game backfill driver for the game detail page. Unlike the
- * manual `.../prices/history` route, this resolves a missing ITAD link, guards on
- * `priceHistoryBackfilledAt` + miss-count so it only ever does real work once, and
- * stamps the backfill marker on success. Safe to fire on every page open — a game
- * that's already backfilled (or has exhausted its retries) returns a cheap no-op.
+ * Idempotent backfill driver for the game detail page. Unlike the manual
+ * `.../prices/history` route, this resolves a missing ITAD link, decides via
+ * `selfHealDisposition` whether a pull is due (never stamped; or stamped but the
+ * stored history is implausibly short of the game's launch and the stamp is older
+ * than the retry cooldown), and stamps the backfill marker on success. Safe to fire
+ * on every page open — a game whose history reaches launch (or whose stamp is still
+ * cooling down / gave up) returns a cheap no-op with no provider call.
  */
 export async function POST(
   request: Request,
@@ -50,13 +53,17 @@ export async function POST(
     const game = getGameBackfillState(gameId);
     if (!game) return apiNotFound('Game');
 
-    // Already done, or given up after too many misses — no-op.
-    // Loose `!= null` so an unset column (null or undefined) falls through to a backfill.
-    if (game.priceHistoryBackfilledAt != null) {
-      return apiSuccess({ status: 'already-backfilled' });
-    }
-    if (game.priceHistoryMissCount >= PRICE_HISTORY_GIVE_UP_MISSES) {
-      return apiSuccess({ status: 'gave-up' });
+    // Reach-aware guard: a stamp only settles the matter when the stored history
+    // plausibly reaches launch. A stamped-but-short game (a give-up after transient
+    // provider errors, or an empty pull) is retried once per cooldown.
+    const reach = assessHistoryReach(game);
+    const disposition = selfHealDisposition(
+      { priceHistoryBackfilledAt: game.priceHistoryBackfilledAt ?? null, priceHistoryMissCount: game.priceHistoryMissCount, reach },
+      new Date(),
+      PRICE_HISTORY_GIVE_UP_MISSES,
+    );
+    if (disposition !== 'due') {
+      return apiSuccess({ status: disposition });
     }
 
     if (inFlight.has(gameId)) {
