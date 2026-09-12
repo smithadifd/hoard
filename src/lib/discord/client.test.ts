@@ -212,6 +212,28 @@ describe('DiscordClient', () => {
       expect(result).toBe(true);
       expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    // S8 — the short-history kind must not claim an all-time low. Repro game:
+    // launched Apr 15, 2021, Hoard history since 2026-02-06.
+    it("frames 'short-history' as history too short to trust, in amber, with the span on each line", async () => {
+      const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+      await client.sendAtlDigest([
+        {
+          title: 'The Darkside Detective: A Fumble in the Dark',
+          currentPrice: 3.99, regularPrice: 12.99, discountPercent: 69, store: 'Steam', storeUrl: 'https://store/795420',
+          historySince: '2026-02-06', launchLabel: 'Apr 15, 2021',
+        },
+      ], 'short-history');
+
+      const embed = JSON.parse(mockFetch.mock.calls[0][1]!.body as string).embeds[0];
+      expect(embed.title).toBe('Low price, history too short to trust (1 game)');
+      expect(embed.title).not.toContain('All-Time Low');
+      expect(embed.color).toBe(0xf59e0b); // Amber — a caution, not a deal accent
+      expect(embed.description).toContain('The Darkside Detective: A Fumble in the Dark');
+      expect(embed.description).toContain('history since 2026-02-06, launched Apr 15, 2021');
+      expect(embed.footer.text).not.toContain('historical low');
+    });
   });
 
   describe('sendPricePaidSuggestion', () => {

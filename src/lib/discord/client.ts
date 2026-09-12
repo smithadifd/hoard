@@ -26,6 +26,9 @@ interface DiscordEmbed {
   timestamp?: string;
 }
 
+/** Framing for a condensed multi-game embed. */
+export type AtlDigestKind = 'new' | 'still' | 'short-history';
+
 export class DiscordClient {
   /**
    * Get the webhook URL fresh from config (DB settings override env vars).
@@ -178,7 +181,9 @@ export class DiscordClient {
   /**
    * Condense multiple ATL games into a single compact embed. `kind` selects the framing:
    * 'new' for a sale-day burst of games that just hit a new low, 'still' (default) for the
-   * once-daily roundup of games sitting at a previously-known low.
+   * once-daily roundup of games sitting at a previously-known low, 'short-history' for
+   * games at a low whose stored price history starts too long after launch to back an
+   * all-time-low claim (each line then carries the history start and the launch).
    */
   async sendAtlDigest(games: Array<{
     title: string;
@@ -187,7 +192,10 @@ export class DiscordClient {
     discountPercent: number;
     store: string;
     storeUrl: string;
-  }>, kind: 'new' | 'still' = 'still'): Promise<boolean> {
+    /** 'short-history' only: earliest stored snapshot day and the launch as Steam reports it. */
+    historySince?: string;
+    launchLabel?: string;
+  }>, kind: AtlDigestKind = 'still'): Promise<boolean> {
     if (games.length === 0) return true;
 
     const MAX_DESCRIPTION_LENGTH = 4000;
@@ -196,7 +204,11 @@ export class DiscordClient {
       const price = game.currentPrice === 0
         ? '**FREE**'
         : `~~$${game.regularPrice.toFixed(2)}~~ **$${game.currentPrice.toFixed(2)}** (-${game.discountPercent}%)`;
-      lines.push(`[${game.title}](${game.storeUrl}) — ${price} @ ${game.store}`);
+      const span =
+        kind === 'short-history' && game.historySince && game.launchLabel
+          ? ` · history since ${game.historySince}, launched ${game.launchLabel}`
+          : '';
+      lines.push(`[${game.title}](${game.storeUrl}) — ${price} @ ${game.store}${span}`);
     }
 
     // Chunk into multiple embeds if description exceeds safe limit
@@ -225,11 +237,24 @@ export class DiscordClient {
     return this.send('', embeds);
   }
 
-  private buildDigestEmbed(lines: string[], totalCount: number, kind: 'new' | 'still', part?: number, totalParts?: number): DiscordEmbed {
+  private buildDigestEmbed(lines: string[], totalCount: number, kind: AtlDigestKind, part?: number, totalParts?: number): DiscordEmbed {
     const suffix = part && totalParts ? ` (part ${part}/${totalParts})` : '';
+    const games = `${totalCount} game${totalCount === 1 ? '' : 's'}`;
+    if (kind === 'short-history') {
+      return {
+        title: `Low price, history too short to trust (${games})${suffix}`,
+        description: lines.join('\n'),
+        // Amber: a caution about the data, not a deal accent.
+        color: 0xf59e0b,
+        footer: {
+          text: 'Hoard — Price history for these games starts long after launch; the all-time low is unverified until it backfills',
+        },
+        timestamp: new Date().toISOString(),
+      };
+    }
     const isNew = kind === 'new';
     return {
-      title: `${isNew ? 'Just Hit' : 'Still at'} All-Time Low (${totalCount} game${totalCount === 1 ? '' : 's'})${suffix}`,
+      title: `${isNew ? 'Just Hit' : 'Still at'} All-Time Low (${games})${suffix}`,
       description: lines.join('\n'),
       // Green matches the "new ATL" accent in sendPriceAlert; gray marks the lower-signal roundup.
       color: isNew ? 0x22c55e : 0x6b7280,

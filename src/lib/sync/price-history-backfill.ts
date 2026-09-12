@@ -4,6 +4,10 @@
  * Walks games that have an itad_game_id but have never had their full ITAD
  * history pulled, fetches the historical sale events, and stamps
  * `price_history_backfilled_at` so the game is skipped on subsequent runs.
+ * When that pool leaves room in the batch, it also retries stamped games whose
+ * stored history falls implausibly short of their launch (see history-reach.ts)
+ * once their stamp is older than BACKFILL_RETRY_COOLDOWN_DAYS — a give-up after
+ * transient provider errors, or an empty pull, must not leave a game short forever.
  *
  * - Scope: games in user_games (owned, wishlisted, or watchlisted). When
  *   invoked with a userId, scoped to that user's games only.
@@ -12,7 +16,8 @@
  * - Idempotent: the (gameId, store, snapshotDate) unique index on
  *   price_snapshots silently drops duplicates, so re-runs are safe.
  * - Backoff: after PRICE_HISTORY_GIVE_UP_MISSES consecutive failures, the
- *   game is marked backfilled anyway so we stop hammering ITAD for it.
+ *   game is stamped so the never-backfilled pool stops picking it up; the
+ *   reach-aware retry pool revisits it once per cooldown.
  * - Concurrency: a module-level guard prevents the cron and any manual
  *   trigger from running the loop concurrently. The second caller returns
  *   immediately with a no-op result.
@@ -20,11 +25,18 @@
 
 import { backfillPriceHistory } from './prices-history';
 import {
+  assessHistoryReach,
+  selfHealDisposition,
+  BACKFILL_RETRY_COOLDOWN_DAYS,
+} from './history-reach';
+import {
   createSyncLog,
   completeSyncLog,
   getGamesForPriceHistoryBackfill,
+  getPriceHistoryRetryCandidates,
   markPriceHistoryBackfilled,
   incrementPriceHistoryMissCount,
+  PRICE_HISTORY_GIVE_UP_MISSES,
 } from '../db/queries';
 import type { SyncResult, ProgressCallback } from './types';
 
@@ -56,6 +68,30 @@ interface RunOptions {
   userId?: string;
 }
 
+/**
+ * One batch of work: the never-backfilled pool first, then — if there is room —
+ * stamped games whose history is short of launch and whose stamp has aged past
+ * the cooldown. The reach rule is applied here (release dates are Steam
+ * free-text, so the query returns the raw fields and JS judges them); the
+ * provider is only called for games `selfHealDisposition` says are due.
+ */
+function selectBatch(userId: string | undefined, now: Date) {
+  const candidates: Array<{ id: number; title: string; itadGameId: string }> =
+    getGamesForPriceHistoryBackfill(BATCH_SIZE, userId);
+  const room = BATCH_SIZE - candidates.length;
+  if (room <= 0) return candidates;
+
+  const cutoff = new Date(now.getTime() - BACKFILL_RETRY_COOLDOWN_DAYS * 86_400_000);
+  const retries = getPriceHistoryRetryCandidates(cutoff, userId)
+    .filter(
+      (g) =>
+        selfHealDisposition({ ...g, reach: assessHistoryReach(g) }, now, PRICE_HISTORY_GIVE_UP_MISSES) === 'due',
+    )
+    .slice(0, room)
+    .map((g) => ({ id: g.id, title: g.title, itadGameId: g.itadGameId }));
+  return [...candidates, ...retries];
+}
+
 async function runBackfill(
   onProgress: ProgressCallback | undefined,
   signal: AbortSignal | undefined,
@@ -84,7 +120,7 @@ async function runBackfill(
     let batchNumber = 0;
 
     while (true) {
-      const candidates = getGamesForPriceHistoryBackfill(BATCH_SIZE, options.userId);
+      const candidates = selectBatch(options.userId, new Date());
       batchNumber++;
 
       if (candidates.length === 0) {

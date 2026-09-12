@@ -23,7 +23,7 @@ import { HltbAutoFetch } from '@/components/games/HltbAutoFetch';
 import { SteamPlaytimeAutoFetch } from '@/components/games/SteamPlaytimeAutoFetch';
 import { PlaytimeSourceToggle } from '@/components/games/PlaytimeSourceToggle';
 import { EnsurePriceHistory } from '@/components/games/EnsurePriceHistory';
-import { PRICE_HISTORY_GIVE_UP_MISSES, STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
+import { STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
 import { resolveBackTarget } from '@/lib/utils/backNav';
 
 export const dynamic = 'force-dynamic';
@@ -65,13 +65,6 @@ export default async function GameDetailPage({
   // so we don't need a side-effecting write here in the render path.
   const isLookupMode = game.source === 'lookup' && !game.isOwned && !game.isWishlisted && !game.isWatchlisted;
 
-  // Eligible for the one-shot price-history backfill: never backfilled and not yet
-  // given up. Independent of lookup mode — a freshly Hoard-only wishlisted game may
-  // still lack history. The server route is idempotent and guards the same way.
-  const eligibleForHistoryBackfill =
-    !game.priceHistoryBackfilledAt &&
-    (game.priceHistoryMissCount ?? 0) < PRICE_HISTORY_GIVE_UP_MISSES;
-
   const alert = getPriceAlertForGame(gameId, session.user.id);
 
   // Compute full deal score breakdown for transparency display
@@ -101,8 +94,12 @@ export default async function GameDetailPage({
           <SteamPlaytimeAutoFetch gameId={game.id} />
         )}
 
-      {/* Price-history auto-backfill trigger (invisible, once per game) */}
-      {eligibleForHistoryBackfill && <EnsurePriceHistory gameId={game.id} />}
+      {/* Price-history self-heal trigger (invisible). Always mounted: the route is the one
+          place that decides whether a pull is due (never backfilled, or stamped but the
+          stored history falls implausibly short of launch and the retry cooldown has
+          lapsed) and returns a cheap no-op otherwise — a page-side gate on the stamp
+          alone would keep a stamped-but-short game from ever healing. */}
+      <EnsurePriceHistory gameId={game.id} />
 
       {/* Back Link — returns to the originating list (defaults to Library) */}
       <Link
