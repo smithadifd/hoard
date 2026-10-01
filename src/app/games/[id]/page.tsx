@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft, Star, Clock, Gamepad2, DollarSign, ExternalLink, Users } from 'lucide-react';
 import { getEnrichedGameById, getPriceAlertForGame, getScoringConfig } from '@/lib/db/queries';
 import { getSession } from '@/lib/auth-helpers';
-import { calculateDealScore, getEffectivePlaytimeSource } from '@/lib/scoring/engine';
+import { calculateDealScore, resolveEffectivePlaytime } from '@/lib/scoring/engine';
 import { GameImage } from '@/components/games/GameImage';
 import { GameUserControls } from '@/components/games/GameUserControls';
 import { PriceBadge } from '@/components/prices/PriceBadge';
@@ -53,7 +53,7 @@ export default async function GameDetailPage({
   // The source that ACTUALLY drives $/hour (may differ from the stored preference
   // when an HLTB-less released game falls back to the review median). Used to
   // label the basis honestly in the UI.
-  const effectivePlaytimeSource = getEffectivePlaytimeSource({
+  const { source: effectivePlaytimeSource, hours: effectivePlaytimeHours } = resolveEffectivePlaytime({
     playtimeSource: game.playtimeSource,
     hltbMain: game.hltbMain ?? null,
     steamPlaytimeMedian: game.steamPlaytimeMedian ?? null,
@@ -75,7 +75,7 @@ export default async function GameDetailPage({
         regularPrice: game.regularPrice ?? game.currentPrice,
         historicalLow: game.historicalLow ?? game.currentPrice,
         reviewPercent: game.reviewScore ?? null,
-        hltbMainHours: game.hltbMain ?? null,
+        hltbMainHours: effectivePlaytimeHours,
         personalInterest: game.personalInterest,
       }, scoringConfig.weights, scoringConfig.thresholds)
     : null;
@@ -308,7 +308,7 @@ export default async function GameDetailPage({
                 dealScore={fullDealScore}
                 weights={scoringConfig.weights}
                 hasReviewData={game.reviewScore !== undefined}
-                hasHltbData={game.hltbMain !== undefined && game.hltbMain > 0}
+                hasHltbData={effectivePlaytimeHours !== null && effectivePlaytimeHours > 0}
               />
             )
           )}
