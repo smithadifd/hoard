@@ -51,8 +51,9 @@ export async function POST(request: Request) {
         return apiSuccess({ id: existing.id });
       }
 
-      // Fetch app details from Steam
-      const details = await getSteamClient().getAppDetails(steamAppId);
+      // Fetch app details from Steam. Steam sometimes answers valid ids with
+      // success=false for a moment, so retry briefly before giving up.
+      const details = await getSteamClient().getAppDetails(steamAppId, { retries: 2 });
       if (!details) {
         return apiNotFound('Game not found on Steam');
       }
