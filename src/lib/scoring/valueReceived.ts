@@ -17,7 +17,7 @@
 
 import type { ScoringThresholds } from './types';
 import { DEFAULT_THRESHOLDS } from './types';
-import { getMaxDollarsPerHour } from './engine';
+import { getMaxDollarsPerHour, getEffectivePlaytimeHours } from './engine';
 
 export type ValueReceivedTier = 'unrealized' | 'approaching' | 'realized' | 'exceeded';
 // 'none' = no honest baseline to grade against (played, but no HLTB estimate and no price).
@@ -97,6 +97,26 @@ const MONEY_PHRASE: Record<ValueReceivedTier, string> = {
   approaching: 'approaching a fair rate',
   unrealized: 'below a fair rate so far',
 };
+
+/**
+ * Hours that size an owned game's completion/value baseline: the same effective
+ * playtime (HLTB, or the Steam review median when HLTB is missing) that drives
+ * the tier itself. Null when there is no positive baseline to show.
+ */
+export function getValueReceivedBaselineHours(game: {
+  playtimeSource?: string | null;
+  hltbMain?: number | null;
+  steamPlaytimeMedian?: number | null;
+  isReleased?: boolean | null;
+}): number | null {
+  const hours = getEffectivePlaytimeHours({
+    playtimeSource: game.playtimeSource,
+    hltbMain: game.hltbMain ?? null,
+    steamPlaytimeMedian: game.steamPlaytimeMedian ?? null,
+    isReleased: game.isReleased ?? null,
+  });
+  return hours !== null && hours > 0 ? hours : null;
+}
 
 export function valueReceivedTierLabel(tier: ValueReceivedTier): string {
   return TIER_LABEL[tier];

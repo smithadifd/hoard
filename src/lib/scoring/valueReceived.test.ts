@@ -5,6 +5,7 @@ import {
   formatVerdict,
   verdictText,
   computeBetPayoff,
+  getValueReceivedBaselineHours,
 } from './valueReceived';
 
 // Base input: 10h played, 10h HLTB main (ratio 1.0 → realized), 85% reviews (VP → $3/hr), no price.
@@ -342,5 +343,21 @@ describe('rating-led verdict', () => {
       const fell = computeBetPayoff({ playtimeMinutes: 600, hltbMainHours: 10, reviewPercent: 85, pricePaid: null, enjoymentRating: 2, personalInterest: 4, interestRatedAt: '2026-01-01' });
       expect(fell!.label).toBe('fell short');
     });
+  });
+});
+
+describe('getValueReceivedBaselineHours', () => {
+  it('uses the Steam review median when HLTB is missing', () => {
+    expect(getValueReceivedBaselineHours({ playtimeSource: 'hltb', hltbMain: undefined, steamPlaytimeMedian: 30 })).toBe(30);
+  });
+
+  it('keeps HLTB when present', () => {
+    expect(getValueReceivedBaselineHours({ playtimeSource: 'hltb', hltbMain: 12, steamPlaytimeMedian: 30 })).toBe(12);
+  });
+
+  it('is null with no usable hours, a zero baseline, or an unreleased game', () => {
+    expect(getValueReceivedBaselineHours({ hltbMain: undefined, steamPlaytimeMedian: undefined })).toBeNull();
+    expect(getValueReceivedBaselineHours({ hltbMain: 0, steamPlaytimeMedian: undefined })).toBeNull();
+    expect(getValueReceivedBaselineHours({ hltbMain: undefined, steamPlaytimeMedian: 30, isReleased: false })).toBeNull();
   });
 });

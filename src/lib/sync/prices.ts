@@ -8,7 +8,7 @@
 
 import { getEffectiveConfig } from '../config';
 import { getITADClient, getAndResetItadApiCalls } from '../itad/client';
-import { calculateDealScore } from '../scoring/engine';
+import { calculateDealScore, getEffectivePlaytimeHours } from '../scoring/engine';
 import {
   getGamesForPriceSync,
   bulkUpdateGameItadIds,
@@ -140,7 +140,12 @@ export async function syncPrices(onProgress?: ProgressCallback, signal?: AbortSi
           regularPrice,
           historicalLow: historicalLowPrice ?? currentPrice,
           reviewPercent: game.reviewScore,
-          hltbMainHours: game.hltbMain,
+          hltbMainHours: getEffectivePlaytimeHours({
+            playtimeSource: game.playtimeSource,
+            hltbMain: game.hltbMain,
+            steamPlaytimeMedian: game.steamPlaytimeMedian,
+            isReleased: game.isReleased,
+          }),
           personalInterest: game.personalInterest ?? 3,
         }, weights, thresholds);
         dealScoreValue = score.overall;

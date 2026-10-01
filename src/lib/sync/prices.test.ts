@@ -9,7 +9,8 @@ vi.mock('../itad/client', () => ({
   getAndResetItadApiCalls: vi.fn().mockReturnValue(0),
 }));
 
-vi.mock('../scoring/engine', () => ({
+vi.mock('../scoring/engine', async () => ({
+  ...(await vi.importActual<typeof import('../scoring/engine')>('../scoring/engine')),
   calculateDealScore: vi.fn(),
 }));
 
@@ -56,6 +57,8 @@ const mockGetScoringConfig = vi.mocked(getScoringConfig);
 function makeGame(id: number, steamAppId: number, title: string, itadGameId?: string, overrides?: {
   reviewScore?: number | null;
   hltbMain?: number | null;
+  steamPlaytimeMedian?: number | null;
+  playtimeSource?: string | null;
   personalInterest?: number | null;
 }) {
   return {
@@ -65,6 +68,9 @@ function makeGame(id: number, steamAppId: number, title: string, itadGameId?: st
     itadGameId: itadGameId ?? null,
     reviewScore: overrides?.reviewScore ?? null,
     hltbMain: overrides?.hltbMain ?? null,
+    steamPlaytimeMedian: overrides?.steamPlaytimeMedian ?? null,
+    isReleased: null,
+    playtimeSource: overrides?.playtimeSource ?? 'hltb',
     personalInterest: overrides?.personalInterest ?? null,
   };
 }
@@ -211,6 +217,24 @@ describe('syncPrices', () => {
     );
     expect(result.stats.succeeded).toBe(1);
     expect(result.stats.attempted).toBe(1);
+  });
+
+  it('scores a median-only game off the Steam review median, and an HLTB game off HLTB', async () => {
+    mockGetGamesForPriceSync.mockReturnValue([
+      makeGame(1, 440, 'Median only', 'median', { steamPlaytimeMedian: 30 }),
+      makeGame(2, 441, 'Has HLTB', 'hltb', { hltbMain: 12, steamPlaytimeMedian: 30 }),
+    ]);
+    mockGetITADClient.mockReturnValue(makeMockITADClient({
+      getOverview: vi.fn().mockResolvedValue([
+        makeOverview('median', 10, 20, { historicalLow: 5 }),
+        makeOverview('hltb', 10, 20, { historicalLow: 5 }),
+      ]),
+    }));
+
+    await syncPrices();
+
+    expect(mockCalculateDealScore.mock.calls[0][0].hltbMainHours).toBe(30);
+    expect(mockCalculateDealScore.mock.calls[1][0].hltbMainHours).toBe(12);
   });
 
   it('detects all-time-low prices', async () => {

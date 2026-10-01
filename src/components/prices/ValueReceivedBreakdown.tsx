@@ -1,6 +1,6 @@
 import { Check, X, Star, ArrowRight } from 'lucide-react';
 import type { EnrichedGame } from '@/types';
-import { valueReceivedTierLabel } from '@/lib/scoring/valueReceived';
+import { valueReceivedTierLabel, getValueReceivedBaselineHours } from '@/lib/scoring/valueReceived';
 import type { ValueReceivedTier } from '@/lib/scoring/valueReceived';
 
 /**
@@ -112,7 +112,8 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
 
   const completionRatio = game.completionRatio ?? 0;
   const pct = Math.round(completionRatio * 100);
-  const hasHltb = game.hltbMain !== undefined && game.hltbMain > 0;
+  const baselineHours = getValueReceivedBaselineHours(game);
+  const hasHltb = baselineHours !== null;
   const barWidth = Math.min(100, Math.max(completionRatio * 100, 2));
   const isMoney = lens === 'money' && game.realizedDollarsPerHour !== undefined;
 
@@ -127,7 +128,7 @@ export function ValueReceivedBreakdown({ game }: { game: EnrichedGame }) {
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Playtime vs main story</span>
             <span className="font-label font-medium tabular-nums">
-              {hoursPlayed}h / {game.hltbMain}h ({pct}%)
+              {hoursPlayed}h / {baselineHours}h ({pct}%)
             </span>
           </div>
           <div className="h-2 rounded-full bg-secondary overflow-hidden">
