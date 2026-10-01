@@ -150,6 +150,55 @@ describe('SteamClient', () => {
     });
   });
 
+  describe('getAppDetails retry', () => {
+    const rainbowSix = {
+      '2379390': {
+        success: true,
+        data: { name: 'Tom Clancy\u2019s Rainbow Six\u00AE Extraction', type: 'game' },
+      },
+    };
+    const flake = { '2379390': { success: false } };
+
+    it('retries a transient success=false and returns the game', async () => {
+      const fetchSpy = vi.spyOn(global, 'fetch')
+        .mockResolvedValueOnce(new Response(JSON.stringify(flake), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify(rainbowSix), { status: 200 }));
+
+      const result = await client.getAppDetails(2379390, { retries: 2, retryDelayMs: 1 });
+      expect(result?.name).toBe('Tom Clancy\u2019s Rainbow Six\u00AE Extraction');
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries HTTP 429 and 5xx but not other HTTP errors', async () => {
+      const fetchSpy = vi.spyOn(global, 'fetch')
+        .mockResolvedValueOnce(new Response(null, { status: 429 }))
+        .mockResolvedValueOnce(new Response(null, { status: 503 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify(rainbowSix), { status: 200 }));
+      expect((await client.getAppDetails(2379390, { retries: 2, retryDelayMs: 1 }))?.name).toContain('Extraction');
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+      fetchSpy.mockReset().mockResolvedValue(new Response(null, { status: 404 }));
+      expect(await client.getAppDetails(2379390, { retries: 2, retryDelayMs: 1 })).toBeNull();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives up after the bounded number of retries', async () => {
+      const fetchSpy = vi.spyOn(global, 'fetch')
+        .mockImplementation(async () => new Response(JSON.stringify(flake), { status: 200 }));
+
+      expect(await client.getAppDetails(2379390, { retries: 2, retryDelayMs: 1 })).toBeNull();
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it('makes a single attempt by default', async () => {
+      const fetchSpy = vi.spyOn(global, 'fetch')
+        .mockImplementation(async () => new Response(JSON.stringify(flake), { status: 200 }));
+
+      expect(await client.getAppDetails(2379390)).toBeNull();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('searchStore', () => {
     it('maps storesearch response to SteamSearchResult[]', async () => {
       vi.spyOn(global, 'fetch').mockResolvedValue(

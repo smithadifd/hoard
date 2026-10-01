@@ -124,4 +124,17 @@ describe('POST /api/games/lookup', () => {
       })
     );
   });
+
+  it('asks Steam with retries so a transient success=false does not 404', async () => {
+    mockGet.mockReturnValue(null);
+    mockGetAppDetails.mockResolvedValue({ name: 'NieR:Automata\u2122' });
+    mockReturningGet.mockReturnValue({ id: 7 });
+
+    const res = await POST(makeRequest({ steamAppId: 524220 }));
+
+    expect(res.status).toBe(200);
+    expect(mockGetAppDetails).toHaveBeenCalledWith(524220, expect.objectContaining({ retries: expect.any(Number) }));
+    const opts = mockGetAppDetails.mock.calls.at(-1)![1] as { retries: number };
+    expect(opts.retries).toBeGreaterThanOrEqual(1);
+  });
 });

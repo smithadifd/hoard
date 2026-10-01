@@ -133,15 +133,38 @@ export class SteamClient {
   /**
    * Get detailed app info from the Steam Store API.
    * Includes price, description, categories, etc.
+   *
+   * Steam intermittently answers valid app ids with HTTP 200
+   * `{"<id>":{"success":false}}` (or 429/5xx/an HTML throttle page). Callers
+   * that need an answer right now (e.g. an interactive lookup) can pass
+   * `retries` to re-ask a bounded number of times; the default is a single
+   * attempt so batch sync jobs keep their current pacing.
    */
-  async getAppDetails(appId: number): Promise<SteamAppDetails['data'] | null> {
+  async getAppDetails(
+    appId: number,
+    options: { retries?: number; retryDelayMs?: number } = {},
+  ): Promise<SteamAppDetails['data'] | null> {
+    const retries = Math.max(0, options.retries ?? 0);
+    const delayMs = options.retryDelayMs ?? 750;
+
+    for (let attempt = 0; ; attempt++) {
+      const result = await this.getAppDetailsOnce(appId);
+      if (result.data) return result.data;
+      if (!result.transient || attempt >= retries) return null;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+    }
+  }
+
+  private async getAppDetailsOnce(
+    appId: number,
+  ): Promise<{ data: SteamAppDetails['data'] | null; transient: boolean }> {
     const url = `${STEAM_STORE_API}/appdetails?appids=${appId}&l=english`;
 
     try {
       const response = await this.fetchWithTimeout(url);
       if (!response.ok) {
         console.log(`[Steam] getAppDetails(${appId}): HTTP ${response.status}`);
-        return null;
+        return { data: null, transient: response.status === 429 || response.status >= 500 };
       }
 
       const text = await response.text();
@@ -151,17 +174,17 @@ export class SteamClient {
 
         if (!appData?.success) {
           console.log(`[Steam] getAppDetails(${appId}): success=false`);
-          return null;
+          return { data: null, transient: true };
         }
 
-        return appData.data;
+        return { data: appData.data, transient: false };
       } catch {
         console.log(`[Steam] getAppDetails(${appId}): JSON parse failed, response starts with: ${text.substring(0, 100)}`);
-        return null;
+        return { data: null, transient: true };
       }
     } catch (err) {
       console.log(`[Steam] getAppDetails(${appId}): fetch error: ${err instanceof Error ? err.message : err}`);
-      return null;
+      return { data: null, transient: true };
     }
   }
 
