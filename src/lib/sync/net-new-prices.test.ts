@@ -8,7 +8,8 @@ vi.mock('../itad/client', () => ({
   getITADClient: vi.fn(),
 }));
 
-vi.mock('../scoring/engine', () => ({
+vi.mock('../scoring/engine', async () => ({
+  ...(await vi.importActual<typeof import('../scoring/engine')>('../scoring/engine')),
   calculateDealScore: vi.fn(),
 }));
 
@@ -38,14 +39,22 @@ const mockBulkUpdateItadIds = vi.mocked(bulkUpdateGameItadIds);
 const mockInsertSnapshot = vi.mocked(insertPriceSnapshot);
 const mockGetScoringConfig = vi.mocked(getScoringConfig);
 
-function makeGame(id: number, steamAppId: number, itadGameId?: string) {
+function makeGame(
+  id: number,
+  steamAppId: number,
+  itadGameId?: string,
+  overrides: { hltbMain?: number | null; steamPlaytimeMedian?: number | null } = {},
+) {
   return {
     id,
     steamAppId,
     title: `Game ${id}`,
     itadGameId: itadGameId ?? null,
     reviewScore: null,
-    hltbMain: null,
+    hltbMain: overrides.hltbMain ?? null,
+    steamPlaytimeMedian: overrides.steamPlaytimeMedian ?? null,
+    isReleased: null,
+    playtimeSource: 'hltb',
     personalInterest: null,
   };
 }
@@ -118,6 +127,19 @@ describe('fetchNetNewPrices', () => {
 
     expect(lookupBySteamAppIds).not.toHaveBeenCalled();
     expect(getOverview).toHaveBeenCalledWith(['itad-known']);
+  });
+
+  it('scores a median-only game off the Steam review median, and an HLTB game off HLTB', async () => {
+    mockGetGames.mockReturnValue([
+      makeGame(1, 440, 'median', { steamPlaytimeMedian: 30 }),
+      makeGame(2, 441, 'hltb', { hltbMain: 12, steamPlaytimeMedian: 30 }),
+    ]);
+    getOverview.mockResolvedValue([makeOverview('median', 10, 20, 5), makeOverview('hltb', 10, 20, 5)]);
+
+    await fetchNetNewPrices([1, 2]);
+
+    expect(mockCalculateDealScore.mock.calls[0][0].hltbMainHours).toBe(30);
+    expect(mockCalculateDealScore.mock.calls[1][0].hltbMainHours).toBe(12);
   });
 
   it('skips a foreign-currency price without writing a snapshot (honest USD boundary)', async () => {

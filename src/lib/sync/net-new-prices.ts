@@ -18,7 +18,7 @@
 
 import { getEffectiveConfig } from '../config';
 import { getITADClient } from '../itad/client';
-import { calculateDealScore } from '../scoring/engine';
+import { calculateDealScore, getEffectivePlaytimeHours } from '../scoring/engine';
 import {
   getGamesByIdsForPriceFetch,
   bulkUpdateGameItadIds,
@@ -100,7 +100,12 @@ export async function fetchNetNewPrices(gameIds: number[]): Promise<{ snapshotte
           regularPrice,
           historicalLow: historicalLowPrice ?? currentPrice,
           reviewPercent: game.reviewScore,
-          hltbMainHours: game.hltbMain,
+          hltbMainHours: getEffectivePlaytimeHours({
+            playtimeSource: game.playtimeSource,
+            hltbMain: game.hltbMain,
+            steamPlaytimeMedian: game.steamPlaytimeMedian,
+            isReleased: game.isReleased,
+          }),
           personalInterest: game.personalInterest ?? 3,
         },
         weights,

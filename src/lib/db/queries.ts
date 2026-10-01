@@ -2505,6 +2505,9 @@ export function getGamesForPriceSync(userId: string): Array<{
   itadGameId: string | null;
   reviewScore: number | null;
   hltbMain: number | null;
+  steamPlaytimeMedian: number | null;
+  isReleased: boolean | null;
+  playtimeSource: string | null;
   personalInterest: number | null;
 }> {
   const db = getDb();
@@ -2517,6 +2520,9 @@ export function getGamesForPriceSync(userId: string): Array<{
       itadGameId: games.itadGameId,
       reviewScore: games.reviewScore,
       hltbMain: games.hltbMain,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      isReleased: games.isReleased,
+      playtimeSource: userGames.playtimeSource,
       personalInterest: userGames.personalInterest,
     })
     .from(games)
@@ -2564,6 +2570,9 @@ export function getGamesByIdsForPriceFetch(gameIds: number[]): Array<{
   itadGameId: string | null;
   reviewScore: number | null;
   hltbMain: number | null;
+  steamPlaytimeMedian: number | null;
+  isReleased: boolean | null;
+  playtimeSource: string | null;
   personalInterest: number | null;
 }> {
   if (gameIds.length === 0) return [];
@@ -2576,6 +2585,9 @@ export function getGamesByIdsForPriceFetch(gameIds: number[]): Array<{
       itadGameId: games.itadGameId,
       reviewScore: games.reviewScore,
       hltbMain: games.hltbMain,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      isReleased: games.isReleased,
+      playtimeSource: userGames.playtimeSource,
       // personalInterest isn't user-scoped here (single-user price fetch); the
       // net-new add path always uses the sync's effective user, so any row wins.
       personalInterest: userGames.personalInterest,
