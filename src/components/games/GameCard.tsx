@@ -89,7 +89,7 @@ export function GameCard({ game, from }: GameCardProps) {
             className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-label font-semibold bg-amber-500/80 text-white backdrop-blur-sm"
             title="On your Hoard wishlist but not your Steam wishlist"
           >
-            Not on Steam
+            Hoard only
           </span>
         )}
 
