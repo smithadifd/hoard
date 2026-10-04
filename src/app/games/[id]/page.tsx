@@ -375,7 +375,7 @@ export default async function GameDetailPage({
                 className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 text-xs font-medium"
                 title="On your Hoard wishlist but not your Steam wishlist"
               >
-                Not on Steam
+                Hoard only
               </span>
             )}
             {game.isReleased === false && (
