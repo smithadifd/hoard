@@ -66,11 +66,23 @@ function seed() {
       VALUES (?, 'Demo User', 'demo@example.com', 1, ?, ?)
     `).run(userId, now, now);
 
-    // Create account with password
-    db.prepare(`
-      INSERT INTO account (id, user_id, account_id, provider_id, password, created_at, updated_at)
-      VALUES (?, ?, ?, 'credential', ?, ?, ?)
-    `).run(accountId, userId, userId, hashedPassword, now, now);
+    // Create account with password. Better Auth 1.7+ only signs in a credential
+    // account whose issuer is 'local:credential'. A seed DB that predates the
+    // column gets it (and this row backfilled) by reconcileAccountIssuer on app boot.
+    const hasIssuer = db
+      .prepare("SELECT 1 FROM pragma_table_info('account') WHERE name = 'issuer'")
+      .get();
+    if (hasIssuer) {
+      db.prepare(`
+        INSERT INTO account (id, user_id, issuer, account_id, provider_id, password, created_at, updated_at)
+        VALUES (?, ?, 'local:credential', ?, 'credential', ?, ?, ?)
+      `).run(accountId, userId, userId, hashedPassword, now, now);
+    } else {
+      db.prepare(`
+        INSERT INTO account (id, user_id, account_id, provider_id, password, created_at, updated_at)
+        VALUES (?, ?, ?, 'credential', ?, ?, ?)
+      `).run(accountId, userId, userId, hashedPassword, now, now);
+    }
 
     // Link user_games from export (user_id = 'demo') to real demo user
     db.prepare("UPDATE user_games SET user_id = ? WHERE user_id = 'demo'").run(userId);
