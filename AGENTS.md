@@ -14,7 +14,7 @@ run, build, test, and navigate Hoard from what's here without following any link
 
 A self-hosted web app for tracking game deals, managing a Steam library/backlog, and making
 informed purchasing decisions from price history, review scores, and play-time estimates. Single
-user, runs in Docker (typically a Synology NAS behind a Caddy reverse proxy). Status: all phases
+user, runs in Docker on a home server behind a Caddy reverse proxy. Status: all phases
 shipped; active work is incremental.
 
 ## Product identity
@@ -83,7 +83,7 @@ decision and is fair game). The line is honesty + informs-a-decision, never the 
 | Library data | Steam Web API |
 | Notifications | In-app + Discord webhooks (unified dispatcher) |
 | Scheduling | node-cron, in-process |
-| Deploy | Docker Compose (Synology + Caddy) |
+| Deploy | Docker Compose over SSH (`scripts/deploy.sh`; target set in gitignored `.deploy.env`) + Caddy |
 
 ## Commands
 
