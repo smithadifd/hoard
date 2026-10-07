@@ -38,7 +38,7 @@ const AUTH_TABLES_DDL = `
   CREATE TABLE IF NOT EXISTS account (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-    issuer TEXT NOT NULL,
+    issuer TEXT,
     account_id TEXT NOT NULL,
     provider_id TEXT NOT NULL,
     access_token TEXT,
@@ -228,39 +228,42 @@ export function reconcileLegacyAuthSchema(sqlite: BetterSqlite3.Database): void 
 }
 
 /**
- * Better Auth 1.7 added a required `account.issuer` column and a unique
- * (issuer, account_id) index. Sign-in only accepts a credential account whose
- * issuer is `local:credential`; a row without one fails with the misleading
- * "User not found" warning (better-auth api/routes/sign-in). Auth tables are
- * bootstrapped here rather than by Drizzle migrations, so the upgrade lives
- * here too.
+ * Better Auth 1.7.0–1.7.2 added a required `account.issuer` column and a unique
+ * (issuer, account_id) index. 1.7.3+ no longer writes issuer; a leftover NOT NULL
+ * column rejects every sign-up. Auth tables are bootstrapped here rather than by
+ * Drizzle migrations, so the upgrade lives here too.
  *
- * Fresh installs get the column from AUTH_TABLES_DDL. Existing databases get
- * it via ADD COLUMN, which SQLite only allows for a NOT NULL column with a
- * default, hence `DEFAULT ''`. Blank issuers are then backfilled with the
- * values Better Auth itself derives (createLocalAccountIssuer /
- * createOAuthAccountIssuer). The backfill runs on every boot so a row written
- * without an issuer (e.g. by an older seed script) is repaired too.
- * Idempotent and cheap: one PRAGMA, one UPDATE over a single-digit table.
+ * Fresh installs get a nullable column from AUTH_TABLES_DDL. Databases that
+ * predate the column get it via ADD COLUMN (nullable). The 1.7.0–1.7.2 backfill
+ * (`local:credential` / `local:oauth:…`) still runs when the column is missing
+ * or NOT NULL, so a pre-1.7 login keeps working. Once the column is nullable,
+ * rows are left alone — Better Auth 1.7.3+ inserts NULL on purpose and rewriting
+ * those would fight the library. Idempotent and cheap: one PRAGMA, at most one
+ * UPDATE over a single-digit table.
  */
 export function reconcileAccountIssuer(sqlite: BetterSqlite3.Database): void {
-  const hasIssuer = sqlite
-    .prepare(`SELECT name FROM pragma_table_info('account') WHERE name = 'issuer'`)
-    .get();
+  const issuerCol = sqlite
+    .prepare(`SELECT name, "notnull" AS is_not_null FROM pragma_table_info('account') WHERE name = 'issuer'`)
+    .get() as { name: string; is_not_null: number } | undefined;
 
   sqlite.transaction(() => {
-    if (!hasIssuer) {
-      sqlite.exec(`ALTER TABLE account ADD COLUMN issuer TEXT NOT NULL DEFAULT ''`);
+    if (!issuerCol) {
+      sqlite.exec(`ALTER TABLE account ADD COLUMN issuer TEXT`);
     }
 
-    const blanks = sqlite
-      .prepare(`SELECT id, provider_id FROM account WHERE issuer IS NULL OR issuer = ''`)
-      .all() as { id: string; provider_id: string }[];
-    const setIssuer = sqlite.prepare(`UPDATE account SET issuer = ? WHERE id = ?`);
-    for (const row of blanks) {
-      const encoded = encodeURIComponent(row.provider_id);
-      const issuer = row.provider_id === 'credential' ? `local:${encoded}` : `local:oauth:${encoded}`;
-      setIssuer.run(issuer, row.id);
+    // Only backfill when the column was just added, or is still NOT NULL from
+    // 1.7.0–1.7.2. A nullable column is the 1.7.3+ shape: do not rewrite rows.
+    const mustBackfill = !issuerCol || issuerCol.is_not_null === 1;
+    if (mustBackfill) {
+      const blanks = sqlite
+        .prepare(`SELECT id, provider_id FROM account WHERE issuer IS NULL OR issuer = ''`)
+        .all() as { id: string; provider_id: string }[];
+      const setIssuer = sqlite.prepare(`UPDATE account SET issuer = ? WHERE id = ?`);
+      for (const row of blanks) {
+        const encoded = encodeURIComponent(row.provider_id);
+        const issuer = row.provider_id === 'credential' ? `local:${encoded}` : `local:oauth:${encoded}`;
+        setIssuer.run(issuer, row.id);
+      }
     }
 
     sqlite.exec(
