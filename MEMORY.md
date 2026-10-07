@@ -15,12 +15,14 @@ See `AGENTS.md` for the full project guide and `CLAUDE.md` for Claude-specific n
 
 ## Deployment
 
-- Production runs on the Synology NAS via Docker Compose, behind a Caddy reverse proxy at a
-  `*.home` hostname.
+- Production runs on the reComputer (moved off the Synology NAS 2026-08-22) via Docker Compose,
+  behind a Caddy reverse proxy at a `*.home` hostname.
 - `docker-compose.prod.yml` maps host port **3001** to container port 3000; `APP_URL` defaults to
   `https://hoard.home`.
-- `scripts/deploy.sh` deploys the `main` branch to the NAS over SSH (`ssh synology`), remote path
-  `/volume3/docker/hoard`, and its preflight check aborts if the local branch isn't `main`.
+- `scripts/deploy.sh` deploys the `main` branch over SSH, and its preflight check aborts if the
+  local branch isn't `main`. Its built-in defaults still point at the Synology (`ssh synology`,
+  `/volume3/docker/hoard`); the gitignored `.deploy.env` overrides them with `DEPLOY_REMOTE=recomputer`
+  and `DEPLOY_REMOTE_PATH=/home/fivefootfive/hoard`. Without that file a deploy goes to the old host.
 - Migrations apply automatically on container boot via `scripts/start.mjs` — never pre-apply a
   schema change manually on prod (AGENTS.md § Critical gotchas).
 - A separate public demo runs from `docker-compose.demo.yml` (host port 3011, `DEMO_MODE=true`,
