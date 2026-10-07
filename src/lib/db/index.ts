@@ -38,6 +38,7 @@ const AUTH_TABLES_DDL = `
   CREATE TABLE IF NOT EXISTS account (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
     account_id TEXT NOT NULL,
     provider_id TEXT NOT NULL,
     access_token TEXT,
@@ -224,6 +225,48 @@ export function reconcileLegacyAuthSchema(sqlite: BetterSqlite3.Database): void 
       `${authRowCount} row(s) will be discarded (backup written to ${backupPath}).`
   );
   recreateAuthTables(sqlite);
+}
+
+/**
+ * Better Auth 1.7 added a required `account.issuer` column and a unique
+ * (issuer, account_id) index. Sign-in only accepts a credential account whose
+ * issuer is `local:credential`; a row without one fails with the misleading
+ * "User not found" warning (better-auth api/routes/sign-in). Auth tables are
+ * bootstrapped here rather than by Drizzle migrations, so the upgrade lives
+ * here too.
+ *
+ * Fresh installs get the column from AUTH_TABLES_DDL. Existing databases get
+ * it via ADD COLUMN, which SQLite only allows for a NOT NULL column with a
+ * default, hence `DEFAULT ''`. Blank issuers are then backfilled with the
+ * values Better Auth itself derives (createLocalAccountIssuer /
+ * createOAuthAccountIssuer). The backfill runs on every boot so a row written
+ * without an issuer (e.g. by an older seed script) is repaired too.
+ * Idempotent and cheap: one PRAGMA, one UPDATE over a single-digit table.
+ */
+export function reconcileAccountIssuer(sqlite: BetterSqlite3.Database): void {
+  const hasIssuer = sqlite
+    .prepare(`SELECT name FROM pragma_table_info('account') WHERE name = 'issuer'`)
+    .get();
+
+  sqlite.transaction(() => {
+    if (!hasIssuer) {
+      sqlite.exec(`ALTER TABLE account ADD COLUMN issuer TEXT NOT NULL DEFAULT ''`);
+    }
+
+    const blanks = sqlite
+      .prepare(`SELECT id, provider_id FROM account WHERE issuer IS NULL OR issuer = ''`)
+      .all() as { id: string; provider_id: string }[];
+    const setIssuer = sqlite.prepare(`UPDATE account SET issuer = ? WHERE id = ?`);
+    for (const row of blanks) {
+      const encoded = encodeURIComponent(row.provider_id);
+      const issuer = row.provider_id === 'credential' ? `local:${encoded}` : `local:oauth:${encoded}`;
+      setIssuer.run(issuer, row.id);
+    }
+
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS account_issuer_account_id_idx ON account (issuer, account_id)`,
+    );
+  })();
 }
 
 export function ensureSchema(sqlite: BetterSqlite3.Database) {
@@ -440,6 +483,10 @@ export function ensureSchema(sqlite: BetterSqlite3.Database) {
   // populated legacy tables fail loud; only empty (or explicitly-gated + backed
   // up) tables are recreated. See reconcileLegacyAuthSchema for the full rules.
   reconcileLegacyAuthSchema(sqlite);
+
+  // Better Auth 1.7 scopes account identity by `issuer`. Runs after the legacy
+  // reconcile so it only ever sees the snake_case tables.
+  reconcileAccountIssuer(sqlite);
 }
 
 function createDb() {
