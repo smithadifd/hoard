@@ -267,6 +267,8 @@ export const session = sqliteTable('session', {
 export const account = sqliteTable('account', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  // Better Auth 1.7+: account identity is scoped by issuer (see reconcileAccountIssuer).
+  issuer: text('issuer').notNull(),
   accountId: text('account_id').notNull(),
   providerId: text('provider_id').notNull(),
   accessToken: text('access_token'),
@@ -278,7 +280,9 @@ export const account = sqliteTable('account', {
   password: text('password'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
-});
+}, (table) => ({
+  issuerAccountIdx: uniqueIndex('account_issuer_account_id_idx').on(table.issuer, table.accountId),
+}));
 
 export const verification = sqliteTable('verification', {
   id: text('id').primaryKey(),
