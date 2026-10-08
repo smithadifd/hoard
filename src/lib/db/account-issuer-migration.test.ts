@@ -4,6 +4,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess, SpawnSyncReturns } from 'node:child_process';
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -356,15 +357,21 @@ function rebuildAsNotNull(db: BetterSqlite3.Database): void {
   `);
 }
 
-function startBarrierChild(name: string, readyFile: string, releaseFile: string): TrackedChild {
-  const child = spawn(process.execPath, ['--import', 'tsx', WORKER, 'migrate-with-barrier'], {
+function startMigrationChild(
+  mode: string,
+  name: string,
+  readyFile: string,
+  readyMarker: string,
+  env: Record<string, string>,
+): TrackedChild {
+  const child = spawn(process.execPath, ['--import', 'tsx', WORKER, mode], {
     cwd: ROOT,
     env: {
       ...process.env,
       DATABASE_URL: dbPath,
       READY_FILE: readyFile,
-      RELEASE_FILE: releaseFile,
       WORKER_NAME: name,
+      ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -373,7 +380,7 @@ function startBarrierChild(name: string, readyFile: string, releaseFile: string)
   let output = '';
   const capture = (chunk: Buffer) => {
     output += chunk.toString();
-    if (output.includes('BARRIER_READY')) readyResolvers.resolve();
+    if (output.includes(readyMarker)) readyResolvers.resolve();
   };
   child.stdout?.on('data', capture);
   child.stderr?.on('data', capture);
@@ -653,35 +660,59 @@ describe('account issuer migration matrix', () => {
     }
   });
 
-  it('[case 10] serializes concurrent starters, commits the inner skip, and journals exactly once', async () => {
+  it('[case 10] holds an immediate transaction lock while a concurrent starter waits, then journals exactly once', async () => {
     const db = openDb();
     createAccountFixture(db, { shape: 'not-null' });
     seedUser(db);
     seedAccount(db, 'not-null', { issuer: 'concurrent:value' });
     markEarlierMigrations(db);
+    const rows = accountRows(db);
     db.close();
 
     const firstReady = join(testDir, 'first.ready');
-    const secondReady = join(testDir, 'second.ready');
     const firstRelease = join(testDir, 'first.release');
-    const secondRelease = join(testDir, 'second.release');
-    const first = startBarrierChild('first', firstReady, firstRelease);
-    const second = startBarrierChild('second', secondReady, secondRelease);
-    await Promise.all([first.ready, second.ready]);
+    const secondReady = join(testDir, 'second.ready');
+    const secondEntered = join(testDir, 'second.entered');
+    const first = startMigrationChild(
+      'migrate-held-transaction',
+      'first',
+      firstReady,
+      'TRANSACTION_HELD',
+      { RELEASE_FILE: firstRelease },
+    );
+    await first.ready;
+    const second = startMigrationChild(
+      'migrate-observe-transaction',
+      'second',
+      secondReady,
+      'OUTER_READ_DONE',
+      { ENTERED_FILE: secondEntered },
+    );
+    await second.ready;
+    // SQLite lock contention is process-level; fake timers cannot advance the blocked native call.
+    const contentionWindow = Promise.withResolvers<void>();
+    setTimeout(contentionWindow.resolve, 250);
+    await contentionWindow.promise;
+    const secondEnteredWhileFirstHeld = existsSync(secondEntered);
     writeFileSync(firstRelease, 'go');
-    const firstResult = await first.done;
+
+    const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
+    expect(
+      secondEnteredWhileFirstHeld,
+      'the second starter entered its transaction while the first held the write lock',
+    ).toBe(false);
     expect(firstResult.code, firstResult.output).toBe(0);
-    writeFileSync(secondRelease, 'go');
-    const secondResult = await second.done;
     expect(secondResult.code, secondResult.output).toBe(0);
     expect(firstResult.output).toContain('"inTransaction":false');
     expect(secondResult.output).toContain('"inTransaction":false');
     expect(secondResult.output).toContain('"foreignKeys":1');
+    expect(secondResult.output).toContain('TRANSACTION_ENTERED');
 
     const after = openDb();
     expect(tagCount(after)).toBe(1);
-    expect((after.prepare('SELECT COUNT(*) AS count FROM concurrent_probe').get() as { count: number }).count).toBe(2);
-    expect((accountRows(after)[0] as { issuer: string }).issuer).toBe('concurrent:value');
+    const probeCount = after.prepare('SELECT COUNT(*) AS count FROM concurrent_probe').get() as { count: number };
+    expect(probeCount.count).toBe(2);
+    expect(accountRows(after)).toEqual(rows);
     expectCurrentContract(after);
     after.close();
   }, 20_000);
@@ -860,5 +891,62 @@ describe('account issuer migration matrix', () => {
     expect(guard.process.status, guard.process.stderr?.toString()).toBe(0);
     expect(guard.result).toMatchObject({ unchanged: true, inTransaction: false });
     expect(guard.result?.error).toMatch(/without an open transaction/);
+  });
+
+  it('[case 18] preserves explicit indexes for mixed-case and quoted-uppercase account tables', () => {
+    for (const [fixture, table] of [
+      ['mixed-case', 'Account'],
+      ['quoted-uppercase', '"ACCOUNT"'],
+    ] as const) {
+      const file = join(testDir, `${fixture}.db`);
+      const db = openDb(file);
+      createAccountFixture(db, { shape: 'not-null', table });
+      seedUser(db);
+      seedAccount(db, 'not-null', { issuer: `${fixture}:issuer` });
+      db.exec('CREATE INDEX account_provider_idx ON account (provider_id)');
+      markEarlierMigrations(db);
+      const rows = accountRows(db);
+      db.close();
+
+      expectSuccess(runMigration(file));
+      const migrated = openDb(file);
+      const migratedRows = accountRows(migrated) as { issuer: string }[];
+      expect(migratedRows).toEqual(rows);
+      expect(migratedRows.map((row) => row.issuer)).toEqual([`${fixture}:issuer`]);
+      const migratedIndexes = accountIndexes(migrated) as { name: string }[];
+      expect(migratedIndexes.map((index) => index.name)).toEqual([
+        'account_issuer_account_id_idx',
+        'account_provider_idx',
+      ]);
+      expect(tagCount(migrated)).toBe(1);
+      expectCurrentContract(migrated);
+      migrated.close();
+    }
+  });
+
+  it('[case 19] rolls back the rebuilt table and journal when explicit-index verification fails', () => {
+    const db = openDb();
+    createAccountFixture(db, { shape: 'not-null' });
+    seedUser(db);
+    seedAccount(db, 'not-null', { issuer: 'index-verification:value' });
+    db.exec('CREATE INDEX account_provider_idx ON account (provider_id)');
+    markEarlierMigrations(db);
+    const before = accountState(db);
+    db.close();
+
+    const injected = runWorker('migrate-index-verification-failure');
+    expect(injected.process.status, injected.process.stderr?.toString()).toBe(0);
+    expect(injected.result?.error).toMatch(
+      /Explicit account index "account_provider_idx" was not restored with its original columns/,
+    );
+    const rolledBack = openDb();
+    expect(accountState(rolledBack)).toEqual(before);
+    expect(tagCount(rolledBack)).toBe(0);
+    rolledBack.close();
+
+    expectSuccess(runMigration());
+    const migrated = openDb();
+    expect(tagCount(migrated)).toBe(1);
+    migrated.close();
   });
 });
