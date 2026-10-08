@@ -66,8 +66,9 @@ function seed() {
       VALUES (?, 'Demo User', 'demo@example.com', 1, ?, ?)
     `).run(userId, now, now);
 
-    // Create an issuer-qualified credential for older seed schemas. The shared
-    // account migration adds and backfills this column during application boot.
+    // Create account with password. Better Auth 1.7+ only signs in a credential
+    // account whose issuer is 'local:credential'. A seed DB that predates the
+    // column gets it (and this row backfilled) by reconcileAccountIssuer on app boot.
     const hasIssuer = db
       .prepare("SELECT 1 FROM pragma_table_info('account') WHERE name = 'issuer'")
       .get();

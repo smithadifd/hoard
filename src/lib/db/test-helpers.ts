@@ -198,7 +198,7 @@ const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS account (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-    issuer TEXT,
+    issuer TEXT NOT NULL,
     account_id TEXT NOT NULL,
     provider_id TEXT NOT NULL,
     access_token TEXT,
