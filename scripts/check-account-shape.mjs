@@ -13,13 +13,17 @@ if (!databasePath) {
     console.log('PRAGMA table_info(account):');
     console.log(JSON.stringify(columns, null, 2));
 
-    try {
-      const shape = validateAccountIssuerColumns(columns);
-      console.log(`Validator: ACCEPT (${shape})`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.log(`Validator: REFUSE (${message})`);
-      process.exitCode = 1;
+    if (columns.length === 0) {
+      console.log('Validator: ACCEPT (absent)');
+    } else {
+      try {
+        const shape = validateAccountIssuerColumns(columns);
+        console.log(`Validator: ACCEPT (${shape})`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(`Validator: REFUSE (${message})`);
+        process.exitCode = 1;
+      }
     }
   } finally {
     db.close();
