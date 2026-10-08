@@ -1,0 +1,4 @@
+-- Implemented by the schema-aware 0019_fast_gauntlet handler in
+-- scripts/account-issuer-migration.mjs. The migration runner dispatches this
+-- tag before loading SQL because one static statement sequence cannot safely
+-- distinguish absent, pre-1.7, nullable, and NOT NULL account shapes.
