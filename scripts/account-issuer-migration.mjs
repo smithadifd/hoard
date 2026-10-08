@@ -18,6 +18,20 @@ const ACCOUNT_COLUMNS = [
 ];
 const PRE_17_COLUMNS = ACCOUNT_COLUMNS.filter((name) => name !== 'issuer');
 const TIMESTAMP_DEFAULT = "cast(unixepoch('subsecond') * 1000 as integer)";
+const EXPECTED_NON_ISSUER_METADATA = {
+  user_id: ['TEXT', 1, null, 0],
+  account_id: ['TEXT', 1, null, 0],
+  provider_id: ['TEXT', 1, null, 0],
+  access_token: ['TEXT', 0, null, 0],
+  refresh_token: ['TEXT', 0, null, 0],
+  access_token_expires_at: ['INTEGER', 0, null, 0],
+  refresh_token_expires_at: ['INTEGER', 0, null, 0],
+  scope: ['TEXT', 0, null, 0],
+  id_token: ['TEXT', 0, null, 0],
+  password: ['TEXT', 0, null, 0],
+  created_at: ['INTEGER', 1, TIMESTAMP_DEFAULT, 0],
+  updated_at: ['INTEGER', 1, TIMESTAMP_DEFAULT, 0],
+};
 
 function quoteIdentifier(name) {
   return `"${name.replaceAll('"', '""')}"`;
@@ -61,7 +75,23 @@ function assertNoInboundAccountForeignKeys(db) {
   }
 }
 
-function assertColumnSet(columns) {
+function assertColumnMetadata(columns, name, expected) {
+  const column = columns.find((candidate) => candidate.name === name);
+  const [type, notnull, dfltValue, pk] = expected;
+  if (
+    !column ||
+    column.type !== type ||
+    column.notnull !== notnull ||
+    column.dflt_value !== dfltValue ||
+    column.pk !== pk
+  ) {
+    throw new Error(
+      `Unsupported account.${name} metadata; refusing to migrate: ${JSON.stringify(column)}`,
+    );
+  }
+}
+
+export function validateAccountIssuerColumns(columns) {
   const names = new Set(columns.map((column) => column.name));
   const legal =
     names.size === ACCOUNT_COLUMNS.length && ACCOUNT_COLUMNS.every((name) => names.has(name))
@@ -79,7 +109,7 @@ function assertColumnSet(columns) {
   const id = columns.find((column) => column.name === 'id');
   if (
     !id ||
-    id.type.toUpperCase() !== 'TEXT' ||
+    id.type !== 'TEXT' ||
     (id.notnull !== 0 && id.notnull !== 1) ||
     id.dflt_value !== null ||
     id.pk !== 1
@@ -87,12 +117,16 @@ function assertColumnSet(columns) {
     throw new Error(`Unsupported account.id metadata; refusing to migrate: ${JSON.stringify(id)}`);
   }
 
+  for (const [name, expected] of Object.entries(EXPECTED_NON_ISSUER_METADATA)) {
+    assertColumnMetadata(columns, name, expected);
+  }
+
   if (legal === 'pre-1.7') return 'pre-1.7';
 
   const issuer = columns.find((column) => column.name === 'issuer');
   if (
     !issuer ||
-    issuer.type.toUpperCase() !== 'TEXT' ||
+    issuer.type !== 'TEXT' ||
     (issuer.notnull !== 0 && issuer.notnull !== 1) ||
     !(
       issuer.dflt_value === null ||
@@ -167,7 +201,7 @@ function ensureCanonicalIndex(db) {
 
 function assertCommonPostconditions(db) {
   const columns = tableInfo(db);
-  if (assertColumnSet(columns) !== 'current') {
+  if (validateAccountIssuerColumns(columns) !== 'current') {
     throw new Error(`account.issuer is not nullable after migration: ${JSON.stringify(columns)}`);
   }
   assertAccountForeignKey(db);
@@ -341,7 +375,7 @@ export function reconcileAccountIssuerSchema(db, options = {}) {
     assertNoInboundAccountForeignKeys(db);
     assertNoAccountViolations(db, 'before migration');
 
-    const sourceShape = assertColumnSet(tableInfo(db));
+    const sourceShape = validateAccountIssuerColumns(tableInfo(db));
     if (sourceShape === 'pre-1.7') {
       db.exec('ALTER TABLE account ADD COLUMN issuer TEXT');
       const rows = db.prepare('SELECT id, provider_id FROM account').all();
