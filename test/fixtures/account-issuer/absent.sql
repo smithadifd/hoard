@@ -1,0 +1,1 @@
+-- Fresh database before Better Auth tables are bootstrapped.
