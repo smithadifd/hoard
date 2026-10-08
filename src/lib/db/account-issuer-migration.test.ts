@@ -16,6 +16,7 @@ import { join } from 'node:path';
 
 const ROOT = process.cwd();
 const START = join(ROOT, 'scripts', 'start.mjs');
+const SHAPE_CHECKER = join(ROOT, 'scripts', 'check-account-shape.mjs');
 const WORKER = join(ROOT, 'test', 'account-migration-worker.mjs');
 const TAG = '0019_fast_gauntlet';
 const EMAIL = 'owner@example.com';
@@ -112,6 +113,7 @@ interface AccountDdlOptions {
   omit?: string;
   extra?: string;
   table?: string;
+  columnOverrides?: Record<string, string>;
 }
 type ProcessResult = SpawnSyncReturns<string>;
 type WorkerResult = Record<string, unknown>;
@@ -149,9 +151,11 @@ function accountDdl({
   omit,
   extra,
   table = 'account',
+  columnOverrides,
 }: AccountDdlOptions): string {
   const names = ACCOUNT_COLUMN_NAMES.filter((name) => name !== omit && (shape !== 'pre-1.7' || name !== 'issuer'));
   const definitions = names.map((name) => {
+    if (columnOverrides?.[name] !== undefined) return columnOverrides[name];
     if (name === 'id' && idNotNull) return 'id TEXT PRIMARY KEY NOT NULL';
     if (name === 'issuer' && shape === 'not-null') return 'issuer TEXT NOT NULL';
     return COLUMN_DEFINITIONS[name];
@@ -265,6 +269,13 @@ function runMigration(file = dbPath): ProcessResult {
   });
 }
 
+function runShapeChecker(file = dbPath): ProcessResult {
+  return spawnSync(process.execPath, [SHAPE_CHECKER, file], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+}
+
 function runWorker(
   mode: string,
   env: Record<string, string> = {},
@@ -323,6 +334,26 @@ function accountState(db: BetterSqlite3.Database): unknown {
     indexes: accountIndexes(db),
   };
 }
+
+function expectMigrationRefusalPreservesDatabase(
+  file: string,
+  message: RegExp,
+  stateBefore: unknown,
+  bytesBefore: Buffer,
+): void {
+  const failed = runMigration(file);
+  expectFailure(failed, message);
+  expect(
+    readFileSync(file).equals(bytesBefore),
+    'migration refusal changed the database file',
+  ).toBe(true);
+
+  const unchanged = openDb(file);
+  expect(tagCount(unchanged)).toBe(0);
+  expect(accountState(unchanged)).toEqual(stateBefore);
+  unchanged.close();
+}
+
 function loadFixture(db: BetterSqlite3.Database, file: string): void {
   db.exec(readFileSync(join(FIXTURE_DIR, file), 'utf8'));
 }
@@ -1157,5 +1188,134 @@ describe('account issuer migration matrix', () => {
     expect(tagCount(unchanged)).toBe(0);
     expect(accountState(unchanged)).toEqual(stateBefore);
     unchanged.close();
+  });
+
+  it('[case 23] refuses a nullable account_id containing a NULL credential without changing the database', () => {
+    const file = join(testDir, 'nullable-account-id.db');
+    const db = openDb(file);
+    createAccountFixture(db, {
+      shape: 'current',
+      columnOverrides: { account_id: 'account_id TEXT' },
+    });
+    seedUser(db);
+    db.exec(`
+      INSERT INTO account (
+        id, user_id, issuer, account_id, provider_id, created_at, updated_at
+      ) VALUES (
+        'nullable-account-id', 'user-1', NULL, NULL, 'credential', 1000, 1001
+      )
+    `);
+    markEarlierMigrations(db);
+    db.pragma('journal_mode = WAL');
+    const stateBefore = accountState(db);
+    db.close();
+    const bytesBefore = readFileSync(file);
+
+    expectMigrationRefusalPreservesDatabase(
+      file,
+      /Unsupported account\.account_id metadata.*"notnull":0/,
+      stateBefore,
+      bytesBefore,
+    );
+  });
+
+  it('[case 24] refuses a changed created_at timestamp default without changing the database', () => {
+    const file = join(testDir, 'changed-created-at-default.db');
+    const db = openDb(file);
+    createAccountFixture(db, {
+      shape: 'current',
+      columnOverrides: { created_at: 'created_at INTEGER NOT NULL DEFAULT 0' },
+    });
+    seedUser(db);
+    seedAccount(db, 'current');
+    markEarlierMigrations(db);
+    db.pragma('journal_mode = WAL');
+    const stateBefore = accountState(db);
+    db.close();
+    const bytesBefore = readFileSync(file);
+
+    expectMigrationRefusalPreservesDatabase(
+      file,
+      /Unsupported account\.created_at metadata.*"dflt_value":"0"/,
+      stateBefore,
+      bytesBefore,
+    );
+  });
+
+  it('[case 25] refuses a changed access_token type without changing the database', () => {
+    const file = join(testDir, 'changed-access-token-type.db');
+    const db = openDb(file);
+    createAccountFixture(db, {
+      shape: 'current',
+      columnOverrides: { access_token: 'access_token BLOB' },
+    });
+    seedUser(db);
+    seedAccount(db, 'current');
+    markEarlierMigrations(db);
+    db.pragma('journal_mode = WAL');
+    const stateBefore = accountState(db);
+    db.close();
+    const bytesBefore = readFileSync(file);
+
+    expectMigrationRefusalPreservesDatabase(
+      file,
+      /Unsupported account\.access_token metadata.*"type":"BLOB"/,
+      stateBefore,
+      bytesBefore,
+    );
+  });
+
+  it('[case 26] refuses a nullable issuer with an empty-string default without changing the database', () => {
+    const file = join(testDir, 'nullable-issuer-default.db');
+    const db = openDb(file);
+    createAccountFixture(db, {
+      shape: 'current',
+      columnOverrides: { issuer: "issuer TEXT DEFAULT ''" },
+    });
+    seedUser(db);
+    seedAccount(db, 'current');
+    markEarlierMigrations(db);
+    db.pragma('journal_mode = WAL');
+    const stateBefore = accountState(db);
+    db.close();
+    const bytesBefore = readFileSync(file);
+
+    expectMigrationRefusalPreservesDatabase(
+      file,
+      /Unsupported account\.issuer metadata.*"notnull":0.*"dflt_value":"''"/,
+      stateBefore,
+      bytesBefore,
+    );
+  });
+
+  it('[case 27] checks account metadata without writing the database', () => {
+    const acceptedFile = join(testDir, 'checker-reconciled.db');
+    const acceptedDb = openDb(acceptedFile);
+    loadFixture(acceptedDb, 'reconciled.sql');
+    acceptedDb.close();
+    const acceptedBytes = readFileSync(acceptedFile);
+
+    const accepted = runShapeChecker(acceptedFile);
+    expect(accepted.status, accepted.stderr?.toString()).toBe(0);
+    expect(accepted.stdout).toContain('PRAGMA table_info(account):');
+    expect(accepted.stdout).toContain('Validator: ACCEPT (not-null)');
+    expect(readFileSync(acceptedFile).equals(acceptedBytes)).toBe(true);
+
+    const refusedFile = join(testDir, 'checker-nullable-account-id.db');
+    const refusedDb = openDb(refusedFile);
+    createAccountFixture(refusedDb, {
+      shape: 'current',
+      columnOverrides: { account_id: 'account_id TEXT' },
+    });
+    refusedDb.close();
+    const refusedBytes = readFileSync(refusedFile);
+
+    const refused = runShapeChecker(refusedFile);
+    expect(refused.status).toBe(1);
+    expect(refused.stdout).toContain('"name": "account_id"');
+    expect(refused.stdout).toContain(
+      'Validator: REFUSE (Unsupported account.account_id metadata',
+    );
+    expect(readFileSync(refusedFile).equals(refusedBytes)).toBe(true);
   });
 });
