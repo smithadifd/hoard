@@ -134,13 +134,6 @@
       "when": 1784327204657,
       "tag": "0018_warm_mentor",
       "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "6",
-      "when": 1791404717902,
-      "tag": "0019_fast_gauntlet",
-      "breakpoints": true
     }
   ]
 }

@@ -5,14 +5,14 @@ import path from 'node:path';
 
 // End-to-end sign-up → sign-in through the real Better Auth instance against a
 // real ensureSchema()-bootstrapped SQLite file. Guards against an auth-library
-// bump changing its required schema (better-auth 1.7.3+ no longer writes
-// account.issuer; a leftover NOT NULL column rejects every sign-up).
+// bump changing its required schema (better-auth 1.7 added account.issuer and
+// every sign-in failed with "User not found" while CI stayed green).
 const TMP_DB = path.join(os.tmpdir(), `hoard-auth-signin-${process.pid}-${Date.now()}.db`);
 process.env.DATABASE_URL = TMP_DB;
 process.env.BETTER_AUTH_SECRET ??= 'test-secret-at-least-32-characters-long';
 
 // NOTE: deliberately NOT mocking '@/lib/db' — we want the real bootstrap.
-import { getDb } from '@/lib/db';
+import { getDb, reconcileAccountIssuer } from '@/lib/db';
 import { auth } from './auth';
 
 const EMAIL = 'owner@example.com';
@@ -50,4 +50,31 @@ describe('email/password sign-in (real Better Auth + ensureSchema)', () => {
     ).rejects.toMatchObject({ status: 'UNAUTHORIZED' });
   });
 
+  it('upgrades a pre-1.7 account table (no issuer column) so the existing login still works', async () => {
+    const client = getDb().$client;
+
+    // Reshape the account table to how a pre-1.7 install (prod) has it.
+    client.exec(`DROP INDEX account_issuer_account_id_idx`);
+    client.exec(`ALTER TABLE account DROP COLUMN issuer`);
+
+    reconcileAccountIssuer(client);
+
+    const row = client.prepare(`SELECT issuer FROM account WHERE provider_id = 'credential'`).get() as {
+      issuer: string;
+    };
+    expect(row.issuer).toBe('local:credential');
+    const idx = client
+      .prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='account_issuer_account_id_idx'`)
+      .all();
+    expect(idx).toHaveLength(1);
+
+    const res = await auth.api.signInEmail({ body: { email: EMAIL, password: PASSWORD } });
+    expect(res.user.email).toBe(EMAIL);
+  });
+
+  it('is idempotent on an already-upgraded table', () => {
+    const client = getDb().$client;
+    expect(() => reconcileAccountIssuer(client)).not.toThrow();
+    expect(() => reconcileAccountIssuer(client)).not.toThrow();
+  });
 });
