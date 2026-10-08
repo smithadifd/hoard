@@ -9,6 +9,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1288,7 +1289,44 @@ describe('account issuer migration matrix', () => {
     );
   });
 
-  it('[case 27] checks account metadata without writing the database', () => {
+  it('[case 27] runs migration-only startup through a symlinked script path', () => {
+    const db = openDb();
+    markEarlierMigrations(db);
+    db.close();
+
+    const symlinkedScripts = join(testDir, 'scripts');
+    symlinkSync(join(ROOT, 'scripts'), symlinkedScripts, 'dir');
+    const result = spawnSync(
+      process.execPath,
+      [join(symlinkedScripts, 'start.mjs'), '--migrate-only'],
+      {
+        cwd: ROOT,
+        env: { ...process.env, DATABASE_URL: dbPath },
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status, result.stderr?.toString()).toBe(0);
+    const migrated = openDb();
+    expect(
+      tagCount(migrated),
+      'migration invoked through a symlinked script path did not run',
+    ).toBe(1);
+    migrated.close();
+  });
+
+  it('[case 28] checks account metadata without writing the database', () => {
+    const absentFile = join(testDir, 'checker-absent.db');
+    const absentDb = openDb(absentFile);
+    loadFixture(absentDb, 'absent.sql');
+    absentDb.close();
+    const absentBytes = readFileSync(absentFile);
+
+    const absent = runShapeChecker(absentFile);
+    expect(absent.status, 'absent account table should be accepted by preflight').toBe(0);
+    expect(absent.stdout).toContain('Validator: ACCEPT (absent)');
+    expect(readFileSync(absentFile).equals(absentBytes)).toBe(true);
+
     const acceptedFile = join(testDir, 'checker-reconciled.db');
     const acceptedDb = openDb(acceptedFile);
     loadFixture(acceptedDb, 'reconciled.sql');

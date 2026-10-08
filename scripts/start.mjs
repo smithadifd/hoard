@@ -6,9 +6,9 @@
  */
 
 import Database from 'better-sqlite3';
-import { readFileSync, existsSync, copyFileSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, copyFileSync, mkdirSync, realpathSync } from 'fs';
 import { execSync } from 'child_process';
-import { join, dirname, resolve } from 'path';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   ACCOUNT_ISSUER_MIGRATION_TAG,
@@ -191,5 +191,7 @@ async function main() {
   await import('../server.js');
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain =
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isMain) await main();
