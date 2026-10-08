@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import * as schema from './schema';
 import { getConfig } from '../config';
+import { reconcileAccountIssuerSchema } from '../../../scripts/account-issuer-migration.mjs';
 
 let db: ReturnType<typeof createDb> | null = null;
 
@@ -227,50 +228,6 @@ export function reconcileLegacyAuthSchema(sqlite: BetterSqlite3.Database): void 
   recreateAuthTables(sqlite);
 }
 
-/**
- * Better Auth 1.7.0–1.7.2 added a required `account.issuer` column and a unique
- * (issuer, account_id) index. 1.7.3+ no longer writes issuer; a leftover NOT NULL
- * column rejects every sign-up. Auth tables are bootstrapped here rather than by
- * Drizzle migrations, so the upgrade lives here too.
- *
- * Fresh installs get a nullable column from AUTH_TABLES_DDL. Databases that
- * predate the column get it via ADD COLUMN (nullable). The 1.7.0–1.7.2 backfill
- * (`local:credential` / `local:oauth:…`) still runs when the column is missing
- * or NOT NULL, so a pre-1.7 login keeps working. Once the column is nullable,
- * rows are left alone — Better Auth 1.7.3+ inserts NULL on purpose and rewriting
- * those would fight the library. Idempotent and cheap: one PRAGMA, at most one
- * UPDATE over a single-digit table.
- */
-export function reconcileAccountIssuer(sqlite: BetterSqlite3.Database): void {
-  const issuerCol = sqlite
-    .prepare(`SELECT name, "notnull" AS is_not_null FROM pragma_table_info('account') WHERE name = 'issuer'`)
-    .get() as { name: string; is_not_null: number } | undefined;
-
-  sqlite.transaction(() => {
-    if (!issuerCol) {
-      sqlite.exec(`ALTER TABLE account ADD COLUMN issuer TEXT`);
-    }
-
-    // Only backfill when the column was just added, or is still NOT NULL from
-    // 1.7.0–1.7.2. A nullable column is the 1.7.3+ shape: do not rewrite rows.
-    const mustBackfill = !issuerCol || issuerCol.is_not_null === 1;
-    if (mustBackfill) {
-      const blanks = sqlite
-        .prepare(`SELECT id, provider_id FROM account WHERE issuer IS NULL OR issuer = ''`)
-        .all() as { id: string; provider_id: string }[];
-      const setIssuer = sqlite.prepare(`UPDATE account SET issuer = ? WHERE id = ?`);
-      for (const row of blanks) {
-        const encoded = encodeURIComponent(row.provider_id);
-        const issuer = row.provider_id === 'credential' ? `local:${encoded}` : `local:oauth:${encoded}`;
-        setIssuer.run(issuer, row.id);
-      }
-    }
-
-    sqlite.exec(
-      `CREATE UNIQUE INDEX IF NOT EXISTS account_issuer_account_id_idx ON account (issuer, account_id)`,
-    );
-  })();
-}
 
 export function ensureSchema(sqlite: BetterSqlite3.Database) {
   // Auto-create tables if they don't exist (safe for production — IF NOT EXISTS is a no-op)
@@ -487,9 +444,9 @@ export function ensureSchema(sqlite: BetterSqlite3.Database) {
   // up) tables are recreated. See reconcileLegacyAuthSchema for the full rules.
   reconcileLegacyAuthSchema(sqlite);
 
-  // Better Auth 1.7 scopes account identity by `issuer`. Runs after the legacy
-  // reconcile so it only ever sees the snake_case tables.
-  reconcileAccountIssuer(sqlite);
+  // Reconcile every supported Better Auth account shape after the legacy
+  // camelCase owner has produced the current snake_case tables.
+  reconcileAccountIssuerSchema(sqlite);
 }
 
 function createDb() {
