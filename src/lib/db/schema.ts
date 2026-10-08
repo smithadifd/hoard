@@ -267,8 +267,8 @@ export const session = sqliteTable('session', {
 export const account = sqliteTable('account', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  // Better Auth 1.7.0–1.7.2 wrote issuer; 1.7.3+ no longer does. Kept nullable
-  // so existing rows survive. See reconcileAccountIssuer.
+  // Better Auth 1.7.0–1.7.2 wrote issuer; 1.7.3+ no longer does. Existing
+  // values survive while the shared schema-aware migration makes it nullable.
   issuer: text('issuer'),
   accountId: text('account_id').notNull(),
   providerId: text('provider_id').notNull(),
