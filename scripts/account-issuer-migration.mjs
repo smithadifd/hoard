@@ -202,10 +202,40 @@ function assertRebuiltColumns(db) {
   }
 }
 
-function rebuildAccount(db) {
+function indexColumns(db, indexName) {
+  return db
+    .prepare(`PRAGMA index_info(${quoteIdentifier(indexName)})`)
+    .all()
+    .map((row) => row.name);
+}
+
+function assertCapturedIndexes(db, indexes) {
+  const rebuiltIndexes = new Set(
+    db
+      .prepare('PRAGMA index_list(account)')
+      .all()
+      .map((index) => index.name),
+  );
+
+  for (const index of indexes) {
+    const observedColumns = rebuiltIndexes.has(index.name)
+      ? indexColumns(db, index.name)
+      : null;
+    if (JSON.stringify(observedColumns) !== JSON.stringify(index.columns)) {
+      throw new Error(
+        `Explicit account index ${quoteIdentifier(index.name)} was not restored with its original columns. ` +
+          `Expected: ${JSON.stringify(index.columns)}; observed: ${JSON.stringify(observedColumns)}`,
+      );
+    }
+  }
+}
+
+function rebuildAccount(db, accountTableName) {
   const trigger = db
-    .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = 'account' COLLATE NOCASE")
-    .get();
+    .prepare(
+      "SELECT name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = ? COLLATE NOCASE",
+    )
+    .get(accountTableName);
   if (trigger) {
     throw new Error(`Cannot rebuild account while trigger ${quoteIdentifier(trigger.name)} exists.`);
   }
@@ -219,9 +249,10 @@ function rebuildAccount(db) {
 
   const indexes = db
     .prepare(
-      "SELECT name, sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'account' AND sql IS NOT NULL ORDER BY name",
+      "SELECT name, sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL ORDER BY name",
     )
-    .all();
+    .all(accountTableName)
+    .map((index) => ({ ...index, columns: indexColumns(db, index.name) }));
 
   const canonical = indexes.find((index) => index.name === CANONICAL_INDEX);
   if (canonical) assertCanonicalIndex(db);
@@ -259,6 +290,7 @@ function rebuildAccount(db) {
   `);
 
   for (const index of indexes) db.exec(index.sql);
+  assertCapturedIndexes(db, indexes);
   if (!canonical) ensureCanonicalIndex(db);
 }
 
@@ -322,7 +354,7 @@ export function reconcileAccountIssuerSchema(db, options = {}) {
     } else if (sourceShape === 'current') {
       ensureCanonicalIndex(db);
     } else {
-      rebuildAccount(db);
+      rebuildAccount(db, accountTable.name);
     }
 
     assertCommonPostconditions(db);

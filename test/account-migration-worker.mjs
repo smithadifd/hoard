@@ -5,6 +5,29 @@ const mode = process.argv[2];
 const dbPath = process.env.DATABASE_URL;
 if (!dbPath) throw new Error('DATABASE_URL is required');
 
+const INNER_JOURNAL_QUERY =
+  'SELECT 1 FROM __drizzle_migrations WHERE hash = ? LIMIT 1';
+
+function beforeInnerJournalRead(db, callback) {
+  const prepare = db.prepare.bind(db);
+  db.prepare = (sql) => {
+    const statement = prepare(sql);
+    if (sql !== INNER_JOURNAL_QUERY) return statement;
+    return {
+      get: (...parameters) => {
+        callback();
+        return statement.get(...parameters);
+      },
+    };
+  };
+}
+
+function recordCompletion(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS concurrent_probe (value TEXT NOT NULL)');
+  db.prepare('INSERT INTO concurrent_probe (value) VALUES (?)').run(process.env.WORKER_NAME);
+  emit({ inTransaction: db.inTransaction, foreignKeys: db.pragma('foreign_keys', { simple: true }) });
+}
+
 function emit(value) {
   process.stdout.write(`WORKER_RESULT=${JSON.stringify(value)}\n`);
 }
@@ -14,21 +37,53 @@ function waitForFile(file) {
   while (!existsSync(file)) Atomics.wait(sleep, 0, 0, 10);
 }
 
-if (mode === 'migrate-with-barrier') {
+if (mode === 'migrate-held-transaction') {
   const { runMigrations } = await import('../scripts/start.mjs');
   await runMigrations({
     dbPath,
-    afterAppliedTagsRead: () => {
-      writeFileSync(process.env.READY_FILE, 'ready');
-      process.stdout.write('BARRIER_READY\n');
-      waitForFile(process.env.RELEASE_FILE);
+    afterAppliedTagsRead: ({ db }) => {
+      beforeInnerJournalRead(db, () => {
+        writeFileSync(process.env.READY_FILE, 'ready');
+        process.stdout.write('TRANSACTION_HELD\n');
+        waitForFile(process.env.RELEASE_FILE);
+      });
     },
-    beforeConnectionClose: (db) => {
-      db.exec('CREATE TABLE IF NOT EXISTS concurrent_probe (value TEXT NOT NULL)');
-      db.prepare('INSERT INTO concurrent_probe (value) VALUES (?)').run(process.env.WORKER_NAME);
-      emit({ inTransaction: db.inTransaction, foreignKeys: db.pragma('foreign_keys', { simple: true }) });
-    },
+    beforeConnectionClose: recordCompletion,
   });
+} else if (mode === 'migrate-observe-transaction') {
+  const { runMigrations } = await import('../scripts/start.mjs');
+  await runMigrations({
+    dbPath,
+    afterAppliedTagsRead: ({ db }) => {
+      beforeInnerJournalRead(db, () => {
+        writeFileSync(process.env.ENTERED_FILE, 'entered');
+        process.stdout.write('TRANSACTION_ENTERED\n');
+      });
+      writeFileSync(process.env.READY_FILE, 'ready');
+      process.stdout.write('OUTER_READ_DONE\n');
+    },
+    beforeConnectionClose: recordCompletion,
+  });
+} else if (mode === 'migrate-index-verification-failure') {
+  const { runMigrations } = await import('../scripts/start.mjs');
+  try {
+    await runMigrations({
+      dbPath,
+      afterAppliedTagsRead: ({ db }) => {
+        const exec = db.exec.bind(db);
+        db.exec = (sql) => {
+          const result = exec(sql);
+          if (sql === 'CREATE INDEX account_provider_idx ON account (provider_id)') {
+            exec('DROP INDEX account_provider_idx');
+          }
+          return result;
+        };
+      },
+    });
+    throw new Error('migration unexpectedly succeeded');
+  } catch (error) {
+    emit({ error: error.message });
+  }
 } else if (mode === 'migrate-atomic-failure') {
   const { runMigrations } = await import('../scripts/start.mjs');
   try {
