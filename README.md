@@ -155,6 +155,7 @@ SQLite makes backups simple:
 ```bash
 ./scripts/backup.sh                    # default: ./data/backups/
 ./scripts/backup.sh /path/to/backups   # custom path
+HOARD_CONTAINER=hoard_app ./scripts/backup.sh  # container fallback (default shown)
 ./scripts/restore.sh                   # list available backups
 ./scripts/restore.sh <backup-file>     # restore (creates safety backup first)
 ```

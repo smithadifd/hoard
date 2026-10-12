@@ -35,6 +35,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Test backup script
+        run: bash scripts/tests/test-backup-container-db.sh
+
       - name: Build
         run: npm run build
 
