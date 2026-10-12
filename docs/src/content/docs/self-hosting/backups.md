@@ -7,7 +7,7 @@ Hoard uses SQLite's built-in `.backup` API rather than a plain file copy. The di
 
 ## Backup via script (manual)
 
-Run `./scripts/backup.sh` from the project root. An optional first argument sets the output directory.
+Run `./scripts/backup.sh` from the project root. An optional first argument sets the output directory. The script uses `DATABASE_URL` as a host file when that file exists. When it does not, the script falls back to the running `HOARD_CONTAINER`, which defaults to the Compose container name `hoard_app`.
 
 ```bash
 # Default: writes to ./data/backups/
@@ -15,11 +15,14 @@ Run `./scripts/backup.sh` from the project root. An optional first argument sets
 
 # Write to a Synology shared folder
 ./scripts/backup.sh /volume1/backups/hoard
+
+# Override the container name when it differs from the Compose default
+HOARD_CONTAINER=my_hoard_container ./scripts/backup.sh
 ```
 
-Backup files are named `hoard_YYYYMMDD_HHMMSS.db`.
+Backup files are named `hoard_YYYYMMDD_HHMMSS.db`. In container mode, the script runs Node and `better-sqlite3` inside the app container to perform SQLite's online backup into a temporary container file, copies that file to the requested host backup directory with `docker cp`, and removes the temporary file.
 
-After creating the file, the script runs `PRAGMA integrity_check` against the backup. If the check returns anything other than `ok`, the script exits with an error. A failed integrity check is a real problem — investigate before relying on that file.
+After creating the host file, the script runs `PRAGMA integrity_check` against the backup when the host has the `sqlite3` CLI. If the check returns anything other than `ok`, the script exits with an error. A failed integrity check is a real problem — investigate before relying on that file.
 
 Retention defaults to 30 days. The script deletes files matching `hoard_*.db` older than that threshold from the backup directory. Override per-run with the `BACKUP_RETENTION_DAYS` environment variable:
 
@@ -27,7 +30,7 @@ Retention defaults to 30 days. The script deletes files matching `hoard_*.db` ol
 BACKUP_RETENTION_DAYS=14 ./scripts/backup.sh
 ```
 
-If `sqlite3` is not in `PATH`, the script falls back to `cp` with explicit WAL/SHM copies. This is less safe; install the `sqlite3` CLI on the host if you can.
+If `sqlite3` is not in `PATH`, host-file mode falls back to `cp` with explicit WAL/SHM copies and does not run the host integrity check. This is less safe; install the `sqlite3` CLI on the host if you can. Container mode still creates its snapshot with `better-sqlite3`, because the production image does not include the `sqlite3` CLI.
 
 ## Backup via in-app scheduler (automated)
 
@@ -46,7 +49,7 @@ If `BACKUP_PATH` is unset, backups appear in `./backups/` next to your compose f
 
 The in-app task also runs `PRAGMA integrity_check` after each backup and sends a Discord ops alert on failure (if `DISCORD_OPS_WEBHOOK_URL` is configured).
 
-**Path difference to be aware of:** the shell script defaults to `./data/backups/` (relative to the project root), while the in-app task writes to `/app/data/backups/` inside the container, mounted from `./backups/` on the host. They are separate locations. If you're running both, point the shell script at the same host path as `BACKUP_PATH` to consolidate.
+**Path difference to be aware of:** the shell script writes to `./data/backups/` by default and can read the live database from `hoard_app` when no host database file exists. The in-app task writes to `/app/data/backups/` inside the container, mounted from `./backups/` on the host. If you're running both, pass the host `BACKUP_PATH` to the shell script to consolidate the output.
 
 ## Restore from backup
 
@@ -94,13 +97,13 @@ Set `BACKUP_RETENTION_DAYS=0` to disable automatic cleanup entirely — files wi
 
 ## External cron entry (NAS)
 
-The in-app scheduler handles daily backups automatically. If you want a second independent layer — a backup of the backup — add an entry to the NAS cron that runs the shell script against the mounted host path:
+The in-app scheduler handles daily backups automatically. If you want a second independent layer, add an entry to the NAS cron that runs the shell script. The script will use the host database file when present or fall back to `hoard_app` when the database is held only in the named Docker volume:
 
 ```text
 0 4 * * * cd /volume3/docker/hoard && ./scripts/backup.sh /volume1/backups/hoard
 ```
 
-Stagger this from the in-app backup schedule if you're running both, so they don't contend on the database simultaneously.
+Stagger this from the in-app backup schedule if you're running both, so they don't contend on the database simultaneously. The cron user needs permission to run Docker when container fallback is required.
 
 ## Before destructive operations
 
