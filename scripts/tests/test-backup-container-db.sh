@@ -8,6 +8,9 @@ SCRATCH=$(mktemp -d)
 BIN_DIR="$SCRATCH/bin"
 mkdir -p "$BIN_DIR"
 trap 'rm -r "$SCRATCH"' EXIT
+NO_SQLITE_BIN="$SCRATCH/no-sqlite-bin"
+NO_CHECKSUM_BIN="$SCRATCH/no-checksum-bin"
+mkdir -p "$NO_SQLITE_BIN" "$NO_CHECKSUM_BIN"
 shopt -s nullglob
 
 fail() {
@@ -37,6 +40,14 @@ single_backup() {
     fail "expected one backup in $backup_dir, found ${#files[@]}"
   fi
   printf '%s\n' "${files[0]}"
+}
+assert_no_backup() {
+  local backup_dir=$1
+  local description=$2
+  local files=("$backup_dir"/hoard_*.db)
+  if [ "${#files[@]}" -ne 0 ]; then
+    fail "$description should leave no .db backup, found ${#files[@]}"
+  fi
 }
 
 assert_backup() {
@@ -111,10 +122,21 @@ case "$1" in
     ;;
   exec)
     if [ "$3" = "node" ] && [ "$4" = "-e" ]; then
-      if [ "${STUB_RAW_COPY:-0}" = "1" ]; then
-        /bin/cp "$STUB_FIXTURE_DB" "$STUB_CONTAINER_BACKUP"
+      if [[ "$5" == *"database.backup"* ]]; then
+        if [ "${STUB_RAW_COPY:-0}" = "1" ]; then
+          /bin/cp "$STUB_FIXTURE_DB" "$STUB_CONTAINER_BACKUP"
+        else
+          DATABASE_URL="$STUB_FIXTURE_DB" node -e "$5" "$STUB_CONTAINER_BACKUP"
+        fi
+      elif [[ "$5" == *"integrity_check"* ]]; then
+        if [ "${STUB_CONTAINER_VERIFIER_AVAILABLE:-1}" != "1" ]; then
+          printf 'in-container SQLite verifier unavailable\n' >&2
+          exit 127
+        fi
+        node -e "$5" "$STUB_CONTAINER_BACKUP"
       else
-        DATABASE_URL="$STUB_FIXTURE_DB" node -e "$5" "$STUB_CONTAINER_BACKUP"
+        printf 'Unexpected docker node program\n' >&2
+        exit 2
       fi
     elif [ "$3" = "rm" ]; then
       /bin/rm -f "$STUB_CONTAINER_BACKUP"
@@ -125,6 +147,19 @@ case "$1" in
     ;;
   cp)
     /bin/cp "$STUB_CONTAINER_BACKUP" "$3"
+    if [ "${STUB_ALTER_COPY:-0}" = "1" ]; then
+      node -e '
+const fs = require("fs");
+const path = process.argv[1];
+const descriptor = fs.openSync(path, "r+");
+const position = fs.statSync(path).size - 1;
+const byte = Buffer.alloc(1);
+fs.readSync(descriptor, byte, 0, 1, position);
+byte[0] ^= 0xff;
+fs.writeSync(descriptor, byte, 0, 1, position);
+fs.closeSync(descriptor);
+' "$3"
+    fi
     ;;
   *)
     printf 'Unexpected docker command: %s\n' "$*" >&2
@@ -133,6 +168,21 @@ case "$1" in
 esac
 DOCKER_STUB
 chmod +x "$BIN_DIR/sqlite3" "$BIN_DIR/docker"
+for tool in bash cut date du find mkdir node rm wc; do
+  tool_path=$(command -v "$tool") || fail "required test tool is unavailable: $tool"
+  ln -s "$tool_path" "$NO_SQLITE_BIN/$tool"
+  ln -s "$tool_path" "$NO_CHECKSUM_BIN/$tool"
+done
+ln -s "$BIN_DIR/docker" "$NO_SQLITE_BIN/docker"
+ln -s "$BIN_DIR/docker" "$NO_CHECKSUM_BIN/docker"
+if command -v sha256sum > /dev/null 2>&1; then
+  CHECKSUM_TOOL="sha256sum"
+elif command -v shasum > /dev/null 2>&1; then
+  CHECKSUM_TOOL="shasum"
+else
+  fail "sha256sum or shasum is required to exercise the checksum fallback"
+fi
+ln -s "$(command -v "$CHECKSUM_TOOL")" "$NO_SQLITE_BIN/$CHECKSUM_TOOL"
 
 cd "$ROOT"
 FIXTURE_DB="$SCRATCH/container-fixture.db"
@@ -213,4 +263,102 @@ CORRUPT_MESSAGE=$(<"$CORRUPT_OUTPUT")
   fail "corrupt container database should report integrity failure; output: $CORRUPT_MESSAGE"
 pass "corrupt copied database fails host integrity validation"
 
-pass "4 backup script cases"
+NO_SQLITE_VALID_BACKUPS="$SCRATCH/no-sqlite-valid-backups"
+NO_SQLITE_VALID_OUTPUT="$SCRATCH/no-sqlite-valid-output.txt"
+if ! PATH="$NO_SQLITE_BIN" \
+  DATABASE_URL="$SCRATCH/no-sqlite-valid-host.db" \
+  HOARD_CONTAINER=hoard_app \
+  BACKUP_RETENTION_DAYS=0 \
+  DOCKER_LOG="$SCRATCH/no-sqlite-valid-docker.log" \
+  STUB_FIXTURE_DB="$FIXTURE_DB" \
+  STUB_CONTAINER_BACKUP="$SCRATCH/no-sqlite-valid-container-copy.db" \
+  bash "$BACKUP_SCRIPT" "$NO_SQLITE_VALID_BACKUPS" > "$NO_SQLITE_VALID_OUTPUT" 2>&1; then
+  fail "valid container database should succeed without host sqlite3"
+fi
+NO_SQLITE_VALID_BACKUP=$(single_backup "$NO_SQLITE_VALID_BACKUPS")
+assert_backup "$NO_SQLITE_VALID_BACKUP"
+NO_SQLITE_VALID_MESSAGE=$(<"$NO_SQLITE_VALID_OUTPUT")
+[[ "$NO_SQLITE_VALID_MESSAGE" == *"Integrity check passed in the container; copied file matches its size and SHA-256 checksum"* ]] ||
+  fail "no-host-sqlite3 success should report fallback verification; output: $NO_SQLITE_VALID_MESSAGE"
+pass "container backup is verified without host sqlite3"
+
+NO_SQLITE_CORRUPT_BACKUPS="$SCRATCH/no-sqlite-corrupt-backups"
+NO_SQLITE_CORRUPT_OUTPUT="$SCRATCH/no-sqlite-corrupt-output.txt"
+if PATH="$NO_SQLITE_BIN" \
+  DATABASE_URL="$SCRATCH/no-sqlite-corrupt-host.db" \
+  HOARD_CONTAINER=hoard_app \
+  BACKUP_RETENTION_DAYS=0 \
+  DOCKER_LOG="$SCRATCH/no-sqlite-corrupt-docker.log" \
+  STUB_FIXTURE_DB="$CORRUPT_DB" \
+  STUB_CONTAINER_BACKUP="$SCRATCH/no-sqlite-corrupt-container-copy.db" \
+  STUB_RAW_COPY=1 \
+  bash "$BACKUP_SCRIPT" "$NO_SQLITE_CORRUPT_BACKUPS" > "$NO_SQLITE_CORRUPT_OUTPUT" 2>&1; then
+  fail "corrupt container database should fail in-container integrity validation without host sqlite3"
+fi
+assert_no_backup "$NO_SQLITE_CORRUPT_BACKUPS" "failed in-container integrity validation"
+NO_SQLITE_CORRUPT_MESSAGE=$(<"$NO_SQLITE_CORRUPT_OUTPUT")
+[[ "$NO_SQLITE_CORRUPT_MESSAGE" == *"Container backup verification failed:"* ]] ||
+  fail "corrupt in-container backup should report verification failure; output: $NO_SQLITE_CORRUPT_MESSAGE"
+pass "corrupt container backup fails closed without host sqlite3"
+
+ALTERED_COPY_BACKUPS="$SCRATCH/altered-copy-backups"
+ALTERED_COPY_OUTPUT="$SCRATCH/altered-copy-output.txt"
+if PATH="$NO_SQLITE_BIN" \
+  DATABASE_URL="$SCRATCH/altered-copy-host.db" \
+  HOARD_CONTAINER=hoard_app \
+  BACKUP_RETENTION_DAYS=0 \
+  DOCKER_LOG="$SCRATCH/altered-copy-docker.log" \
+  STUB_FIXTURE_DB="$FIXTURE_DB" \
+  STUB_CONTAINER_BACKUP="$SCRATCH/altered-copy-container.db" \
+  STUB_ALTER_COPY=1 \
+  bash "$BACKUP_SCRIPT" "$ALTERED_COPY_BACKUPS" > "$ALTERED_COPY_OUTPUT" 2>&1; then
+  fail "copy-out mutation should fail byte-identity validation"
+fi
+assert_no_backup "$ALTERED_COPY_BACKUPS" "failed byte-identity validation"
+ALTERED_COPY_MESSAGE=$(<"$ALTERED_COPY_OUTPUT")
+[[ "$ALTERED_COPY_MESSAGE" == *"Copied container backup does not match the verified in-container file"* ]] ||
+  fail "altered copy should report a byte-identity mismatch; output: $ALTERED_COPY_MESSAGE"
+pass "copy-out mutation fails size and checksum validation"
+
+NO_CONTAINER_VERIFIER_BACKUPS="$SCRATCH/no-container-verifier-backups"
+NO_CONTAINER_VERIFIER_OUTPUT="$SCRATCH/no-container-verifier-output.txt"
+if PATH="$NO_SQLITE_BIN" \
+  DATABASE_URL="$SCRATCH/no-container-verifier-host.db" \
+  HOARD_CONTAINER=hoard_app \
+  BACKUP_RETENTION_DAYS=0 \
+  DOCKER_LOG="$SCRATCH/no-container-verifier-docker.log" \
+  STUB_FIXTURE_DB="$FIXTURE_DB" \
+  STUB_CONTAINER_BACKUP="$SCRATCH/no-container-verifier-container.db" \
+  STUB_CONTAINER_VERIFIER_AVAILABLE=0 \
+  bash "$BACKUP_SCRIPT" "$NO_CONTAINER_VERIFIER_BACKUPS" > "$NO_CONTAINER_VERIFIER_OUTPUT" 2>&1; then
+  fail "container backup should fail when its integrity verifier is unavailable"
+fi
+assert_no_backup "$NO_CONTAINER_VERIFIER_BACKUPS" "missing in-container verifier failure"
+NO_CONTAINER_VERIFIER_MESSAGE=$(<"$NO_CONTAINER_VERIFIER_OUTPUT")
+[[ "$NO_CONTAINER_VERIFIER_MESSAGE" == *"Container backup verification failed: in-container SQLite verifier unavailable"* ]] ||
+  fail "missing in-container verifier should report a clear error; output: $NO_CONTAINER_VERIFIER_MESSAGE"
+pass "container backup fails closed when its integrity verifier is unavailable"
+
+NO_VERIFIER_BACKUPS="$SCRATCH/no-verifier-backups"
+NO_VERIFIER_OUTPUT="$SCRATCH/no-verifier-output.txt"
+mkdir -p "$NO_VERIFIER_BACKUPS"
+printf 'retained backup\n' > "$NO_VERIFIER_BACKUPS/hoard_retained.db"
+touch -t 202001010000 "$NO_VERIFIER_BACKUPS/hoard_retained.db"
+if PATH="$NO_CHECKSUM_BIN" \
+  DATABASE_URL="$SCRATCH/no-verifier-host.db" \
+  HOARD_CONTAINER=hoard_app \
+  BACKUP_RETENTION_DAYS=1 \
+  DOCKER_LOG="$SCRATCH/no-verifier-docker.log" \
+  STUB_FIXTURE_DB="$FIXTURE_DB" \
+  STUB_CONTAINER_BACKUP="$SCRATCH/no-verifier-container.db" \
+  bash "$BACKUP_SCRIPT" "$NO_VERIFIER_BACKUPS" > "$NO_VERIFIER_OUTPUT" 2>&1; then
+  fail "container backup should fail when no complete verification path is available"
+fi
+[ -f "$NO_VERIFIER_BACKUPS/hoard_retained.db" ] ||
+  fail "retention cleanup should not run after verification-path failure"
+NO_VERIFIER_MESSAGE=$(<"$NO_VERIFIER_OUTPUT")
+[[ "$NO_VERIFIER_MESSAGE" == *"Cannot verify container backup: sqlite3, sha256sum, and shasum are unavailable on the host"* ]] ||
+  fail "missing verifier should report all unavailable host tools; output: $NO_VERIFIER_MESSAGE"
+pass "container backup fails closed without a host byte-identity verifier"
+
+pass "9 backup script cases"
