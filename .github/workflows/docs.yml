@@ -36,6 +36,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
+          # Astro 7.4.2+ requires Node >= 22.23.4; resolve the newest 22.x
+          # release instead of whatever older 22.x the runner image caches.
+          check-latest: true
           cache: 'npm'
           cache-dependency-path: docs/package-lock.json
 
