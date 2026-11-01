@@ -44,7 +44,7 @@ export async function syncSteamPlaytime(
     const gamesToSync = eligible.slice(0, BATCH_SIZE);
 
     console.log(
-      `[SteamPlaytimeSync] ${eligible.length} wishlist games need a playtime median, processing batch of ${gamesToSync.length}`,
+      `[SteamPlaytimeSync] ${eligible.length} wishlist games due a playtime sample, processing batch of ${gamesToSync.length}`,
     );
 
     if (gamesToSync.length === 0) {
@@ -52,7 +52,7 @@ export async function syncSteamPlaytime(
       return {
         stats: { attempted: 0, succeeded: 0, failed: 0, skipped: 0 },
         syncLogId,
-        message: 'All wishlisted games already have a playtime median (or hit the give-up cap)',
+        message: 'No wishlisted games are due a playtime sample',
       };
     }
 

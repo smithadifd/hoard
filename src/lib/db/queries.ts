@@ -2780,6 +2780,12 @@ export function getGamesForHltbSync(now: Date = new Date()): Array<{ id: number;
         isNull(games.hltbId),
         or(isNull(games.hltbManual), eq(games.hltbManual, false)),
         eq(games.isReleased, true),
+        // Same software exclusion as the backoff query: utilities never get HLTB entries.
+        sql`${games.id} NOT IN (
+          SELECT gt.game_id FROM game_tags gt
+          INNER JOIN tags t ON gt.tag_id = t.id
+          WHERE t.name IN (${sql.join(SOFTWARE_TAGS.map(t => sql`${t}`), sql`, `)})
+        )`,
         or(
           eq(userGames.isOwned, true),
           eq(userGames.isWishlisted, true),

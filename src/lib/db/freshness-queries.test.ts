@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { createTestDb, seedGame, seedUserGame } from './test-helpers';
+import { createTestDb, seedGame, seedUserGame, seedGenre } from './test-helpers';
 import type { TestDb } from './test-helpers';
 import * as schema from './schema';
 
@@ -163,6 +163,15 @@ describe('getGamesForHltbSync young-game retry', () => {
   it('does not retry an established game outside its backoff', () => {
     const id = seedGame(testDb, { steamAppId: 1, title: 'Old', releaseDate: 'Jun 25, 2024', isReleased: true });
     setGame(id, { hltbMissCount: 6, hltbLastUpdated: '2026-10-20T02:00:25.705Z' });
+    seedUserGame(testDb, id, { isWishlisted: true });
+
+    expect(getGamesForHltbSync(NOW)).toEqual([]);
+  });
+
+  it('skips young software titles, like the backoff query does', () => {
+    const id = seedGame(testDb, { steamAppId: 1, title: 'Some Utility', releaseDate: 'Oct 9, 2026', isReleased: true });
+    setGame(id, { hltbMissCount: 8, hltbLastUpdated: '2026-10-20T00:00:00.000Z' });
+    seedGenre(testDb, id, 'Software');
     seedUserGame(testDb, id, { isWishlisted: true });
 
     expect(getGamesForHltbSync(NOW)).toEqual([]);

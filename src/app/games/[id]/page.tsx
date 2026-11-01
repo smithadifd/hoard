@@ -11,7 +11,7 @@ import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
 import { ValueReceivedBreakdown } from '@/components/prices/ValueReceivedBreakdown';
 import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
-import { DataStatus, latestTimestamp } from '@/components/games/DataStatus';
+import { DataStatus } from '@/components/games/DataStatus';
 import { HltbEditor } from '@/components/games/HltbEditor';
 import { PricePaidEditor } from '@/components/games/PricePaidEditor';
 import { EnjoymentRatingEditor } from '@/components/games/EnjoymentRatingEditor';
@@ -393,11 +393,9 @@ export default async function GameDetailPage({
           </div>
 
           {/* Data Status */}
-          {/* Reviews are refreshed by both the weekly review sync and the daily
-              metadata refresh, so show whichever ran last. */}
           <DataStatus
             gameId={game.id}
-            reviewLastUpdated={latestTimestamp(game.reviewLastUpdated, game.metadataLastUpdated)}
+            reviewLastUpdated={game.reviewLastUpdated}
             hltbLastUpdated={game.hltbLastUpdated}
             priceLastUpdated={game.priceLastUpdated}
           />

@@ -138,6 +138,41 @@ describe('POST /api/games/:id/refresh', () => {
     expect(body.data).toEqual({ reviews: 'updated', playtime: 'error', hltb: 'no_match' });
   });
 
+  it('reports a failed playtime request as an error without counting a miss', async () => {
+    const id = seedCarPark();
+    steam.getReviewPlaytimes.mockResolvedValue(null);
+
+    const body = await (await call(refresh, id, 'refresh')).json();
+
+    expect(body.data.playtime).toBe('error');
+    expect(readGame(id).steamPlaytimeMissCount).toBe(3);
+  });
+
+  it('does not stamp review freshness when the review summary fails', async () => {
+    const id = seedCarPark();
+    steam.getReviewSummary.mockResolvedValue(null);
+
+    const body = await (await call(refresh, id, 'refresh')).json();
+
+    expect(body.data.reviews).toBe('unavailable');
+    expect(readGame(id).reviewLastUpdated).toBeNull();
+  });
+
+  it('refuses a second refresh of the same game while one is running', async () => {
+    const id = seedCarPark();
+    let release!: (v: unknown) => void;
+    steam.getAppDetails.mockReturnValueOnce(new Promise((r) => { release = r; }));
+
+    const first = call(refresh, id, 'refresh');
+    await vi.waitFor(() => expect(steam.getAppDetails).toHaveBeenCalledTimes(1));
+    const second = await call(refresh, id, 'refresh');
+    expect(second.status).toBe(409);
+
+    release(null);
+    expect((await first).status).toBe(200);
+    expect((await call(refresh, id, 'refresh')).status).toBe(200);
+  });
+
   it('returns 404 for an unknown game', async () => {
     const res = await call(refresh, 999, 'refresh');
     expect(res.status).toBe(404);

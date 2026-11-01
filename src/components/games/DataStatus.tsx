@@ -41,13 +41,6 @@ function DataStatusRow({ label, dateStr, now }: { label: string; dateStr?: strin
   );
 }
 
-/** The later of two ISO timestamps (either may be missing). */
-export function latestTimestamp(a?: string, b?: string): string | undefined {
-  if (!a) return b;
-  if (!b) return a;
-  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
-}
-
 export function DataStatus({
   gameId,
   reviewLastUpdated,

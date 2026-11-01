@@ -51,19 +51,20 @@ export async function refreshGameFromSources(gameId: number): Promise<GameRefres
   const steam = getSteamClient();
   const result: GameRefreshResult = { reviews: 'error', playtime: 'error', hltb: 'error' };
 
-  // 1. Review summary + store details.
+  // 1. Review summary + store details. Written only when the review summary
+  // came back: the write stamps `reviewLastUpdated`, which Data Status shows as
+  // review freshness, so a details-only response must not stamp it.
   try {
     const details = await steam.getAppDetails(game.steamAppId);
     const reviews = await steam.getReviewSummary(game.steamAppId);
-    if (!details && !reviews) {
+    if (!reviews) {
       result.reviews = 'unavailable';
     } else {
-      const data: Parameters<typeof updateGameReviewData>[1] = {};
-      if (reviews) {
-        data.reviewScore = Math.round((reviews.total_positive / Math.max(reviews.total_reviews, 1)) * 100);
-        data.reviewCount = reviews.total_reviews;
-        data.reviewDescription = reviews.review_score_desc;
-      }
+      const data: Parameters<typeof updateGameReviewData>[1] = {
+        reviewScore: Math.round((reviews.total_positive / Math.max(reviews.total_reviews, 1)) * 100),
+        reviewCount: reviews.total_reviews,
+        reviewDescription: reviews.review_score_desc,
+      };
       if (details) {
         const categories = details.categories ?? [];
         data.description = details.short_description || undefined;
@@ -78,7 +79,7 @@ export async function refreshGameFromSources(gameId: number): Promise<GameRefres
         if (categories.length) upsertTags(game.id, categories.map((c) => c.description), 'category');
       }
       updateGameReviewData(game.id, data);
-      result.reviews = reviews ? 'updated' : 'unavailable';
+      result.reviews = 'updated';
     }
   } catch (error) {
     console.error(`[RefreshGame] Steam details/reviews for "${game.title}":`, error);
@@ -87,8 +88,11 @@ export async function refreshGameFromSources(gameId: number): Promise<GameRefres
   // 2. Reviewer playtime median. Sampled whatever the schedule says.
   try {
     const playtimes = await steam.getReviewPlaytimes(game.steamAppId);
-    const stats = playtimes === null ? null : computePlaytimeStats(playtimes);
-    if (stats && stats.sampleSize >= STEAM_PLAYTIME_MIN_SAMPLE) {
+    // null means the Steam request failed: report it, and don't count a miss.
+    const stats = playtimes === null ? undefined : computePlaytimeStats(playtimes);
+    if (stats === undefined) {
+      result.playtime = 'error';
+    } else if (stats && stats.sampleSize >= STEAM_PLAYTIME_MIN_SAMPLE) {
       updateGameSteamPlaytime(game.id, stats);
       result.playtime = 'updated';
     } else {
