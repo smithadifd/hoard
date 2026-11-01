@@ -41,6 +41,7 @@ import {
 } from '@/lib/backlog/upNext';
 import { scoreCandidate, genreAffinityForTags, type RankingSignals } from '@/lib/backlog/ranking';
 import { STEAM_PLAYTIME_GIVE_UP_MISSES, type PlaytimeSource } from '@/lib/playtimeSource';
+import { isSteamPlaytimeDue, isHltbYoungRetryDue, prioritizeMetadataRefresh } from '@/lib/freshness';
 
 // Re-exported so existing server callers can keep importing from '@/lib/db/queries'.
 export { STEAM_PLAYTIME_GIVE_UP_MISSES };
@@ -2690,6 +2691,29 @@ export function updateGameReviewData(
   if (data.reviewScore !== undefined) recomputeLatestSnapshotDealScore(gameId);
 }
 
+/**
+ * Write store-page details (description, developer, publisher, co-op and
+ * multiplayer flags) without touching any freshness timestamp. Undefined
+ * fields are left as they are.
+ */
+export function updateGameStoreDetails(
+  gameId: number,
+  data: {
+    description?: string;
+    developer?: string;
+    publisher?: string;
+    isCoop?: boolean;
+    isMultiplayer?: boolean;
+  },
+): void {
+  const set: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) set[key] = value;
+  }
+  if (Object.keys(set).length === 0) return;
+  getDb().update(games).set(set).where(eq(games.id, gameId)).run();
+}
+
 // Tags that indicate software, not games — skip HLTB lookup entirely
 const SOFTWARE_TAGS = ['Software', 'Utilities', 'Game Development', 'Video Production', 'Photo Editing', 'Audio Production', 'Design & Illustration', 'Accounting', 'Web Publishing'];
 
@@ -2697,7 +2721,7 @@ const SOFTWARE_TAGS = ['Software', 'Utilities', 'Game Development', 'Video Produ
 // will never have an HLTB entry). Games can still be matched via manual search on the detail page.
 const HLTB_GIVE_UP_MISSES = 8;
 
-export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMissCount: number | null }> {
+function getGamesForHltbBackoffSync(): Array<{ id: number; title: string; hltbMissCount: number | null }> {
   const db = getDb();
   const staleThreshold = new Date();
   staleThreshold.setDate(staleThreshold.getDate() - 90); // 90 days
@@ -2751,6 +2775,56 @@ export function getGamesForHltbSync(): Array<{ id: number; title: string; hltbMi
     .all();
 }
 
+/**
+ * Games due an HLTB lookup: the miss-count backoff above, plus young games
+ * (launched within 90 days) with no match yet, retried weekly whatever their
+ * miss count. HLTB entries for a new game often appear weeks after launch,
+ * when the backoff has already stretched to 90 days or given up.
+ */
+export function getGamesForHltbSync(now: Date = new Date()): Array<{ id: number; title: string; hltbMissCount: number | null }> {
+  const db = getDb();
+  const backoff = getGamesForHltbBackoffSync();
+  const seen = new Set(backoff.map((g) => g.id));
+
+  const young = db
+    .selectDistinct({
+      id: games.id,
+      title: games.title,
+      hltbMissCount: games.hltbMissCount,
+      hltbId: games.hltbId,
+      hltbLastUpdated: games.hltbLastUpdated,
+      isReleased: games.isReleased,
+      releaseDate: games.releaseDate,
+    })
+    .from(games)
+    .innerJoin(userGames, eq(games.id, userGames.gameId))
+    .where(
+      and(
+        isNull(games.hltbId),
+        or(isNull(games.hltbManual), eq(games.hltbManual, false)),
+        eq(games.isReleased, true),
+        // Same software exclusion as the backoff query: utilities never get HLTB entries.
+        sql`${games.id} NOT IN (
+          SELECT gt.game_id FROM game_tags gt
+          INNER JOIN tags t ON gt.tag_id = t.id
+          WHERE t.name IN (${sql.join(SOFTWARE_TAGS.map(t => sql`${t}`), sql`, `)})
+        )`,
+        or(
+          eq(userGames.isOwned, true),
+          eq(userGames.isWishlisted, true),
+          eq(userGames.isWatchlisted, true),
+        ),
+      ),
+    )
+    .orderBy(desc(games.reviewCount))
+    .all()
+    .filter((g) => !seen.has(g.id) && isHltbYoungRetryDue(g, now))
+    .map(({ id, title, hltbMissCount }) => ({ id, title, hltbMissCount }));
+
+  // Young games first: they're the ones whose data is actually moving.
+  return [...young, ...backoff];
+}
+
 export function updateGameHltbData(
   gameId: number,
   data: {
@@ -2769,9 +2843,10 @@ export function updateGameHltbData(
       hltbMainExtra: data.hltbMainExtra,
       hltbCompletionist: data.hltbCompletionist,
       hltbLastUpdated: new Date().toISOString(),
-      // Reset miss count on match, increment on miss
+      // Reset miss count on match, increment on miss. A miss before launch
+      // doesn't count: HLTB rarely lists a game before it ships.
       ...(missed
-        ? { hltbMissCount: sql`COALESCE(${games.hltbMissCount}, 0) + 1` }
+        ? { hltbMissCount: sql`CASE WHEN ${games.isReleased} = 0 THEN COALESCE(${games.hltbMissCount}, 0) ELSE COALESCE(${games.hltbMissCount}, 0) + 1 END` }
         : { hltbMissCount: 0 }),
     })
     .where(eq(games.id, gameId))
@@ -2833,20 +2908,27 @@ export function setHltbExcluded(gameId: number, excluded: boolean): void {
 }
 
 /**
- * Games eligible for a Steam-review playtime backfill: currently wishlisted (and
- * not locally removed), no median stored yet, and under the give-up miss cap.
- * Scoped to the wishlist (not the whole library) to keep Steam volume bounded —
- * the wishlist is where playtime divergence informs a buy/wait/drop decision.
- * Ordered by reviewCount desc so the most-reviewed (most reliable) games sample first.
- * Mirrors {@link getGamesForHltbSync}.
+ * Games due a Steam-review playtime sample: currently wishlisted (and not locally
+ * removed), released (or release status unknown), and due per
+ * {@link isSteamPlaytimeDue}: no median yet on a miss-retry schedule that never
+ * gives up for good, or a stored median that has aged out (weekly for games in
+ * their first 90 days, quarterly after). Scoped to the wishlist (not the whole
+ * library) to keep Steam volume bounded; the wishlist is where playtime
+ * divergence informs a buy/wait/drop decision. Ordered so games with no median
+ * come first, then by reviewCount desc (most-reviewed samples are most reliable).
  */
-export function getGamesForSteamPlaytimeSync(): Array<{ id: number; title: string; steamAppId: number }> {
+export function getGamesForSteamPlaytimeSync(now: Date = new Date()): Array<{ id: number; title: string; steamAppId: number }> {
   const db = getDb();
-  return db
+  const rows = db
     .selectDistinct({
       id: games.id,
       title: games.title,
       steamAppId: games.steamAppId,
+      isReleased: games.isReleased,
+      releaseDate: games.releaseDate,
+      steamPlaytimeMedian: games.steamPlaytimeMedian,
+      steamPlaytimeUpdatedAt: games.steamPlaytimeUpdatedAt,
+      steamPlaytimeMissCount: games.steamPlaytimeMissCount,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
@@ -2854,12 +2936,15 @@ export function getGamesForSteamPlaytimeSync(): Array<{ id: number; title: strin
       and(
         eq(userGames.isWishlisted, true),
         isNull(userGames.wishlistRemovedAt),
-        isNull(games.steamPlaytimeMedian),
-        sql`COALESCE(${games.steamPlaytimeMissCount}, 0) < ${STEAM_PLAYTIME_GIVE_UP_MISSES}`,
+        sql`(${games.isReleased} IS NULL OR ${games.isReleased} = 1)`,
       )
     )
-    .orderBy(desc(games.reviewCount))
+    .orderBy(sql`${games.steamPlaytimeMedian} IS NULL DESC`, desc(games.reviewCount))
     .all();
+
+  return rows
+    .filter((r) => isSteamPlaytimeDue(r, now))
+    .map(({ id, title, steamAppId }) => ({ id, title, steamAppId }));
 }
 
 /**
@@ -2878,8 +2963,10 @@ export function updateGameSteamPlaytime(
   db.update(games)
     .set({
       steamPlaytimeUpdatedAt: new Date().toISOString(),
+      // A miss before launch is expected (no reviews exist yet), so it never
+      // counts toward the give-up cap.
       ...(missed
-        ? { steamPlaytimeMissCount: sql`COALESCE(${games.steamPlaytimeMissCount}, 0) + 1` }
+        ? { steamPlaytimeMissCount: sql`CASE WHEN ${games.isReleased} = 0 THEN COALESCE(${games.steamPlaytimeMissCount}, 0) ELSE COALESCE(${games.steamPlaytimeMissCount}, 0) + 1 END` }
         : {
             steamPlaytimeMedian: data.medianHours,
             steamPlaytimeSampleSize: data.sampleSize,
@@ -4526,13 +4613,27 @@ export function markGameAsReleased(gameId: number): void {
  * whenever provided (Steam tightens the date as launch approaches — e.g.
  * "later in 2026" → "Jul 7, 2026") and flips `isReleased` to true on launch.
  */
+/**
+ * Column updates that clear the HLTB and Steam-playtime miss counters when a
+ * game goes from not-released to released. Misses before launch say nothing
+ * about whether the data will exist after it. SQLite evaluates every SET
+ * expression against the pre-update row, so this reads the old `is_released`
+ * even when the same statement sets it to 1.
+ */
+function missCountResetOnLaunch(): Record<string, unknown> {
+  return {
+    hltbMissCount: sql`CASE WHEN ${games.isReleased} IS NOT 1 THEN 0 ELSE ${games.hltbMissCount} END`,
+    steamPlaytimeMissCount: sql`CASE WHEN ${games.isReleased} IS NOT 1 THEN 0 ELSE ${games.steamPlaytimeMissCount} END`,
+  };
+}
+
 export function updateReleaseStatus(
   gameId: number,
   patch: { isReleased: boolean; releaseDate?: string | null },
 ): void {
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-  if (patch.isReleased) set.isReleased = true;
+  if (patch.isReleased) Object.assign(set, missCountResetOnLaunch(), { isReleased: true });
   // Only overwrite with a non-empty string. Guards against a Steam blip returning
   // `{ coming_soon: true, date: "" }` and wiping a previously-known good date.
   if (patch.releaseDate) set.releaseDate = patch.releaseDate;
@@ -4566,20 +4667,25 @@ export function getEarlyAccessSnapshot(gameId: number): boolean | null {
  * least-recently-checked games are picked up first; NULL `metadataLastUpdated`
  * (never refreshed) sorts before any timestamped row.
  *
+ * Young games are pulled to the front (see {@link prioritizeMetadataRefresh}).
+ *
  * Scope: wishlisted or owned by the given user only. Watchlist-only and
  * lookup-mode (search) games are intentionally excluded.
  */
 export function getGamesForMetadataRefresh(
   userId: string,
   batchSize: number,
+  now: Date = new Date(),
 ): Array<{ id: number; steamAppId: number; title: string; metadataLastUpdated: string | null }> {
   const db = getDb();
-  return db
+  const rows = db
     .selectDistinct({
       id: games.id,
       steamAppId: games.steamAppId,
       title: games.title,
       metadataLastUpdated: games.metadataLastUpdated,
+      isReleased: games.isReleased,
+      releaseDate: games.releaseDate,
     })
     .from(games)
     .innerJoin(userGames, eq(games.id, userGames.gameId))
@@ -4592,8 +4698,14 @@ export function getGamesForMetadataRefresh(
     // NULLS FIRST is the SQLite default for ASC. Be explicit anyway so a future
     // engine swap (or someone reading this query) sees the intent immediately.
     .orderBy(sql`${games.metadataLastUpdated} IS NULL DESC`, asc(games.metadataLastUpdated))
-    .limit(batchSize)
     .all();
+
+  // Young games (launched within 90 days) jump the queue once their data is a
+  // day old: their review counts move daily, and the LRU cycle alone can leave
+  // a fresh launch showing zero reviews for most of a week.
+  return prioritizeMetadataRefresh(rows, now, batchSize).map(
+    ({ id, steamAppId, title, metadataLastUpdated }) => ({ id, steamAppId, title, metadataLastUpdated }),
+  );
 }
 
 /**
@@ -4622,7 +4734,7 @@ export function updateGameMetadata(
     updatedAt: new Date().toISOString(),
   };
   if (patch.releaseDate) set.releaseDate = patch.releaseDate;
-  if (patch.isReleased === true) set.isReleased = true;
+  if (patch.isReleased === true) Object.assign(set, missCountResetOnLaunch(), { isReleased: true });
   if (patch.isEarlyAccess !== undefined && patch.isEarlyAccess !== null) {
     set.isEarlyAccess = patch.isEarlyAccess;
   }
@@ -4635,7 +4747,18 @@ export function updateGameMetadata(
   if (patch.reviewDescription !== undefined && patch.reviewDescription !== null) {
     set.reviewDescription = patch.reviewDescription;
   }
+  // A review summary came back: stamp review freshness, which Data Status shows.
+  // Left alone when the review request failed, so stale reviews never read as fresh.
+  if (patch.reviewCount !== undefined && patch.reviewCount !== null) {
+    set.reviewLastUpdated = new Date().toISOString();
+  }
   db.update(games).set(set).where(eq(games.id, gameId)).run();
+
+  // A new review % shifts the review component of the deal score; keep the
+  // stored sort key in step with the live badge (as updateGameReviewData does).
+  if (patch.reviewScore !== undefined && patch.reviewScore !== null) {
+    recomputeLatestSnapshotDealScore(gameId);
+  }
 }
 
 // ============================================

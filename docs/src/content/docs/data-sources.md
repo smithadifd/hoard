@@ -26,9 +26,19 @@ Hoard pulls from four external sources. Three of them feed into the database on 
 
 **Batch behavior:** `batchGetAppDetails` processes one app at a time with a default 1,500 ms delay between requests. Review sync also processes in batches of 100 with a 3,000 ms inter-request delay (two API calls per game — `appdetails` and `appreviews`).
 
-**Stale threshold:** review data refreshes after 30 days. Library and wishlist sync on every scheduled run (no staleness guard — they're lightweight list calls).
+**Stale threshold:** review data refreshes after 30 days in the weekly review sync. The daily metadata refresh also pulls review summaries, 100 wishlisted or owned games per run in least-recently-checked order. Library and wishlist sync on every scheduled run (no staleness guard — they're lightweight list calls).
 
-**Default schedule:** library sync at 3:00 am daily (`CRON_LIBRARY_SYNC`); wishlist sync at 1:00 am daily (`CRON_WISHLIST_SYNC`); review enrichment twice a week on Tuesday and Friday at 4:00 am (`CRON_REVIEW_SYNC`).
+**Default schedule:** library sync at 3:00 am daily (`CRON_LIBRARY_SYNC`); wishlist sync at 1:00 am daily (`CRON_WISHLIST_SYNC`); review enrichment weekly on Sunday at 4:00 am (`CRON_REVIEW_SYNC`); metadata refresh at 6:00 am daily (`CRON_METADATA_REFRESH`).
+
+**Reviewer playtime:** the "Steam reviews" playtime basis is the median total playtime of up to 200 sampled reviewers, kept only when at least 20 reviews have playtime. The `steam-playtime` job (2:30 am daily, `CRON_STEAM_PLAYTIME_SYNC`, 50 wishlisted games per run) and the game page sample on the same schedule: a game with no median retries every 2 days, and after 3 misses every 30 days; a stored median is re-sampled weekly for the first 90 days after launch, then every 90 days.
+
+**New games:** Steam data on a game moves fastest in its first weeks, so games launched within the last 90 days get extra attention:
+
+- They go to the front of the metadata refresh once their data is a day old, so review counts track launch week.
+- Playtime and HLTB misses before launch don't count, and both miss counters reset when the game releases.
+- With no HLTB match, they retry HLTB weekly whatever their backoff.
+
+**Manual refresh:** the **Refresh from Steam** button under Data Status on a game page re-pulls reviews and store details, re-samples reviewer playtime and retries HLTB right away, ignoring schedules and give-up caps. It leaves release and Early Access status to the scheduled jobs, which send those notifications.
 
 **Gotchas:**
 
@@ -103,7 +113,7 @@ A result must clear a similarity score of 0.4 (computed as a character-overlap r
 
 **Batch behavior:** `batchSearch` processes one title at a time with a default 1,500 ms delay. The HLTB sync job processes up to 100 games per run (`BATCH_SIZE = 100` in `src/lib/sync/hltb.ts`).
 
-**Stale threshold:** HLTB data refreshes after 90 days. Games that were searched but not found get a backoff: miss count 0–2 retries after 7 days, 3–4 after 30 days, 5–7 after 90 days, 8+ are skipped indefinitely.
+**Stale threshold:** HLTB data refreshes after 90 days. Games that were searched but not found get a backoff: miss count 0–2 retries after 7 days, 3–4 after 30 days, 5–7 after 90 days, 8+ are skipped indefinitely. Misses before a game's release don't count, the count resets at launch, and games launched within the last 90 days retry weekly regardless (see [Steam Web API](#steam-web-api)).
 
 **Default schedule:** twice a week, Sunday and Wednesday at 2:00 am (`CRON_HLTB_SYNC`, default `0 2 * * 0,3`).
 

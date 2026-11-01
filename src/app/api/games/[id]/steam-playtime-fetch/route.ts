@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/index';
 import { games } from '@/lib/db/schema';
 import { getSteamClient } from '@/lib/steam/client';
-import { updateGameSteamPlaytime, STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
+import { updateGameSteamPlaytime } from '@/lib/db/queries';
+import { isSteamPlaytimeDue } from '@/lib/freshness';
 import { STEAM_PLAYTIME_MIN_SAMPLE } from '@/lib/playtimeSource';
 import { computePlaytimeStats } from '@/lib/utils/playtime';
 import { apiSuccess, apiError, apiNotFound, apiValidationError, withAuth } from '@/lib/utils/api';
@@ -10,9 +11,10 @@ import { gameIdSchema } from '@/lib/validations';
 
 /**
  * POST /api/games/:id/steam-playtime-fetch
- * On-demand Steam-review playtime sample for a single game. If a median is
- * already stored, returns it without refetching. Mirrors the HLTB on-demand
- * fetch route, including the miss-count backoff.
+ * On-demand Steam-review playtime sample for a single game. Samples only when
+ * {@link isSteamPlaytimeDue} says so (the same schedule as the nightly sync);
+ * otherwise returns what's stored. `refreshed` tells the page whether a new
+ * median landed and a re-render is worth it.
  */
 export async function POST(
   request: Request,
@@ -36,6 +38,9 @@ export async function POST(
           steamPlaytimeMedian: games.steamPlaytimeMedian,
           steamPlaytimeSampleSize: games.steamPlaytimeSampleSize,
           steamPlaytimeMissCount: games.steamPlaytimeMissCount,
+          steamPlaytimeUpdatedAt: games.steamPlaytimeUpdatedAt,
+          isReleased: games.isReleased,
+          releaseDate: games.releaseDate,
         })
         .from(games)
         .where(eq(games.id, gameId))
@@ -45,18 +50,15 @@ export async function POST(
         return apiNotFound('Game');
       }
 
-      // Already have a median — return existing without refetch.
-      if (game.steamPlaytimeMedian !== null && game.steamPlaytimeMedian !== undefined) {
-        return apiSuccess({
-          steamPlaytimeMedian: game.steamPlaytimeMedian,
-          steamPlaytimeSampleSize: game.steamPlaytimeSampleSize ?? null,
-        });
-      }
+      const stored = {
+        steamPlaytimeMedian: game.steamPlaytimeMedian ?? null,
+        steamPlaytimeSampleSize: game.steamPlaytimeSampleSize ?? null,
+        refreshed: false,
+      };
 
-      // Gave up after repeated empty/too-small samples — don't keep retrying on
-      // every page view. (Sync/backoff policy mirrors HLTB.)
-      if ((game.steamPlaytimeMissCount ?? 0) >= STEAM_PLAYTIME_GIVE_UP_MISSES) {
-        return apiSuccess({ steamPlaytimeMedian: null, steamPlaytimeSampleSize: null });
+      // Not due (fresh median, unreleased, or inside a retry backoff): no Steam call.
+      if (!isSteamPlaytimeDue(game, new Date())) {
+        return apiSuccess(stored);
       }
 
       // Sample the reviews and compute the median.
@@ -68,12 +70,14 @@ export async function POST(
         return apiSuccess({
           steamPlaytimeMedian: stats.medianHours,
           steamPlaytimeSampleSize: stats.sampleSize,
+          refreshed: true,
         });
       }
 
-      // No usable sample — mark a miss.
+      // No usable sample: record a miss (pushes the next attempt out) and keep
+      // any median already stored.
       updateGameSteamPlaytime(game.id, null);
-      return apiSuccess({ steamPlaytimeMedian: null, steamPlaytimeSampleSize: null });
+      return apiSuccess(stored);
     } catch (error) {
       console.error('[POST /api/games/:id/steam-playtime-fetch]', error);
       return apiError('Failed to fetch Steam playtime');

@@ -57,13 +57,13 @@ describe('syncSteamPlaytime', () => {
     vi.useRealTimers();
   });
 
-  it('returns early with message when no wishlist games need a median', async () => {
+  it('returns early with message when no wishlist games are due a sample', async () => {
     mockGetGames.mockReturnValue([]);
 
     const result = await syncSteamPlaytime();
 
     expect(result.stats).toEqual({ attempted: 0, succeeded: 0, failed: 0, skipped: 0 });
-    expect(result.message).toContain('already have a playtime median');
+    expect(result.message).toContain('due a playtime sample');
     expect(mockCompleteSyncLog).toHaveBeenCalledWith(42, 'success', 0, undefined, 0, 0, 0);
   });
 

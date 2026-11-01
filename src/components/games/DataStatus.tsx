@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import { RefreshGameButton } from './RefreshGameButton';
 
 function formatTimeAgo(dateStr: string, now: number): string {
   const diff = now - new Date(dateStr).getTime();
@@ -41,10 +42,13 @@ function DataStatusRow({ label, dateStr, now }: { label: string; dateStr?: strin
 }
 
 export function DataStatus({
+  gameId,
   reviewLastUpdated,
   hltbLastUpdated,
   priceLastUpdated,
 }: {
+  /** When set, shows the "Refresh from Steam" button. */
+  gameId?: number;
   reviewLastUpdated?: string;
   hltbLastUpdated?: string;
   priceLastUpdated?: string;
@@ -57,6 +61,7 @@ export function DataStatus({
       <DataStatusRow label="Reviews" dateStr={reviewLastUpdated} now={now} />
       <DataStatusRow label="Duration (HLTB)" dateStr={hltbLastUpdated} now={now} />
       <DataStatusRow label="Prices" dateStr={priceLastUpdated} now={now} />
+      {gameId !== undefined && <RefreshGameButton gameId={gameId} />}
     </section>
   );
 }
