@@ -3310,7 +3310,7 @@ export function getPriceHistory(gameId: number, limit: number = 90): PriceSnapsh
 // the prior total. These rows preserve the pre-overwrite series so Hoard can
 // measure realized value over time the way price_snapshots preserve price
 // history. Written per game per sync (src/lib/sync/library.ts), deduped per
-// (game, user, day), pruned on the same 180-day window as price snapshots.
+// (game, user, day), pruned after 180 days (price history is never pruned).
 
 /** YYYY-MM-DD for `days` ago (UTC), matching the snapshotDate format. */
 function daysAgoDate(days: number): string {

@@ -177,8 +177,8 @@ export const priceSnapshots = sqliteTable('price_snapshots', {
 // user_games.playtimeMinutes each run, destroying the prior total; this table
 // preserves the series so Hoard can derive hours-this-week/month, value-accrual
 // ($/hr improving as hours grow), and momentum (playing/dormant). Mirrors the
-// price_snapshots pattern: current value captured per sync, deduped per day,
-// pruned on the same retention window.
+// price_snapshots pattern: current value captured per sync, deduped per day.
+// Pruned after 180 days; price history, unlike this table, is never pruned.
 export const playtimeSnapshots = sqliteTable('playtime_snapshots', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   gameId: integer('game_id').references(() => games.id, { onDelete: 'cascade' }).notNull(),
