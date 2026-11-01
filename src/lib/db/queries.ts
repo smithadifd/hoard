@@ -3303,24 +3303,6 @@ export function getPriceHistory(gameId: number, limit: number = 90): PriceSnapsh
   }));
 }
 
-/**
- * Prune old price snapshots, keeping only the most recent N days.
- * Returns the number of rows deleted.
- */
-export function pruneOldPriceSnapshots(retainDays: number = 180): number {
-  const db = getDb();
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - retainDays);
-  const cutoff = cutoffDate.toISOString().split('T')[0];
-
-  const result = db
-    .delete(priceSnapshots)
-    .where(sql`${priceSnapshots.snapshotDate} < ${cutoff}`)
-    .run();
-
-  return result.changes;
-}
-
 // ============================================
 // Playtime Snapshots — time-series + realized-value derivations
 // ============================================
@@ -3672,8 +3654,7 @@ export function getLibraryPlaytimeRecap(
 }
 
 /**
- * Prune old playtime snapshots, keeping only the most recent N days. Mirrors
- * pruneOldPriceSnapshots (same 180-day default, same monthly prune task).
+ * Prune old playtime snapshots, keeping only the most recent N days.
  * Returns the number of rows deleted.
  */
 export function pruneOldPlaytimeSnapshots(retainDays = 180): number {
@@ -3684,6 +3665,16 @@ export function pruneOldPlaytimeSnapshots(retainDays = 180): number {
     .where(sql`${playtimeSnapshots.snapshotDate} < ${cutoff}`)
     .run();
   return result.changes;
+}
+
+/**
+ * The monthly snapshot-prune task. Prunes playtime snapshots only: price
+ * snapshots are never pruned, because the backfilled ITAD history in that
+ * table is the evidence behind every all-time-low claim and reaches back to
+ * launch. Pruning it made backfilled games read as short history.
+ */
+export function runSnapshotPrune(): { deletedPlaytime: number } {
+  return { deletedPlaytime: pruneOldPlaytimeSnapshots(180) };
 }
 
 // ============================================

@@ -53,7 +53,7 @@ Tasks are registered and started in `src/instrumentation.ts`, which Next.js runs
 | `hltb-sync` | `0 2 * * 0,3` (2 am Sun + Wed) | `CRON_HLTB_SYNC` | Processes up to 100 games per run; stale after 90 days |
 | `review-enrichment` | `0 4 * * 2,5` (4 am Tue + Fri) | `CRON_REVIEW_SYNC` | Processes up to 100 games per run; stale after 30 days |
 | `database-backup` | `0 4 * * *` (4 am daily) | `CRON_BACKUP` | Uses `better-sqlite3` `.backup()` for WAL-safe atomic copy |
-| `snapshot-prune` | `0 3 1 * *` (3 am on the 1st) | none | Deletes price snapshots older than 180 days |
+| `snapshot-prune` | `0 3 1 * *` (3 am on the 1st) | none | Deletes playtime snapshots older than 180 days; price history is never pruned |
 | `health-summary` | `0 9 * * 1` (9 am Monday) | none | Sends weekly sync health digest to Discord |
 
 The `snapshot-prune` and `health-summary` tasks have hardcoded schedules and no env var override.
