@@ -18,6 +18,7 @@ import {
   createSyncLog,
   completeSyncLog,
 } from '../db/queries';
+import { saveStoreDetails } from './store-details';
 import { getDiscordClient } from '../discord/client';
 import { emitNotification } from '../notifications/dispatch';
 import type { SyncResult, ProgressCallback } from './types';
@@ -98,6 +99,9 @@ export async function refreshMetadata(
         }
 
         updateGameMetadata(game.id, patch);
+        // Store details too, so this job keeps the same fields current as the
+        // weekly review sync for the games it covers.
+        if (details) saveStoreDetails(game.id, details);
 
         if (!details) {
           failed++;

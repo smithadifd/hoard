@@ -21,8 +21,8 @@ import {
   updateGameReviewData,
   updateGameSteamPlaytime,
   updateGameHltbData,
-  upsertTags,
 } from '../db/queries';
+import { saveStoreDetails } from './store-details';
 import { computePlaytimeStats } from '../utils/playtime';
 import { STEAM_PLAYTIME_MIN_SAMPLE } from '../playtimeSource';
 
@@ -51,35 +51,22 @@ export async function refreshGameFromSources(gameId: number): Promise<GameRefres
   const steam = getSteamClient();
   const result: GameRefreshResult = { reviews: 'error', playtime: 'error', hltb: 'error' };
 
-  // 1. Review summary + store details. Written only when the review summary
-  // came back: the write stamps `reviewLastUpdated`, which Data Status shows as
-  // review freshness, so a details-only response must not stamp it.
+  // 1. Store details and review summary, saved independently. Only the review
+  // write stamps `reviewLastUpdated` (shown as review freshness), so a failed
+  // review request never reads as fresh reviews.
   try {
     const details = await steam.getAppDetails(game.steamAppId);
+    if (details) saveStoreDetails(game.id, details);
     const reviews = await steam.getReviewSummary(game.steamAppId);
-    if (!reviews) {
-      result.reviews = 'unavailable';
-    } else {
-      const data: Parameters<typeof updateGameReviewData>[1] = {
+    if (reviews) {
+      updateGameReviewData(game.id, {
         reviewScore: Math.round((reviews.total_positive / Math.max(reviews.total_reviews, 1)) * 100),
         reviewCount: reviews.total_reviews,
         reviewDescription: reviews.review_score_desc,
-      };
-      if (details) {
-        const categories = details.categories ?? [];
-        data.description = details.short_description || undefined;
-        data.developer = details.developers?.[0] || undefined;
-        data.publisher = details.publishers?.[0] || undefined;
-        data.isCoop = categories.some((c) => c.description.toLowerCase().includes('co-op'));
-        data.isMultiplayer = categories.some((c) => {
-          const d = c.description.toLowerCase();
-          return d.includes('multi-player') || d.includes('multiplayer');
-        });
-        if (details.genres?.length) upsertTags(game.id, details.genres.map((g) => g.description), 'genre');
-        if (categories.length) upsertTags(game.id, categories.map((c) => c.description), 'category');
-      }
-      updateGameReviewData(game.id, data);
+      });
       result.reviews = 'updated';
+    } else {
+      result.reviews = 'unavailable';
     }
   } catch (error) {
     console.error(`[RefreshGame] Steam details/reviews for "${game.title}":`, error);

@@ -200,3 +200,17 @@ describe('getGamesForMetadataRefresh young-game priority', () => {
     expect(getGamesForMetadataRefresh('default', 1, NOW).map((g) => g.title)).toEqual(['Young']);
   });
 });
+
+describe('updateGameMetadata review freshness', () => {
+  it('stamps reviewLastUpdated when a review summary came back', () => {
+    const id = seedGame(testDb, { steamAppId: 1, title: 'Reviewed' });
+    updateGameMetadata(id, { reviewScore: 97, reviewCount: 1282, reviewDescription: 'Overwhelmingly Positive' });
+    expect(readGame(id).reviewLastUpdated).toBeTruthy();
+  });
+
+  it('leaves reviewLastUpdated alone when only release fields came back', () => {
+    const id = seedGame(testDb, { steamAppId: 1, title: 'Details only' });
+    updateGameMetadata(id, { releaseDate: 'Oct 9, 2026', isReleased: true });
+    expect(readGame(id).reviewLastUpdated).toBeNull();
+  });
+});

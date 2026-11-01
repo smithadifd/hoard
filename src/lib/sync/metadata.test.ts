@@ -18,6 +18,8 @@ vi.mock('../db/queries', () => ({
   getGamesForMetadataRefresh: vi.fn(),
   getEarlyAccessSnapshot: vi.fn(),
   updateGameMetadata: vi.fn(),
+  updateGameStoreDetails: vi.fn(),
+  upsertTags: vi.fn(),
   getFirstUserId: vi.fn().mockReturnValue('default'),
   createSyncLog: vi.fn().mockReturnValue(1),
   completeSyncLog: vi.fn(),
@@ -30,6 +32,7 @@ import {
   getGamesForMetadataRefresh,
   getEarlyAccessSnapshot,
   updateGameMetadata,
+  updateGameStoreDetails,
   completeSyncLog,
 } from '../db/queries';
 
@@ -102,6 +105,11 @@ describe('refreshMetadata', () => {
     });
     expect(result.stats.succeeded).toBe(1);
     expect(result.stats.failed).toBe(0);
+    // Store details stay current alongside the release and review fields.
+    expect(vi.mocked(updateGameStoreDetails)).toHaveBeenCalledWith(1, expect.objectContaining({
+      isCoop: false,
+      isMultiplayer: false,
+    }));
   });
 
   it('fires EA graduation Discord notification when isEarlyAccess flips true → false', async () => {

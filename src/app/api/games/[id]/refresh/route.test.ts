@@ -156,6 +156,9 @@ describe('POST /api/games/:id/refresh', () => {
 
     expect(body.data.reviews).toBe('unavailable');
     expect(readGame(id).reviewLastUpdated).toBeNull();
+    // The store details that did come back are still saved.
+    expect(readGame(id).developer).toBe('Dev');
+    expect(readGame(id).description).toBe('Build a parking empire.');
   });
 
   it('refuses a second refresh of the same game while one is running', async () => {

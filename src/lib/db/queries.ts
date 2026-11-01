@@ -2691,6 +2691,29 @@ export function updateGameReviewData(
   if (data.reviewScore !== undefined) recomputeLatestSnapshotDealScore(gameId);
 }
 
+/**
+ * Write store-page details (description, developer, publisher, co-op and
+ * multiplayer flags) without touching any freshness timestamp. Undefined
+ * fields are left as they are.
+ */
+export function updateGameStoreDetails(
+  gameId: number,
+  data: {
+    description?: string;
+    developer?: string;
+    publisher?: string;
+    isCoop?: boolean;
+    isMultiplayer?: boolean;
+  },
+): void {
+  const set: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) set[key] = value;
+  }
+  if (Object.keys(set).length === 0) return;
+  getDb().update(games).set(set).where(eq(games.id, gameId)).run();
+}
+
 // Tags that indicate software, not games — skip HLTB lookup entirely
 const SOFTWARE_TAGS = ['Software', 'Utilities', 'Game Development', 'Video Production', 'Photo Editing', 'Audio Production', 'Design & Illustration', 'Accounting', 'Web Publishing'];
 
@@ -4723,6 +4746,11 @@ export function updateGameMetadata(
   }
   if (patch.reviewDescription !== undefined && patch.reviewDescription !== null) {
     set.reviewDescription = patch.reviewDescription;
+  }
+  // A review summary came back: stamp review freshness, which Data Status shows.
+  // Left alone when the review request failed, so stale reviews never read as fresh.
+  if (patch.reviewCount !== undefined && patch.reviewCount !== null) {
+    set.reviewLastUpdated = new Date().toISOString();
   }
   db.update(games).set(set).where(eq(games.id, gameId)).run();
 }
