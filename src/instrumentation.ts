@@ -78,12 +78,9 @@ export async function register() {
     }));
 
     registerTask('snapshot-prune', '0 3 1 * *', skipWhileDraining('snapshot-prune', async () => {
-      const { pruneOldPriceSnapshots, pruneOldPlaytimeSnapshots } = await import('@/lib/db/queries');
-      const deletedPrices = pruneOldPriceSnapshots(180);
-      const deletedPlaytime = pruneOldPlaytimeSnapshots(180);
-      console.log(
-        `[SnapshotPrune] Deleted ${deletedPrices} old price snapshot(s), ${deletedPlaytime} old playtime snapshot(s)`,
-      );
+      const { runSnapshotPrune } = await import('@/lib/db/queries');
+      const { deletedPlaytime } = runSnapshotPrune();
+      console.log(`[SnapshotPrune] Deleted ${deletedPlaytime} old playtime snapshot(s)`);
     }));
 
     // Daily at 4:30am, ten min after backup so we don't pile two writers up.
