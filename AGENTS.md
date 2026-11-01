@@ -182,6 +182,7 @@ JSON strings.
   (e.g. `DEFAULT_WEIGHTS`), so import those separately.
 - **React:** Server Components by default; add `'use client'` only for interactivity. Stable `key`
   props; Next.js `<Image>` for images.
+- **`'use client'` exports:** `local/use-client-exports` requires named exports from a `'use client'` module to be PascalCase components, `useXxx` hooks, or types — helpers belong in a module without the directive.
 - **Styling:** Tailwind only, no inline styles. There is **no `cn()` helper** — concatenate classes
   with template literals (the established pattern). Use the theme tokens (`steam-*`, `deal-*`).
 - **API routes:** App Router handlers, wrapped in try/catch, validate bodies with Zod `.safeParse()`,

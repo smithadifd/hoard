@@ -33,6 +33,10 @@ tester.run('use-client-exports', rule as Rule.RuleModule, {
       code: "import x from 'y';\n'use client';\nexport function latestTimestamp() { return 0; }\n",
     },
     {
+      name: 'use client after a non-directive statement is not a client module',
+      code: "const x = 1;\n'use client';\nexport function helper() {}\n",
+    },
+    {
       name: 'export function PascalCase component',
       code: `${USE}export function DataStatus() { return null; }\n`,
     },
@@ -103,6 +107,11 @@ tester.run('use-client-exports', rule as Rule.RuleModule, {
     },
   ],
   invalid: [
+    {
+      name: 'invalid helper after use strict then use client prologue',
+      code: "'use strict';\n'use client';\nexport function helper() {}\n",
+      errors: [{ messageId: 'nonComponentExport', data: { name: 'helper' } }],
+    },
     {
       name: 'invalid helper export function latestTimestamp (#450 shape)',
       filename: 'DataStatus.tsx',

@@ -3,7 +3,7 @@
 /**
  * local/use-client-exports
  *
- * In a module whose first statement is the `'use client'` directive, every
+ * In a module whose leading directive prologue contains `'use client'`, every
  * named export must be:
  *   - a component (PascalCase identifier), or
  *   - a React hook (`use` + PascalCase), or
@@ -21,7 +21,7 @@
  *   - `export * from '...'` and `export * as ns from '...'` — always flagged
  *     (fail-closed: this rule cannot see the re-exported names)
  *
- * A file whose first statement is not `'use client'` is never checked.
+ * A file whose leading directive prologue does not contain `'use client'` is never checked.
  * React hooks are allowed because they are the client-module counterpart of
  * components (they cannot be PascalCase and cannot live in a Server module).
  *
@@ -43,8 +43,24 @@ function isUseClientDirective(node) {
   return expr.type === 'Literal' && expr.value === 'use client';
 }
 
+function isDirectivePrologueStatement(node) {
+  if (!node || node.type !== 'ExpressionStatement') {
+    return false;
+  }
+  const expr = node.expression;
+  return expr.type === 'Literal' && typeof expr.value === 'string';
+}
+
 function isUseClientModule(program) {
-  return isUseClientDirective(program.body[0]);
+  for (const node of program.body) {
+    if (isUseClientDirective(node)) {
+      return true;
+    }
+    if (!isDirectivePrologueStatement(node)) {
+      return false;
+    }
+  }
+  return false;
 }
 
 function collectBoundNames(pattern, out) {
