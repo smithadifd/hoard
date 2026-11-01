@@ -167,6 +167,29 @@ describe('POST /api/games/:id/steam-playtime-fetch', () => {
     expect(steam.getReviewPlaytimes).not.toHaveBeenCalled();
   });
 
+  it("re-samples a young game's week-old median on page open", async () => {
+    const id = seedGame(testDb, {
+      steamAppId: 1, title: 'Young', releaseDate: 'Oct 9, 2026', isReleased: true,
+      steamPlaytimeMedian: 2, steamPlaytimeSampleSize: 25,
+    });
+    testDb.update(schema.games).set({ steamPlaytimeUpdatedAt: '2026-10-20T00:00:00.000Z' }).where(eq(schema.games.id, id)).run();
+
+    const body = await (await call(playtimeFetch, id, 'steam-playtime-fetch')).json();
+
+    expect(body.data).toEqual({ steamPlaytimeMedian: 5, steamPlaytimeSampleSize: 40, refreshed: true });
+    expect(readGame(id).steamPlaytimeMedian).toBe(5);
+  });
+
+  it('never samples an unreleased game', async () => {
+    const id = seedGame(testDb, { steamAppId: 1, title: 'Soon', releaseDate: 'Dec 14, 2026', isReleased: false });
+
+    const body = await (await call(playtimeFetch, id, 'steam-playtime-fetch')).json();
+
+    expect(body.data.refreshed).toBe(false);
+    expect(steam.getReviewPlaytimes).not.toHaveBeenCalled();
+    expect(readGame(id).steamPlaytimeMissCount).toBe(0);
+  });
+
   it('keeps the stored median when a re-sample comes back too small', async () => {
     const id = seedGame(testDb, {
       steamAppId: 1, title: 'Young', releaseDate: 'Oct 9, 2026', isReleased: true,
