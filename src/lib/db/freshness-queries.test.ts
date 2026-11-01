@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { createTestDb, seedGame, seedUserGame, seedGenre } from './test-helpers';
+import { createTestDb, seedGame, seedUserGame, seedGenre, seedPriceSnapshot } from './test-helpers';
 import type { TestDb } from './test-helpers';
 import * as schema from './schema';
 
@@ -22,6 +22,8 @@ import {
   updateGameHltbData,
   updateGameMetadata,
   updateReleaseStatus,
+  getEnrichedGameById,
+  getLatestPriceSnapshots,
 } from './queries';
 
 const NOW = new Date('2026-11-01T12:00:00Z');
@@ -212,5 +214,21 @@ describe('updateGameMetadata review freshness', () => {
     const id = seedGame(testDb, { steamAppId: 1, title: 'Details only' });
     updateGameMetadata(id, { releaseDate: 'Oct 9, 2026', isReleased: true });
     expect(readGame(id).reviewLastUpdated).toBeNull();
+  });
+});
+
+describe('updateGameMetadata deal score', () => {
+  it('recomputes the stored deal score when the review score changes', () => {
+    const id = seedGame(testDb, { steamAppId: 1, title: 'Rescored', reviewScore: 40, hltbMain: 10 });
+    seedUserGame(testDb, id, { isWishlisted: true, personalInterest: 3 });
+    seedPriceSnapshot(testDb, id, {
+      priceCurrent: 20, priceRegular: 40, historicalLowPrice: 20, isHistoricalLow: true, dealScore: 0,
+    });
+
+    updateGameMetadata(id, { reviewScore: 97, reviewCount: 1282, reviewDescription: 'Overwhelmingly Positive' });
+
+    const stored = getLatestPriceSnapshots([id]).get(id)?.dealScore;
+    expect(stored).not.toBe(0);
+    expect(stored).toBe(getEnrichedGameById(id, 'default')?.dealScore);
   });
 });

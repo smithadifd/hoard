@@ -106,6 +106,16 @@ describe('POST /api/games/:id/refresh', () => {
     expect(after.steamPlaytimeMedian).toBe(5);
     expect(after.steamPlaytimeMissCount).toBe(0);
     expect(after.hltbMain).toBe(8);
+    const tags = testDb
+      .select({ name: schema.tags.name, type: schema.tags.type })
+      .from(schema.gameTags)
+      .innerJoin(schema.tags, eq(schema.gameTags.tagId, schema.tags.id))
+      .where(eq(schema.gameTags.gameId, id))
+      .all();
+    expect(tags).toEqual(expect.arrayContaining([
+      { name: 'Simulation', type: 'genre' },
+      { name: 'Single-player', type: 'category' },
+    ]));
   });
 
   it('leaves hand-entered HLTB alone', async () => {

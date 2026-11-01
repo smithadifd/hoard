@@ -33,6 +33,7 @@ import {
   getEarlyAccessSnapshot,
   updateGameMetadata,
   updateGameStoreDetails,
+  upsertTags,
   completeSyncLog,
 } from '../db/queries';
 
@@ -110,6 +111,7 @@ describe('refreshMetadata', () => {
       isCoop: false,
       isMultiplayer: false,
     }));
+    expect(vi.mocked(upsertTags)).toHaveBeenCalledWith(1, ['Single-player'], 'category');
   });
 
   it('fires EA graduation Discord notification when isEarlyAccess flips true → false', async () => {

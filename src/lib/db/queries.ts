@@ -4753,6 +4753,12 @@ export function updateGameMetadata(
     set.reviewLastUpdated = new Date().toISOString();
   }
   db.update(games).set(set).where(eq(games.id, gameId)).run();
+
+  // A new review % shifts the review component of the deal score; keep the
+  // stored sort key in step with the live badge (as updateGameReviewData does).
+  if (patch.reviewScore !== undefined && patch.reviewScore !== null) {
+    recomputeLatestSnapshotDealScore(gameId);
+  }
 }
 
 // ============================================
