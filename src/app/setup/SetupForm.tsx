@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import authClient from '@/lib/auth-client';
 
 export function SetupForm() {
   const router = useRouter();

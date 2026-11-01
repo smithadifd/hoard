@@ -27,7 +27,7 @@ const HLTB_LABEL: Record<RefreshResult['hltb'], string> = {
   error: 'HLTB failed',
 };
 
-export function summarizeRefresh(r: RefreshResult): string {
+function summarizeRefresh(r: RefreshResult): string {
   return [REVIEWS_LABEL[r.reviews], PLAYTIME_LABEL[r.playtime], HLTB_LABEL[r.hltb]].join(' · ');
 }
 

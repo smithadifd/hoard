@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Settings, LogOut, Activity, Shield, Cpu } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
+import authClient from '@/lib/auth-client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 

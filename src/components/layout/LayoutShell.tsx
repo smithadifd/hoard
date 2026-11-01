@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { SCROLL_CONTAINER_ID, trackPreviousPathname } from '@/hooks/useScrollRestoration';
+import { SCROLL_CONTAINER_ID, trackPreviousPathname } from '@/hooks/scrollRestorationTracking';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { StaleDataBanner } from './StaleDataBanner';

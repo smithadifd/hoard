@@ -2,7 +2,8 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback } from 'react';
-import { GameFilters, LIBRARY_SORT_OPTIONS } from './GameFilters';
+import { GameFilters } from './GameFilters';
+import { LIBRARY_SORT_OPTIONS } from './sortOptions';
 import { LibraryValueFilters } from './LibraryValueFilters';
 import type { GameFilters as GameFiltersType } from '@/types';
 

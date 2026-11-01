@@ -3,9 +3,11 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useRef, useCallback, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { GameFilters, BACKLOG_SORT_OPTIONS } from '@/components/filters/GameFilters';
+import { GameFilters } from '@/components/filters/GameFilters';
+import { BACKLOG_SORT_OPTIONS } from '@/components/filters/sortOptions';
 import { PresetButtons } from './PresetButtons';
-import { PickForMePanel, weightedPick } from './PickForMePanel';
+import { PickForMePanel } from './PickForMePanel';
+import { weightedPick } from './weightedPick';
 import { RandomPickModal } from './RandomPickModal';
 import type { GameFilters as GameFiltersType } from '@/types';
 import type { EnrichedGame } from '@/types';

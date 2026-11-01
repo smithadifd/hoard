@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, PauseCircle, Sparkles, Trash2, Inbox, X, Tag, Rocket, DollarSign } from 'lucide-react';
 import type { NotificationRow, NotificationType } from '@/lib/notifications/types';
-import { parseDigestGames, type DealDigestGame } from '@/components/notifications/DealDigestModal';
+import { parseDigestGames, type DealDigestGame } from '@/components/notifications/parseDigestGames';
 
 interface NotificationPanelProps {
   notifications: NotificationRow[];

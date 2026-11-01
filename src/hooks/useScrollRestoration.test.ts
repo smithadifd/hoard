@@ -4,7 +4,7 @@ import {
   trackPreviousPathname,
   getPreviousPathname,
   __resetScrollRestorationTracking,
-} from './useScrollRestoration';
+} from './scrollRestorationTracking';
 
 describe('isGameDetailPath', () => {
   it('matches a game detail route', () => {

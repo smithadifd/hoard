@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Shuffle, Coffee, Swords, Crown, Sparkles, TreePalm, Loader2 } from 'lucide-react';
 import type { EnrichedGame, GameFilters } from '@/types';
 import { PICK_MOODS, type BacklogPick } from '@/lib/backlog/presets';
+import { weightedPick } from './weightedPick';
 
 type PickMood = BacklogPick;
 
@@ -32,22 +33,6 @@ const COOP_OPTIONS = [
   { id: 'solo', label: 'Solo', value: false },
   { id: 'coop', label: 'Co-op', value: true },
 ];
-
-export function weightedPick(games: EnrichedGame[]): EnrichedGame {
-  const weights = games.map((g) => {
-    let w = 1;
-    w *= g.personalInterest ?? 3; // Interest: 1-5x
-    if (g.dealScore && g.dealScore >= 70) w *= 1.5; // Good deal bonus
-    return w;
-  });
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  let random = Math.random() * totalWeight;
-  for (let i = 0; i < games.length; i++) {
-    random -= weights[i];
-    if (random <= 0) return games[i];
-  }
-  return games[games.length - 1];
-}
 
 function filterByMood(games: EnrichedGame[], mood: PickMood, timeMax?: number, coop?: boolean): EnrichedGame[] {
   let filtered = [...games];
