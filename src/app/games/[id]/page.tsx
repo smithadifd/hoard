@@ -11,7 +11,7 @@ import { DealIndicator } from '@/components/prices/DealIndicator';
 import { ScoreBreakdown } from '@/components/prices/ScoreBreakdown';
 import { ValueReceivedBreakdown } from '@/components/prices/ValueReceivedBreakdown';
 import { PriceHistoryChart } from '@/components/prices/PriceHistoryChart';
-import { DataStatus } from '@/components/games/DataStatus';
+import { DataStatus, latestTimestamp } from '@/components/games/DataStatus';
 import { HltbEditor } from '@/components/games/HltbEditor';
 import { PricePaidEditor } from '@/components/games/PricePaidEditor';
 import { EnjoymentRatingEditor } from '@/components/games/EnjoymentRatingEditor';
@@ -23,7 +23,6 @@ import { HltbAutoFetch } from '@/components/games/HltbAutoFetch';
 import { SteamPlaytimeAutoFetch } from '@/components/games/SteamPlaytimeAutoFetch';
 import { PlaytimeSourceToggle } from '@/components/games/PlaytimeSourceToggle';
 import { EnsurePriceHistory } from '@/components/games/EnsurePriceHistory';
-import { STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/db/queries';
 import { resolveBackTarget } from '@/lib/utils/backNav';
 
 export const dynamic = 'force-dynamic';
@@ -87,12 +86,10 @@ export default async function GameDetailPage({
         <HltbAutoFetch gameId={game.id} />
       )}
 
-      {/* Steam-review playtime auto-fetch trigger (invisible, once per game until
-          a median lands or we give up). Best-effort gap-fill for the $/hour basis. */}
-      {game.steamPlaytimeMedian === undefined &&
-        (game.steamPlaytimeMissCount ?? 0) < STEAM_PLAYTIME_GIVE_UP_MISSES && (
-          <SteamPlaytimeAutoFetch gameId={game.id} />
-        )}
+      {/* Steam-review playtime auto-fetch trigger (invisible). Always mounted: the
+          route decides whether a sample is due (no median yet, or a young game's
+          median has aged out) and is a cheap no-op otherwise. */}
+      <SteamPlaytimeAutoFetch gameId={game.id} />
 
       {/* Price-history self-heal trigger (invisible). Always mounted: the route is the one
           place that decides whether a pull is due (never backfilled, or stamped but the
@@ -396,8 +393,11 @@ export default async function GameDetailPage({
           </div>
 
           {/* Data Status */}
+          {/* Reviews are refreshed by both the weekly review sync and the daily
+              metadata refresh, so show whichever ran last. */}
           <DataStatus
-            reviewLastUpdated={game.reviewLastUpdated}
+            gameId={game.id}
+            reviewLastUpdated={latestTimestamp(game.reviewLastUpdated, game.metadataLastUpdated)}
             hltbLastUpdated={game.hltbLastUpdated}
             priceLastUpdated={game.priceLastUpdated}
           />

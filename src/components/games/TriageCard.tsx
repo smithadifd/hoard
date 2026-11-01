@@ -6,7 +6,6 @@ import { Star, Clock, Users, ChevronLeft, ChevronRight, Ban, HelpCircle } from '
 import { GameImage } from './GameImage';
 import { TriageHltbEditor } from './TriageHltbEditor';
 import { SteamPlaytimeAutoFetch } from './SteamPlaytimeAutoFetch';
-import { STEAM_PLAYTIME_GIVE_UP_MISSES } from '@/lib/playtimeSource';
 import type { TriageGame } from '@/app/triage/types';
 
 interface TriageCardProps {
@@ -171,10 +170,9 @@ export function TriageCard({
              $/hour basis can fall back to it when HLTB stays unmatched. Only the
              current card is mounted in this view, so this fetches one at a time. */
           <>
-            {game.steamPlaytimeMedian === null &&
-              (game.steamPlaytimeMissCount ?? 0) < STEAM_PLAYTIME_GIVE_UP_MISSES && (
-                <SteamPlaytimeAutoFetch gameId={game.id} refreshOnSuccess={false} />
-              )}
+            {game.steamPlaytimeMedian === null && (
+              <SteamPlaytimeAutoFetch gameId={game.id} refreshOnSuccess={false} />
+            )}
             <TriageHltbEditor
               gameId={game.id}
               gameTitle={game.title}

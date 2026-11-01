@@ -15,9 +15,9 @@ interface SteamPlaytimeAutoFetchProps {
 }
 
 /**
- * Invisible client component that triggers a one-shot Steam-review playtime
- * sample on mount. Only rendered when steamPlaytimeMedian is null and we haven't
- * given up retrying. Mirrors {@link HltbAutoFetch}.
+ * Invisible client component that asks for a Steam-review playtime sample on
+ * mount. Always safe to mount: the route decides whether a sample is due and is
+ * a cheap no-op otherwise. Mirrors {@link HltbAutoFetch}.
  */
 export function SteamPlaytimeAutoFetch({ gameId, refreshOnSuccess = true }: SteamPlaytimeAutoFetchProps) {
   const router = useRouter();
@@ -32,8 +32,8 @@ export function SteamPlaytimeAutoFetch({ gameId, refreshOnSuccess = true }: Stea
         const res = await fetch(`/api/games/${gameId}/steam-playtime-fetch`, { method: 'POST' });
         if (res.ok && refreshOnSuccess) {
           const body = await res.json();
-          // Only refresh if we actually got a median back.
-          if ((body as { data?: { steamPlaytimeMedian: number | null } }).data?.steamPlaytimeMedian != null) {
+          // Only re-render when a new median actually landed.
+          if ((body as { data?: { refreshed?: boolean } }).data?.refreshed === true) {
             router.refresh();
           }
         }
