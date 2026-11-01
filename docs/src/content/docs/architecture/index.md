@@ -50,8 +50,10 @@ Tasks are registered and started in `src/instrumentation.ts`, which Next.js runs
 | `price-check` | `0 */12 * * *` (every 12 h) | `CRON_PRICE_CHECK` | Chains into alert check + release status check on completion |
 | `library-sync` | `0 3 * * *` (3 am daily) | `CRON_LIBRARY_SYNC` | |
 | `wishlist-sync` | `0 1 * * *` (1 am daily) | `CRON_WISHLIST_SYNC` | |
-| `hltb-sync` | `0 2 * * 0,3` (2 am Sun + Wed) | `CRON_HLTB_SYNC` | Processes up to 100 games per run; stale after 90 days |
-| `review-enrichment` | `0 4 * * 2,5` (4 am Tue + Fri) | `CRON_REVIEW_SYNC` | Processes up to 100 games per run; stale after 30 days |
+| `hltb-sync` | `0 2 * * 0,3` (2 am Sun + Wed) | `CRON_HLTB_SYNC` | Processes up to 100 games per run; stale after 90 days; recently launched unmatched games first |
+| `review-enrichment` | `0 4 * * 0` (4 am Sunday) | `CRON_REVIEW_SYNC` | Processes up to 100 games per run; stale after 30 days |
+| `steam-playtime` | `30 2 * * *` (2:30 am daily) | `CRON_STEAM_PLAYTIME_SYNC` | Samples reviewer playtime for up to 50 wishlisted games; re-samples weekly for 90 days after launch |
+| `metadata-refresh` | `0 6 * * *` (6 am daily) | `CRON_METADATA_REFRESH` | Release, Early Access and review fields for 100 games per run; recently launched games first |
 | `database-backup` | `0 4 * * *` (4 am daily) | `CRON_BACKUP` | Uses `better-sqlite3` `.backup()` for WAL-safe atomic copy |
 | `snapshot-prune` | `0 3 1 * *` (3 am on the 1st) | none | Deletes playtime snapshots older than 180 days; price history is never pruned |
 | `health-summary` | `0 9 * * 1` (9 am Monday) | none | Sends weekly sync health digest to Discord |
