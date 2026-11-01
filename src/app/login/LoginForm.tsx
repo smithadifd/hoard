@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import authClient from '@/lib/auth-client';
 
 export function LoginForm() {
   const router = useRouter();

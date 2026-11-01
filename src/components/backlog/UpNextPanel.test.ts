@@ -11,7 +11,7 @@ import {
   UP_NEXT_BUCKET_BG,
   UP_NEXT_BUCKET_LABEL,
   type UpNextItem,
-} from './UpNextPanel';
+} from './upNextQueue';
 
 const ALL_BUCKETS: UpNextBucket[] = ['continue', 'finish-soon', 'start-fresh', 'drop'];
 

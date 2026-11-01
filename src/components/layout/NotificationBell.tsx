@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { NotificationPanel } from './NotificationPanel';
-import { DealDigestModal, type DealDigestGame } from '@/components/notifications/DealDigestModal';
+import { DealDigestModal } from '@/components/notifications/DealDigestModal';
+import type { DealDigestGame } from '@/components/notifications/parseDigestGames';
 import type { NotificationRow } from '@/lib/notifications/types';
 
 const UNREAD_POLL_MS = 30_000;
