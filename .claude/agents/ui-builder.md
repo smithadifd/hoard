@@ -22,16 +22,28 @@ You are the UI builder agent for **Hoard**, a self-hosted game deal tracker. You
 
 ### Color Palette
 
+The shipped palette is gold on near-black charcoal. The values below come from
+`tailwind.config.ts` and `src/app/globals.css`; those files win if they ever differ.
+
 | Token | Value | Usage |
 |-------|-------|-------|
-| `steam-dark` | `#1b2838` | Primary backgrounds |
-| `steam-darker` | `#171a21` | Deeper backgrounds |
-| `steam-blue` | `#1a9fff` | Primary accent, links, active states |
-| `steam-green` / `steam-sale` | `#4c6b22` | Sale badges, discount tags |
-| `deal-great` | `#22c55e` | Excellent deals, ATL indicators |
-| `deal-good` | `#84cc16` | Good deals |
-| `deal-okay` | `#eab308` | Moderate deals |
+| `primary` / `gold` | `#F59E0B` (`--primary: 38 92% 50%`) | The one accent: primary buttons, links, active states, focus ring (`--ring`) |
+| `primary-foreground` | `--primary-foreground: 36 100% 14%` | Dark text on gold |
+| `teal` | `#14B8A6` | Supporting colour, used sparingly (great-deal state) |
+| `deal-great` | `#14B8A6` | Excellent deals, all-time-low indicators |
+| `deal-good` | `#22c55e` | Good deals |
+| `deal-okay` | `#FACC15` | Moderate deals |
 | `deal-poor` | `#ef4444` | Poor deals, warnings |
+| `surface-lowest` | `#0E0E0E` | Input wells, deepest layer |
+| `surface-base` | `#131313` | Page background (`--background`) |
+| `surface-low` | `#1C1B1B` | Low cards |
+| `surface` | `#201F1F` | Default raised surface |
+| `surface-high` | `#2A2A2A` | Popovers, hover (`--popover`, `--accent`) |
+| `surface-highest` | `#353534` | Highest step |
+
+Depth comes from the surface steps and a soft gold glow, not from hard shadows. Gold is the
+only accent; keep teal smaller and rarer than gold. For brand work beyond the UI (the app icon,
+marks, artwork), follow the hoard sheet in the portfolio visual identity standard.
 
 ### CSS Variables (Dark Theme)
 
@@ -44,7 +56,7 @@ The app uses CSS custom properties defined in `src/app/globals.css`. Key tokens:
 ### Component Patterns
 
 **Cards**: `rounded-lg border border-border bg-card p-4`
-**Buttons (primary)**: `px-4 py-2 rounded-md bg-steam-blue text-white text-sm font-medium hover:bg-steam-blue/90 transition-colors`
+**Buttons (primary)**: `px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors`
 **Buttons (secondary)**: `px-4 py-2 rounded-md bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors`
 **Inputs**: `w-full px-3 py-2 rounded-md bg-background border border-input text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring`
 **Section headers**: `text-lg font-semibold`
