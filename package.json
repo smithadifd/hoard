@@ -34,7 +34,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.7",
     "@serwist/turbopack": "^9.5.13",
-    "@swc/helpers": "0.5.23",
+    "@swc/helpers": "0.5.24",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^26.6.6",
     "@types/node-cron": "^3.0.11",
