@@ -1,0 +1,11 @@
+{
+  "advisories": [
+    {
+      "ghsa": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "reason": "Test fixture: unreachable, patterns come from build config only.",
+      "added": "2026-11-18",
+      "expires": "2026-12-31"
+    }
+  ]
+}
