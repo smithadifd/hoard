@@ -2,5 +2,6 @@
   "error": {
     "code": "ENOTFOUND",
     "summary": "request to registry failed"
-  }
+  },
+  "vulnerabilities": {}
 }

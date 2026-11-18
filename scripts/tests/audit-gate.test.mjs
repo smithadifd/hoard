@@ -90,8 +90,30 @@ test('high advisory without a GHSA id: fail', () => {
 });
 
 test('npm audit error output: could not verify (exit 2)', () => {
+  // The fixture also carries a vulnerabilities object, so only the error check can refuse it.
   const { code, out } = run('npm-error.json');
   assert.equal(code, 2, out);
+  assert.match(out, /audit gate: ERROR npm audit reported an error/);
+});
+
+test('advisory with an unknown severity: fail closed', () => {
+  const { code, out } = run('unknown-severity.json');
+  assert.equal(code, 1, out);
+  assert.match(out, /BLOCKING: GHSA-hjkm-npqr-stvw in left-pad \(severe\), not allowlisted/);
+});
+
+test('high package entry with one dangling via branch: fail', () => {
+  // The other branch reaches the allowlisted high advisory, so only the dangling branch decides.
+  const { code, out } = run('partly-dangling-via.json');
+  assert.equal(code, 1, out);
+  assert.match(out, /BLOCKING: package fdir \(high\), no high or critical advisory found/);
+});
+
+test('high package entry whose chain reaches only a moderate advisory: fail', () => {
+  const { code, out } = run('high-package-moderate-chain.json');
+  assert.equal(code, 1, out);
+  assert.match(out, /BLOCKING: package esbuild-wrapper \(high\), no high or critical advisory found/);
+  assert.match(out, /audit gate: FAIL \(1 blocking/);
 });
 
 test('malformed allowlist entry: could not verify (exit 2)', () => {
@@ -100,6 +122,27 @@ test('malformed allowlist entry: could not verify (exit 2)', () => {
   assert.equal(code, 2, out);
   assert.match(out, /"reason" is required/);
 });
+
+for (const [name, entry, key] of [
+  ['impossible expiry date', { expires: '2026-13-40' }, 'expires'],
+  ['missing expiry date', { expires: undefined }, 'expires'],
+  ['impossible added date', { added: '2026-02-30' }, 'added'],
+]) {
+  test(`malformed allowlist date (${name}): could not verify (exit 2)`, () => {
+    const list = tempAllowlist([
+      {
+        ghsa: 'GHSA-fc5q-39xc-vjpf',
+        reason: 'Test fixture.',
+        added: '2026-11-18',
+        expires: '2026-12-31',
+        ...entry,
+      },
+    ]);
+    const { code, out } = run('allowlisted-only.json', { list });
+    assert.equal(code, 2, out);
+    assert.match(out, new RegExp(`"${key}" must be a YYYY-MM-DD date`));
+  });
+}
 
 test('date override without --input is refused (exit 2)', () => {
   const { code, out } = run('allowlisted-only.json', { input: false });
