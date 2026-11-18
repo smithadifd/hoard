@@ -206,9 +206,10 @@ sync, queries) and route input/output. `npm test` must be green before a PR; `np
 
 Release class: versioned
 
-Pull requests are squash-merged, and the squash-merge title is a Conventional Commit. The
-`.github/workflows/pr-title.yml` check enforces this on pull requests, because release-please derives
-the version and `CHANGELOG.md` from those titles.
+Pull requests are squash-merged, and the squash-merge title is a Conventional Commit, because
+release-please derives the version and `CHANGELOG.md` from those titles. The
+`.github/workflows/pr-title.yml` check reports on every pull request whether its title is one; it
+blocks merges only once the owner makes it a required check on `main`.
 
 Releases are cut by release-please (`.github/workflows/release-please.yml`,
 `release-please-config.json`, `.release-please-manifest.json`). It keeps a release pull request open
