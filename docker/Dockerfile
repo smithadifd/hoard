@@ -6,13 +6,16 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+# --ignore-scripts: better-sqlite3 13 ships prebuilt binaries (incl. musl), but npm 10 in
+# node:22-alpine still runs node-gyp for it and fails (no python/make/g++). No other
+# dependency needs an install script to run.
+RUN npm ci --only=production --ignore-scripts
 
 # --- Builder ---
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY . .
 # Create data directory for SQLite
 RUN mkdir -p /app/data
