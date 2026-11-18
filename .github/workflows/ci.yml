@@ -27,7 +27,9 @@ jobs:
         run: npm ci
 
       - name: Security audit
-        run: npm audit --audit-level=high --omit=dev
+        # Fails on any high or critical advisory in the production tree that is
+        # not an unexpired entry in .github/audit-allowlist.json (matched by GHSA id).
+        run: node scripts/audit-gate.mjs
 
       - name: Lint
         run: npm run lint
@@ -37,6 +39,9 @@ jobs:
 
       - name: Test backup script
         run: bash scripts/tests/test-backup-container-db.sh
+
+      - name: Test audit gate
+        run: node --test scripts/tests/audit-gate.test.mjs
 
       - name: Build
         run: npm run build
