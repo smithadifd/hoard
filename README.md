@@ -93,7 +93,7 @@ cp .env.example .env.production
 docker compose up -d
 ```
 
-For production deployment behind a reverse proxy, see `docker-compose.prod.yml` and the [self-hosting guide](https://smithadifd.github.io/hoard/self-hosting/).
+For production deployment behind a reverse proxy, see `docker-compose.prod.yml` and the [self-hosting guide](https://smithadifd.github.io/hoard/self-hosting/). Versioned releases and `CHANGELOG.md` record what changed, while deploys stay from `main` (via `scripts/deploy.sh`) and a release does not deploy anything.
 
 ## Configuration
 

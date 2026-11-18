@@ -36,8 +36,10 @@ for the full environment-variable reference.
    npm run build
    ```
 5. Use [Conventional Commit](https://www.conventionalcommits.org/) messages (`feat:`, `fix:`,
-   `docs:`, `refactor:`, `chore:`).
-6. Open a PR with a short summary and a test plan. CI runs "Lint & Build" and "Docker Build".
+   `docs:`, `refactor:`, `chore:`). The PR title must also be a Conventional Commit, because it
+   becomes the squash-merge commit title (checked in CI).
+6. Open a PR with a short summary and a test plan. CI runs "Lint & Build", "Docker Build", and the
+   PR title check.
 
 ## A few things that will save you time
 
