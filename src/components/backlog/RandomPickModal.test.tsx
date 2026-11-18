@@ -91,6 +91,16 @@ describe('RandomPickModal', () => {
     expect(screen.getByRole('heading', { name: 'Second Pick' })).toBeTruthy();
   });
 
+  it('lands immediately when the candidates shrink below 3 mid-spin', () => {
+    const { rerender } = renderModal();
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(landed()).toBe(false);
+
+    rerender({ candidates: candidates.slice(0, 2) });
+    expect(landed()).toBe(true);
+    expect(screen.getByRole('heading', { name: 'Final Pick' })).toBeTruthy();
+  });
+
   it('restarts the spin when the final pick changes, keeping the previous display until the first tick', () => {
     const { rerender } = renderModal();
     act(() => { vi.advanceTimersByTime(2000); });
