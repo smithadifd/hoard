@@ -40,6 +40,18 @@ const eslintConfig = defineConfig([
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+  // eslint-config-next 16.4 turned on three React Compiler rules from
+  // eslint-plugin-react-hooks 7 that flag existing, working patterns in 6 files
+  // (setState in effects, ref reads in render, component defined in render).
+  // Off until those call sites are refactored in a dedicated change; the other
+  // react-hooks rules stay on.
+  {
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/static-components': 'off',
+    },
+  },
   // Allow console.log in server-side code
   {
     files: [
