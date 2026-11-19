@@ -16,9 +16,35 @@ interface RandomPickModalProps {
 }
 
 export function RandomPickModal({ finalPick, candidates, open, onClose, onReroll }: RandomPickModalProps) {
-  const [phase, setPhase] = useState<'spinning' | 'slowing' | 'landed'>('spinning');
-  const [displayGame, setDisplayGame] = useState<EnrichedGame | null>(null);
+  // Not enough games for an animation: skip straight to the result.
+  const skipsAnimation = open && finalPick !== null && candidates.length < 3;
+
+  const [phase, setPhase] = useState<'spinning' | 'slowing' | 'landed'>(
+    skipsAnimation ? 'landed' : 'spinning',
+  );
+  const [displayGame, setDisplayGame] = useState<EnrichedGame | null>(
+    skipsAnimation ? finalPick : null,
+  );
   const animationRef = useRef<{ cleanup: () => void } | null>(null);
+
+  // Restart the phase whenever the modal opens or the pick/candidates change. This is
+  // adjusted during render (rather than in the effect below) so the stale phase is
+  // never painted. displayGame is deliberately not cleared: the previous game stays
+  // on screen until the first animation tick.
+  const [prevInputs, setPrevInputs] = useState({ open, finalPick, candidates });
+  if (
+    prevInputs.open !== open ||
+    prevInputs.finalPick !== finalPick ||
+    prevInputs.candidates !== candidates
+  ) {
+    setPrevInputs({ open, finalPick, candidates });
+    if (skipsAnimation) {
+      setDisplayGame(finalPick);
+      setPhase('landed');
+    } else {
+      setPhase('spinning');
+    }
+  }
 
   // Run animation when modal opens or finalPick changes
   useEffect(() => {
@@ -29,14 +55,9 @@ export function RandomPickModal({ finalPick, candidates, open, onClose, onReroll
       animationRef.current.cleanup();
     }
 
-    // Not enough games for animation — skip to result
-    if (candidates.length < 3) {
-      setDisplayGame(finalPick);
-      setPhase('landed');
-      return;
-    }
+    // Landed state for this case is set during render above
+    if (candidates.length < 3) return;
 
-    setPhase('spinning');
     let i = 0;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const intervals: ReturnType<typeof setInterval>[] = [];

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Search, Loader2, Check } from 'lucide-react';
 import { useHltbSearch } from '@/hooks/useHltbSearch';
 import type { HLTBSearchResult } from '@/hooks/useHltbSearch';
@@ -21,12 +21,16 @@ export function TriageHltbEditor({ gameId, gameTitle, onSaved, compact }: Triage
 
   const mainRef = useRef<HTMLInputElement>(null);
 
-  // Show manual entry when search returns no results
-  useEffect(() => {
+  // Show manual entry when search returns no results. This latches on a change of
+  // searchError/results.length (not on every render), so the user can hide manual
+  // entry again without it immediately re-opening.
+  const [prevSearch, setPrevSearch] = useState({ searchError, resultCount: results.length });
+  if (prevSearch.searchError !== searchError || prevSearch.resultCount !== results.length) {
+    setPrevSearch({ searchError, resultCount: results.length });
     if (searchError && results.length === 0) {
       setShowManual(true);
     }
-  }, [searchError, results.length]);
+  }
 
   const handleSearch = async () => {
     setSelectedResult(null);
