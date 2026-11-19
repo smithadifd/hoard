@@ -108,7 +108,7 @@ npm run db:seed          # seed dev data (scripts/seed.ts)
 ```
 
 There is no `tsc`-only script; `npm run build` is the type-check gate. CI runs lint, test, and build
-(see `.github/workflows/ci.yml`).
+(see `.github/workflows/ci.yml`); a separate check validates the pull request title.
 
 ## Repo map
 
@@ -192,7 +192,8 @@ JSON strings.
   `types.ts`.
 - **Next.js 16:** route/page `params` are a `Promise` — `await params` before use.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Feature
-  branches off `main` (the repo has branch protection — no direct pushes to `main`).
+  branches off `main` (the repo has branch protection — no direct pushes to `main`). The pull request
+  title must be one too; see [Releases](#releases).
 
 ## Testing
 
@@ -200,6 +201,22 @@ Vitest. Tests are co-located as `*.test.ts` / `*.test.tsx` next to the code, for
 automated test suite. Match the nearest existing test's structure. Cover business logic (scoring,
 sync, queries) and route input/output. `npm test` must be green before a PR; `npm run lint` and
 `npm run build` must also pass.
+
+## Releases
+
+Release class: versioned
+
+Pull requests are squash-merged, and the squash-merge title is a Conventional Commit, because
+release-please derives the version and `CHANGELOG.md` from those titles. The
+`.github/workflows/pr-title.yml` check reports on every pull request whether its title is one; it
+blocks merges only once the owner makes it a required check on `main`.
+
+Releases are cut by release-please (`.github/workflows/release-please.yml`,
+`release-please-config.json`, `.release-please-manifest.json`). It keeps a release pull request open
+on `main`; merging that pull request is the owner's decision and is what tags `vX.Y.Z`. Agents never
+merge it.
+
+Deploys stay from `main` by `scripts/deploy.sh`, unchanged: a release or tag deploys nothing.
 
 ## Critical gotchas — read before changing these areas
 
