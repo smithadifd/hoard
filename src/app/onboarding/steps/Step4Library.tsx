@@ -28,8 +28,11 @@ const INITIAL: ProgressState = {
   error: null,
 };
 
+const RUNNING: ProgressState = { ...INITIAL, phase: 'library', message: 'Pulling owned games…' };
+
 export function Step4Library({ step, totalSteps, setShared, onNext, onBack }: StepProps) {
-  const [progress, setProgress] = useState<ProgressState>(INITIAL);
+  // The sync starts on mount, so the first render already shows the running state.
+  const [progress, setProgress] = useState<ProgressState>(RUNNING);
   const abortRef = useRef<AbortController | null>(null);
 
   const runStream = useCallback(
@@ -70,61 +73,71 @@ export function Step4Library({ step, totalSteps, setShared, onNext, onBack }: St
     [],
   );
 
-  const runSyncs = useCallback(async () => {
-    abortRef.current?.abort();
+  // Bumping `runId` (Retry) re-runs the sync effect; its cleanup aborts the previous
+  // run, so there is never more than one run in flight.
+  const [runId, setRunId] = useState(0);
+
+  // Runs on mount and on every Retry. Progress is already in the running state at
+  // that point (initial state on mount, reset by `handleRetry`), so the effect does
+  // no synchronous setState before the sync starts.
+  useEffect(() => {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setProgress({ ...INITIAL, phase: 'library', message: 'Pulling owned games…' });
-
-    try {
-      const libraryCount = await runStream('library', controller.signal);
-      setProgress((prev) => ({
-        ...prev,
-        phase: 'wishlist',
-        libraryCount,
-        message: 'Pulling wishlist…',
-        processed: 0,
-        total: 0,
-      }));
-
-      const wishlistCount = await runStream('wishlist', controller.signal);
-      setProgress((prev) => ({
-        ...prev,
-        phase: 'done',
-        wishlistCount,
-        message: '',
-      }));
-      setShared({ libraryCount });
-
-      // Stamp steamConnectedAt if it wasn't already set in Step 2 (defensive)
+    const runSyncs = async () => {
       try {
-        await fetch('/api/onboarding/state', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ steamConnectedAt: new Date().toISOString() }),
-        });
-      } catch {
-        // Non-fatal — the validate-steam route already stamps this in the happy path
-      }
-    } catch (err) {
-      if (controller.signal.aborted) {
-        setProgress((prev) => ({ ...prev, phase: 'idle', message: 'Cancelled' }));
-        return;
-      }
-      const message = err instanceof Error ? err.message : 'Sync failed';
-      setProgress((prev) => ({ ...prev, phase: 'error', error: message }));
-    }
-  }, [runStream, setShared]);
+        const libraryCount = await runStream('library', controller.signal);
+        setProgress((prev) => ({
+          ...prev,
+          phase: 'wishlist',
+          libraryCount,
+          message: 'Pulling wishlist…',
+          processed: 0,
+          total: 0,
+        }));
 
-  // Auto-start on first mount
-  useEffect(() => {
+        const wishlistCount = await runStream('wishlist', controller.signal);
+        setProgress((prev) => ({
+          ...prev,
+          phase: 'done',
+          wishlistCount,
+          message: '',
+        }));
+        setShared({ libraryCount });
+
+        // Stamp steamConnectedAt if it wasn't already set in Step 2 (defensive)
+        try {
+          await fetch('/api/onboarding/state', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steamConnectedAt: new Date().toISOString() }),
+          });
+        } catch {
+          // Non-fatal — the validate-steam route already stamps this in the happy path
+        }
+      } catch (err) {
+        if (controller.signal.aborted) {
+          setProgress((prev) => ({ ...prev, phase: 'idle', message: 'Cancelled' }));
+          return;
+        }
+        const message = err instanceof Error ? err.message : 'Sync failed';
+        setProgress((prev) => ({ ...prev, phase: 'error', error: message }));
+      }
+    };
+
     void runSyncs();
     return () => {
-      abortRef.current?.abort();
+      controller.abort();
     };
+    // setShared is read from the render that starts the run; re-running the sync
+    // whenever the parent re-renders would restart the import.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [runId]);
+
+  const handleRetry = () => {
+    setProgress(RUNNING);
+    setRunId((id) => id + 1);
+  };
 
   const handleCancel = () => {
     abortRef.current?.abort();
@@ -148,7 +161,7 @@ export function Step4Library({ step, totalSteps, setShared, onNext, onBack }: St
           {isDone ? (
             <PrimaryButton onClick={onNext}>Continue</PrimaryButton>
           ) : isError ? (
-            <PrimaryButton onClick={runSyncs}>Retry</PrimaryButton>
+            <PrimaryButton onClick={handleRetry}>Retry</PrimaryButton>
           ) : (
             <SecondaryButton onClick={handleCancel} disabled={!isRunning}>
               <X className="mr-2 h-4 w-4" /> Cancel

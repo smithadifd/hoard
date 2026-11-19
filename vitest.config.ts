@@ -8,7 +8,8 @@ export default defineConfig({
     // Pin the timezone so tests that evaluate server-local time (the daily digest gate,
     // quiet hours) are deterministic across dev machines and CI (GitHub runners are UTC).
     env: { TZ: 'UTC' },
-    include: ['src/**/*.test.ts', 'eslint-rules/**/*.test.ts'],
+    // Component tests (.tsx) opt into jsdom per file with `// @vitest-environment jsdom`.
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'eslint-rules/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/lib/**/*.ts'],

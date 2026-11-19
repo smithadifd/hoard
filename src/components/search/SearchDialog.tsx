@@ -68,9 +68,10 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   }, [fetchResults]);
 
   // Reset state when dialog closes (focus on open is handled via onOpenAutoFocus on Content)
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (!open) {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
       setQuery('');
       setResults(null);
       setError(null);
@@ -78,6 +79,11 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       setLookupError(null);
       setPendingAppId(null);
     }
+  }
+
+  // A pending debounced search must not fire after the dialog closes.
+  useEffect(() => {
+    if (!open && debounceRef.current) clearTimeout(debounceRef.current);
   }, [open]);
 
   // Cleanup on unmount

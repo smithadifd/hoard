@@ -35,17 +35,27 @@ export function useInfiniteScroll({
 
   const hasMore = games.length < total;
 
-  // Keep refs in sync with state
-  gamesLengthRef.current = games.length;
-  totalRef.current = total;
-
-  // Reset when initialGames changes (filter change causes server re-render)
-  useEffect(() => {
+  // Reset when initialGames changes (filter change causes server re-render).
+  // Adjusting state during render (rather than in an effect) avoids rendering
+  // the stale list for a frame before the reset lands.
+  const [prevInitial, setPrevInitial] = useState({ games: initialGames, total: initialTotal });
+  if (prevInitial.games !== initialGames || prevInitial.total !== initialTotal) {
+    setPrevInitial({ games: initialGames, total: initialTotal });
     setGames(initialGames);
     setTotal(initialTotal);
+  }
+
+  // Keep the fetch guard's refs in sync with state. Fetches only start from
+  // IntersectionObserver callbacks, which fire after commit, so the guard
+  // always sees the committed values.
+  useEffect(() => {
+    gamesLengthRef.current = games.length;
+    totalRef.current = total;
+  }, [games.length, total]);
+
+  // Paging restarts from the first page whenever the initial data changes.
+  useEffect(() => {
     pageRef.current = 1;
-    gamesLengthRef.current = initialGames.length;
-    totalRef.current = initialTotal;
   }, [initialGames, initialTotal]);
 
   const fetchNextPage = useCallback(async () => {

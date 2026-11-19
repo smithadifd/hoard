@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { createElement, useCallback, useRef, useState } from 'react';
 import { Loader2, Play, X } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
 import { readSSEStream } from '@/lib/utils/sse';
 import { iconForSource } from '@/lib/sync/source-icons';
 import type { SourceEntry, Health } from '@/lib/sync/api-types';
+
+const SOURCE_ICON_CLASS = 'h-4 w-4 text-muted-foreground shrink-0';
 
 const HEALTH_DOT: Record<Health, string> = {
   healthy: 'bg-emerald-500',
@@ -66,7 +68,6 @@ interface SourceHealthCardProps {
 }
 
 export function SourceHealthCard({ source, onOpen, onRunComplete }: SourceHealthCardProps) {
-  const Icon = iconForSource(source.source);
   const { rate, attempted } = successRate14d(source.recentStats);
   const taskRunning = source.task?.isRunning ?? false;
 
@@ -172,7 +173,7 @@ export function SourceHealthCard({ source, onOpen, onRunComplete }: SourceHealth
     >
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+          {createElement(iconForSource(source.source), { className: SOURCE_ICON_CLASS })}
           <span className="font-medium text-sm truncate">{source.label}</span>
         </div>
         {source.supportsManualRun &&
