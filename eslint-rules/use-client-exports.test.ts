@@ -11,6 +11,18 @@ const fromNext = createRequire(
 );
 const tsParser = fromNext('typescript-eslint').parser;
 
+// Exercise parsers that leave directive recognition to the source-text fallback.
+const markerlessParser = {
+  ...tsParser,
+  parseForESLint(code: string, options: object) {
+    const parsed = tsParser.parseForESLint(code, options);
+    for (const statement of parsed.ast.body) {
+      delete statement.directive;
+    }
+    return parsed;
+  },
+};
+
 const tester = new RuleTester({
   languageOptions: {
     parser: tsParser,
@@ -35,6 +47,24 @@ tester.run('use-client-exports', rule as Rule.RuleModule, {
     {
       name: 'use client after a non-directive statement is not a client module',
       code: "const x = 1;\n'use client';\nexport function helper() {}\n",
+    },
+    {
+      name: 'parenthesized string ends the directive prologue',
+      code: "('x'); 'use client'; export function helper() {}",
+    },
+    {
+      name: 'parenthesized use client is not a directive',
+      code: "('use client'); export function helper() {}",
+    },
+    {
+      name: 'without markers: parenthesized string ends the prologue',
+      languageOptions: { parser: markerlessParser },
+      code: "('x'); 'use client'; export function helper() {}",
+    },
+    {
+      name: 'without markers: parenthesized use client is not a directive',
+      languageOptions: { parser: markerlessParser },
+      code: "('use client'); export function helper() {}",
     },
     {
       name: 'export function PascalCase component',
@@ -107,6 +137,18 @@ tester.run('use-client-exports', rule as Rule.RuleModule, {
     },
   ],
   invalid: [
+    {
+      name: 'without markers: use strict then use client checks helpers',
+      languageOptions: { parser: markerlessParser },
+      code: "'use strict'; 'use client'; export function helper() {}",
+      errors: [{ messageId: 'nonComponentExport', data: { name: 'helper' } }],
+    },
+    {
+      name: 'without markers: first-statement use client checks helpers',
+      languageOptions: { parser: markerlessParser },
+      code: "'use client'; export function helper() {}",
+      errors: [{ messageId: 'nonComponentExport', data: { name: 'helper' } }],
+    },
     {
       name: 'invalid helper after use strict then use client prologue',
       code: "'use strict';\n'use client';\nexport function helper() {}\n",
