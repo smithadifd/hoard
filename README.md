@@ -40,6 +40,8 @@ Try Hoard without installing anything: **[hoard.smithadifd.com](https://hoard.sm
 
 Login with `demo@example.com` / `demo1234!` — data resets weekly, mutations are disabled.
 
+Demo exports retain public catalog and price data, replace library relationships with synthetic ownership, and remove personal history, settings, and credentials.
+
 ## What It Does
 
 - **Library sync** — imports your Steam library and wishlist automatically
