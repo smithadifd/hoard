@@ -43,21 +43,34 @@ function isUseClientDirective(node) {
   return expr.type === 'Literal' && expr.value === 'use client';
 }
 
-function isDirectivePrologueStatement(node) {
+function isDirectivePrologueStatement(node, sourceCode) {
   if (!node || node.type !== 'ExpressionStatement') {
     return false;
   }
   const expr = node.expression;
-  return expr.type === 'Literal' && typeof expr.value === 'string';
+  if (expr.type !== 'Literal' || typeof expr.value !== 'string') {
+    return false;
+  }
+  if (typeof node.directive === 'string') {
+    return true;
+  }
+  // Parsers without directive markers still include wrapping parentheses in
+  // the statement's source. Unreadable source ends the prologue.
+  try {
+    const text = sourceCode.getText(node);
+    return text[0] === "'" || text[0] === '"';
+  } catch {
+    return false;
+  }
 }
 
-function isUseClientModule(program) {
+function isUseClientModule(program, sourceCode) {
   for (const node of program.body) {
+    if (!isDirectivePrologueStatement(node, sourceCode)) {
+      return false;
+    }
     if (isUseClientDirective(node)) {
       return true;
-    }
-    if (!isDirectivePrologueStatement(node)) {
-      return false;
     }
   }
   return false;
@@ -143,7 +156,7 @@ const rule = {
   },
   create(context) {
     const sourceCode = context.sourceCode ?? context.getSourceCode();
-    if (!isUseClientModule(sourceCode.ast)) {
+    if (!isUseClientModule(sourceCode.ast, sourceCode)) {
       return {};
     }
     return {
