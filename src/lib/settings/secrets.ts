@@ -1,5 +1,5 @@
 /**
- * Field-level encryption for secret settings values (Queue S · S12 · MC-3).
+ * Field-level encryption for secret settings values.
  *
  * The `settings` table stores a handful of secret values (Steam / ITAD API keys
  * and both Discord webhook URLs) as plaintext JSON. This module encrypts those

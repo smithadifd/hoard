@@ -10,16 +10,14 @@ self-contained; read it first. Personal/secret config lives in the gitignored `C
 
 ## Notes for Claude
 
-- Custom agents in `.claude/agents/` (invoke `/agent <name>`): `phase-implementer`, `api-integrator`,
-  `ui-builder`, `db-assistant`, `pre-commit-check`, `code-reviewer`, `plan-generator`. Each reads
-  `AGENTS.md` for context. (`audit-orchestrator` is deprecated — use `audit-sweep`.)
-- Full-codebase audits: the multi-agent `audit-sweep` skill (or
-  `Workflow({ scriptPath: ".claude/workflows/audit-sweep.js" })`) fans out one read-only sub-agent
-  per concern, writes `plans/NN-*.md`, and updates `plans/README.md` + `memory/audit-state.md`. Use
-  `plan-generator` for a quick single-area pass. `plans/` is gitignored.
-- Run `/review` (or the `reviewer`/`code-reviewer` agent) on the diff before declaring work done;
-  apply mechanical fixes silently, surface real questions.
+- Project-specific tooling is documented in `.claude/agents/`; each entry reads
+  `AGENTS.md` for project context.
+- Full-codebase audits use `.claude/workflows/audit-sweep.js`, which checks concerns
+  in parallel, writes `plans/NN-*.md`, and updates `plans/README.md` and audit progress.
+  For a single-area audit, use `.claude/agents/plan-generator.md`. `plans/` is gitignored.
+- Run `/review` on the diff before declaring work done; apply mechanical fixes
+  silently, surface real questions.
 - Doc updates (CLAUDE.md / AGENTS.md / MEMORY.md) ship in the same PR as the code.
 - Conventional commits; never auto-push; confirm before destructive ops. No emojis unless asked.
-- End-of-session ship steps (deploy script, boot-migration rule) are deploy-specific
-  and live in the gitignored `CLAUDE.local.md`, not this committed shim.
+- Deployment instructions (deploy script, boot-migration rule) live in the gitignored
+  `CLAUDE.local.md`, not this committed file.

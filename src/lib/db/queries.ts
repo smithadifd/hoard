@@ -1668,7 +1668,7 @@ function applyValueReceivedToGame(
     interestRatedAt: string | null;
     pricePaidSuggested: number | null;
     pricePaidSuggestionDismissedAt: string | null;
-    // Release status — MUST be threaded into getEffectivePlaytimeHours below (AY11):
+    // Release status — MUST be threaded into getEffectivePlaytimeHours below:
     // without it, an unreleased HLTB-less game silently borrows the Steam-review-median
     // fallback here even though effectiveHoursExpr (the SQL twin, queries.ts ~1731) and
     // resolveEffectivePlaytime's own isReleased contract (engine.ts) both suppress it.
@@ -1729,14 +1729,13 @@ export function getEnrichedGames(
   const dphTargetExpr = buildDphTargetSql(games.reviewScore, dphT);
   // Effective playtime basis (hours) — mirrors resolveEffectivePlaytime / getEffectivePlaytimeHours,
   // the SAME resolver getValueReceivedOverview (the donut) and applyValueReceivedToGame (the
-  // per-card badge) call, AND now (AY11) pass isReleased into, exactly like this SQL does: an
+  // per-card badge) call with isReleased, exactly like this SQL does: an
   // explicit steam_reviews preference takes the Steam-review median (then HLTB); otherwise HLTB,
   // falling back to the median when HLTB is missing — UNLESS the game is unreleased (isReleased =
   // 0) and has no HLTB, in which case the fallback is suppressed (an unreleased game's Steam
-  // playtime median is noise, not a playtime estimate — see engine.ts's isReleased doc). Before
-  // AY11, the donut/badge omitted isReleased when calling the shared resolver, so an unreleased
-  // HLTB-less game with a review median silently read a real tier ("Value Exceeded") on its card
-  // AND in the donut while this SQL filter — already correctly gated — excluded it from every tier.
+  // playtime median is noise, not a playtime estimate — see engine.ts's isReleased doc).
+  // Omitting isReleased from the shared resolver would let the donut and badge show a
+  // real tier for an unreleased HLTB-less game while this SQL excludes it from every tier.
   // steam_playtime_median is stored in hours, like hltb_main.
   const effectiveHoursExpr = sql`(CASE
     WHEN ${userGames.playtimeSource} = 'steam_reviews' THEN COALESCE(${games.steamPlaytimeMedian}, ${games.hltbMain})
@@ -3765,7 +3764,7 @@ export function runSnapshotPrune(): { deletedPlaytime: number } {
 }
 
 // ============================================
-// Up Next — the small "what should I play now?" queue (Queue S S9 · issue #12/#13)
+// Up Next — the small "what should I play now?" queue (issues #12 and #13)
 // ============================================
 
 export interface UpNextQueueEntry {
@@ -3838,9 +3837,9 @@ export interface UpNextComputed {
 
 /**
  * Assemble the per-game facts the Up-Next surface needs: effective playtime
- * basis (R14 — never raw hltbMain), snapshot-derived momentum + recency deltas,
- * and dormancy. Score is filled in by the caller so both the baseline (step b)
- * and the learned ranker (step c) can reuse this exact candidate assembly.
+ * basis (never raw hltbMain), snapshot-derived momentum + recency deltas,
+ * and dormancy. Score is filled in by the caller so both the baseline
+ * and the learned ranker can reuse this exact candidate assembly.
  */
 function computeUpNextFacts(userId: string): UpNextComputed[] {
   const db = getDb();
@@ -4084,7 +4083,7 @@ export function getUpNextQueue(userId: string, opts: { maxItems?: number } = {})
 }
 
 // ============================================
-// Recommendation events — the implicit learning write path (Queue S S9 step c)
+// Recommendation events — the implicit learning write path
 // ============================================
 
 /**
@@ -4572,7 +4571,7 @@ export function getUnreleasedCount(userId: string): number {
  * (rather than gating on isReleased=false) would have grown this query's
  * result from 194 to 541 rows to reach a single genuinely-stale case — nearly
  * 3x the twice-daily Steam API budget for +346 rows that were never stale.
- * AZ14: this used to scope to isWishlisted only, so an OWNED (non-wishlisted)
+ * Previously this scoped to isWishlisted only, so an OWNED (non-wishlisted)
  * game with a stale-false isReleased flag was never re-checked.
  */
 export function getGamesForReleaseCheck(): Array<{ id: number; steamAppId: number; title: string }> {
@@ -5506,7 +5505,7 @@ export function getValueReceivedOverview(userId: string, filters?: GameFilters):
       reviewScore: games.reviewScore,
       hltbMain: games.hltbMain,
       steamPlaytimeMedian: games.steamPlaytimeMedian,
-      // AY11: threaded into getEffectivePlaytimeHours below so the donut can't
+      // Pass release status into getEffectivePlaytimeHours below so the donut can't
       // silently disagree with the grid's effectiveHoursExpr / the per-card badge
       // on an unreleased, HLTB-less game.
       isReleased: games.isReleased,
@@ -5705,7 +5704,7 @@ export function getDealOutcomeInputs(userId: string): DealOutcomeInput[] {
       store: snap?.store ?? null,
       discountPercent: snap?.discountPercent ?? null,
       dealScore: snap?.dealScore ?? null,
-      // AY11 (third surface): threaded into computeDealOutcome's
+      // Pass release status into computeDealOutcome's
       // getEffectivePlaytimeHours call so an unreleased HLTB-less purchase reads
       // 'unknown', not a Steam-median-derived hit/miss.
       isReleased: r.isReleased === null ? null : r.isReleased === 1,

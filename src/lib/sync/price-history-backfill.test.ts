@@ -163,7 +163,7 @@ describe('price-history-backfill orchestrator', () => {
     expect(result.message).toBe('All eligible games already backfilled');
   });
 
-  // Reach-aware retry pool (S5). Repro case from the ticket: "The Darkside Detective:
+  // Reach-aware retry pool. Repro case: "The Darkside Detective:
   // A Fumble in the Dark", released Apr 15, 2021, Hoard history from 2026-02-06,
   // stamped "backfilled" on 2026-06-01. Now is 2026-09-11 (set in beforeEach).
   describe('stamped-but-short retry pool', () => {

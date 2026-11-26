@@ -2,7 +2,7 @@
 
 /**
  * "Up Next" — small client panel that consumes the already-shipped
- * `GET /api/backlog/recommendations` route (backlog-v2, Queue S S9) and
+ * `GET /api/backlog/recommendations` route and
  * surfaces its 3-5 item queue on the backlog page: one bucket badge
  * (Continue / Finish Soon / Start Fresh / Drop) and one concrete reason per
  * pick. UI only — no bucketing/ranking logic lives here, it's all upstream in

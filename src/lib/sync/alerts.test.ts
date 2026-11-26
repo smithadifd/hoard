@@ -279,7 +279,7 @@ describe('checkPriceAlerts', () => {
     expect(result.stats.succeeded).toBe(1);
   });
 
-  // S7 — the short-history notice is its own digest kind: never a price alert, never the
+  // The short-history notice is its own digest kind: never a price alert, never the
   // ATL roundup. Repro game: launched Apr 15, 2021, history since 2026-02-06.
   it('sends a short-history digest (not a price alert, not the ATL roundup) for the repro game', async () => {
     mockGetAutoAlertCandidates.mockReturnValue([
@@ -1558,8 +1558,8 @@ describe('evaluateAutoAlertCandidates (extraction fidelity)', () => {
 });
 
 // ============================================================================
-// S6 — short-history check replaces an ATL the stored history cannot back.
-// Repro case from the ticket: "The Darkside Detective: A Fumble in the Dark",
+// Short-history check replaces an ATL the stored history cannot back.
+// Repro case: "The Darkside Detective: A Fumble in the Dark",
 // released Apr 15, 2021; Hoard's snapshots begin 2026-02-06 (1758 days later).
 // ============================================================================
 describe('short-history check (S6)', () => {

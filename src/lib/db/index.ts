@@ -404,7 +404,7 @@ export function ensureSchema(sqlite: BetterSqlite3.Database) {
   // after which every ALTER here is a no-op.
   const USER_GAMES_BACKFILL_COLUMNS = [
     // Pre-existing drift (migrations 0002–0016 — wishlist, playtime source,
-    // enjoyment, value-received). Surfaced while verifying the S9 columns.
+    // enjoyment, value-received).
     `ALTER TABLE user_games ADD COLUMN wishlist_removed_at TEXT`,
     `ALTER TABLE user_games ADD COLUMN wishlisted_locally INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE user_games ADD COLUMN wishlisted_at TEXT`,
@@ -418,7 +418,7 @@ export function ensureSchema(sqlite: BetterSqlite3.Database) {
     `ALTER TABLE user_games ADD COLUMN price_paid_at TEXT`,
     `ALTER TABLE user_games ADD COLUMN price_paid_suggested REAL`,
     `ALTER TABLE user_games ADD COLUMN price_paid_suggestion_dismissed_at TEXT`,
-    // Backlog lifecycle (Queue S S9 / migration 0017).
+    // Backlog lifecycle (migration 0017).
     `ALTER TABLE user_games ADD COLUMN completion_status TEXT NOT NULL DEFAULT 'unplayed'`,
     `ALTER TABLE user_games ADD COLUMN backlog_state TEXT`,
     `ALTER TABLE user_games ADD COLUMN priority INTEGER`,

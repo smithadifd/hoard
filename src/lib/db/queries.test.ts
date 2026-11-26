@@ -126,7 +126,7 @@ describe('settings', () => {
 });
 
 // ============================================
-// Settings — secret encryption at rest (Queue S · S12 · MC-3)
+// Settings — secret encryption at rest
 // ============================================
 describe('settings secret encryption (non-bricking)', () => {
   // Read the raw on-disk value, bypassing the decrypt in getSetting.
@@ -971,7 +971,7 @@ describe('value received (owned games)', () => {
     expect(game?.realizedDollarsPerHour).toBeUndefined();
   });
 
-  // Regression (AY11): an owned+played+unreleased game with no HLTB estimate must
+  // Regression: an owned+played+unreleased game with no HLTB estimate must
   // never be graded on a Steam-review-median "playtime" — that data is noise for a
   // game that isn't out (see engine.ts's resolveEffectivePlaytime doc on
   // `isReleased`). This has to hold at every surface the Dashboard reads:
@@ -980,13 +980,11 @@ describe('value received (owned games)', () => {
   //  - the per-card badge (valueReceivedTier/Lens, computed in JS), which — before
   //    this fix — never passed isReleased into getEffectivePlaytimeHours, so it
   //    silently graded the game "Value Exceeded" off the borrowed median while the
-  //    grid filter excluded the very same game. That contradiction (a card claiming
-  //    a tier the filter denies) is the bug AX8's reviewer reproduced on main;
+  //    grid filter excluded the very same game. The card and filter must agree;
   //  - the Dashboard donut (getValueReceivedOverview), the same JS path as the badge;
-  //  - and Deal Outcomes (getDealOutcomeInputs + computeDealOutcome), a THIRD JS call
-  //    site with the identical omission, found by a later review pass on this same
-  //    row: it graded a real predicted $/hr (and a hit/miss verdict) off the
-  //    borrowed median instead of the honest 'unknown' verdict.
+  //  - and Deal Outcomes (getDealOutcomeInputs + computeDealOutcome), which must
+  //    report an honest 'unknown' verdict rather than predicting $/hr or hit/miss
+  //    from the suppressed Steam median.
   //
   // Hand-worked expectation, independent of any implementation: Nebula Frontier is
   // unreleased, has no HLTB main-story estimate, but does have a Steam
@@ -1592,7 +1590,7 @@ describe('getEnrichedGames — Value Received filters (R14)', () => {
     // lens/tier. This pins the SQL filter to the same computation the cards + donut show, so
     // they can never silently disagree. isReleased is omitted here (defaults to unset/released
     // in every spec above) — it only changes behaviour for an unreleased HLTB-less game, which
-    // is covered separately by the AY11 regression test below.
+    // is covered separately by the unreleased-game regression test above.
     const donutBucket = (s: (typeof specs)[number]) => {
       const vr = calculateValueReceived({
         playtimeMinutes: s.mins,
@@ -2501,31 +2499,27 @@ describe('release queries', () => {
 
   describe('getGamesForReleaseCheck', () => {
     it('re-syncs an owned game only when isReleased is explicitly stale-false, never when NULL/unresolved (AZ14 cross-state regression)', () => {
-      // AZ14: the WHERE clause used to scope to `userGames.isWishlisted = true`
+      // The WHERE clause used to scope to `userGames.isWishlisted = true`
       // only. An OWNED (not wishlisted) game whose `isReleased` flag went
       // stale-false was silently skipped forever — never re-synced, never
       // corrected, wrongly stuck in "None".
       //
-      // The naive fix (owned OR wishlisted, no isReleased gate on the owned
-      // leg) was rejected on review: library.ts's sync never populates
-      // isReleased at all, so NULL is the steady-state for most owned games,
-      // not a staleness signal. Measured against a real dev DB, admitting
-      // owned+NULL grew the result 194 -> 541 rows to reach a single
-      // genuinely-stale case. The owned leg must therefore require
+      // Simply admitting all owned games would be too broad: library.ts's sync
+      // never populates isReleased, so NULL is the steady-state for most owned
+      // games, not a staleness signal. The owned leg must therefore require
       // isReleased = false explicitly — NULL stays excluded.
       //
       // This test seeds every relevant (isOwned, isWishlisted, isReleased)
       // combination and asserts the exact literal set of titles returned.
 
-      // Owned only, isReleased = false — THE chartered regression case: must
+      // Owned only, isReleased = false — the stale release-status regression: must
       // be included.
       const ownedStaleFalse = seedGame(testDb, { steamAppId: 100, title: 'Owned Stale-False', isReleased: false });
       seedUserGame(testDb, ownedStaleFalse, { isOwned: true, isWishlisted: false });
 
       // Owned only, isReleased = NULL (unresolved/never synced by library.ts)
-      // — must stay EXCLUDED. This is the flipped assertion from the rejected
-      // wide fix: owned+NULL is the 346-row population that must NOT be swept
-      // in to reach the 1 genuinely-stale game above.
+      // — must stay EXCLUDED. Missing release status alone does not mean the
+      // game was previously known to be unreleased.
       const ownedUnknown = seedGame(testDb, { steamAppId: 150, title: 'Owned Unknown' });
       seedUserGame(testDb, ownedUnknown, { isOwned: true, isWishlisted: false });
 
