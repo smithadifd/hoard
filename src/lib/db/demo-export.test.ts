@@ -4,9 +4,9 @@ import { generateSQLiteDrizzleJson, generateSQLiteMigration } from 'drizzle-kit/
 import { getTableName, isTable } from 'drizzle-orm';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import * as schema from './schema';
 import { PUBLIC_TABLES, SANITIZED_TABLES } from '../../../scripts/export-demo-db.mjs';
 
@@ -29,13 +29,19 @@ async function fixture(): Promise<{ dir: string; source: string; output: string 
   mkdirSync(join(dir, 'scripts'));
   copyFileSync(join(ROOT, 'scripts/export-demo-db.mjs'), join(dir, 'scripts/export-demo-db.mjs'));
   symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'), 'dir');
-  const source = join(dir, 'private.db');
-  const db = new Database(source);
+  mkdirSync(join(dir, 'source'));
+  const source = join(dir, 'source/private.db');
+  const writerPath = join(dir, 'writer.db');
+  const db = new Database(writerPath);
   try {
     const empty = await generateSQLiteDrizzleJson({});
     const current = await generateSQLiteDrizzleJson(schema);
     for (const sql of await generateSQLiteMigration(empty, current)) db.exec(sql);
     db.pragma('foreign_keys = OFF');
+    db.pragma('journal_mode = WAL');
+    db.pragma('wal_autocheckpoint = 0');
+    const mainBeforeSeeds = readFileSync(writerPath);
+    expect(db.prepare('SELECT title FROM games').get()).toBeUndefined();
     db.exec(`INSERT INTO games (id, steam_app_id, title) VALUES (1, 10, 'Public game');
       INSERT INTO tags (id, name, type) VALUES (1, 'Public tag', 'genre');
       INSERT INTO game_tags (game_id, tag_id) VALUES (1, 1);
@@ -56,6 +62,11 @@ async function fixture(): Promise<{ dir: string; source: string; output: string 
       hltb_completionist = ?, hltb_last_updated = ?, last_viewed_at = ?, source = ?, created_at = ?, updated_at = ?`)
       .run(PRIVATE_NUMBER, PRIVATE_NUMBER, PRIVATE_NUMBER, PRIVATE_NUMBER,
         `${PRIVATE}manual-date`, PRIVATE_NUMBER, `${PRIVATE}source`, `${PRIVATE}created`, `${PRIVATE}updated`);
+    expect(readFileSync(writerPath).equals(mainBeforeSeeds), 'fixture rows must remain only in WAL').toBe(true);
+    // Snapshot all three files while the writer is idle, before closing it can
+    // checkpoint. No writer remains on the source copy: a writable exporter
+    // would checkpoint on close, which a still-open writer could conceal.
+    for (const suffix of ['', '-wal', '-shm']) copyFileSync(`${writerPath}${suffix}`, `${source}${suffix}`);
   } finally {
     db.close();
   }
@@ -80,12 +91,16 @@ describe('demo export privacy', () => {
       .toEqual(tables);
   });
 
-  it('removes every private row and credential, replaces personal game data, and leaves the source unchanged', async () => {
+  it('removes every private row and credential, reads WAL-only rows, and leaves source files unchanged', async () => {
     const { dir, source, output } = await fixture();
     const before = readFileSync(source);
+    const walBefore = readFileSync(`${source}-wal`);
+    const filesBefore = readdirSync(dirname(source)).sort();
     const result = runExporter(dir, source);
     expect(result.status, String(result.stderr)).toBe(0);
     expect(readFileSync(source).equals(before), 'source database changed').toBe(true);
+    expect(readdirSync(dirname(source)).sort(), 'source sidecar files changed').toEqual(filesBefore);
+    expect(readFileSync(`${source}-wal`).equals(walBefore), 'source WAL changed').toBe(true);
     const db = new Database(output, { readonly: true });
     try {
       for (const table of PERSONAL_TABLES.filter((name) => name !== 'user_games')) {
@@ -103,6 +118,7 @@ describe('demo export privacy', () => {
         }
       }
       expect(readFileSync(output).includes(Buffer.from(PRIVATE)), 'private bytes survived VACUUM').toBe(false);
+      // This catalog row was seeded after WAL mode began and never checkpointed.
       expect(db.prepare('SELECT title, hltb_manual, hltb_main, last_viewed_at FROM games').get())
         .toEqual({ title: 'Public game', hltb_manual: 0, hltb_main: null, last_viewed_at: null });
       expect(db.prepare('SELECT name FROM tags').get()).toEqual({ name: 'Public tag' });
