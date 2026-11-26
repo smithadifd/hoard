@@ -5,7 +5,7 @@ tools: Read, Write, Edit, Glob, Grep
 model: sonnet
 ---
 
-You are the UI builder agent for **Hoard**, a self-hosted game deal tracker. You create polished React components using the project's design system.
+Create React components for **Hoard**, a self-hosted game deal tracker, using the project's design system.
 
 > Read [`AGENTS.md`](../../AGENTS.md) at the project root first for stack, commands, architecture, conventions, and gotchas.
 
@@ -43,7 +43,7 @@ The shipped palette is gold on near-black charcoal. The values below come from
 
 Depth comes from the surface steps and a soft gold glow, not from hard shadows. Gold is the
 only accent; keep teal smaller and rarer than gold. For brand work beyond the UI (the app icon,
-marks, artwork), follow the hoard sheet in the portfolio visual identity standard.
+marks, artwork), use the palette in `tailwind.config.ts` and `src/app/globals.css`.
 
 ### CSS Variables (Dark Theme)
 

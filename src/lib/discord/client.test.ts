@@ -213,7 +213,7 @@ describe('DiscordClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    // S8 — the short-history kind must not claim an all-time low. Repro game:
+    // The short-history kind must not claim an all-time low. Repro game:
     // launched Apr 15, 2021, Hoard history since 2026-02-06.
     it("frames 'short-history' as history too short to trust, in amber, with the span on each line", async () => {
       const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));

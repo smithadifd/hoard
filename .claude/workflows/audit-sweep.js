@@ -8,9 +8,8 @@ export const meta = {
   ],
 }
 
-// Thin wrapper over the shared toolkit auditor. The generic script is the single
-// source of truth for the lens checklists and orchestration; this only injects
-// Hoard-specific "where to look" hints and the project's audit-state path.
+// Adds Hoard-specific audit hints and output locations to the shared auditor.
+// The workflow call below specifies the external dependency and defaults.
 // Override-able via args (e.g. args.lenses to restrict the run).
 const A = args || {}
 

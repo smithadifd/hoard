@@ -1,5 +1,5 @@
 /**
- * The learning ranker (Queue S S9 step c). Scores an owned game for the Up Next
+ * The learning ranker. Scores an owned game for the Up Next
  * queue from purely implicit signals so the surface personalises with ZERO
  * manual triage:
  *

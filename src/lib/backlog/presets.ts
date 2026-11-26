@@ -1,7 +1,7 @@
 import type { GameFilters } from '@/types';
 
 /**
- * ONE source of truth for the backlog's curated picks (Queue S S9 step d).
+ * Single source of truth for the backlog's curated picks.
  *
  * Historically these lived in two disjoint places: the six server-side
  * `BACKLOG_PRESETS` (the backlog page's filter chips) and a separate hard-coded

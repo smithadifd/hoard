@@ -116,21 +116,15 @@ describe('similarity', () => {
 });
 
 // ---------------------------------------------------------------------------
-// non-ASCII behavior (AI8 — was a lossy-behavior characterization under AH11)
+// Non-ASCII title preservation
 // ---------------------------------------------------------------------------
-// AH11 pinned the then-CURRENT lossy behavior here as a characterization,
-// explicitly so a deliberate fix could flip these pins loudly instead of
-// silently. AI8 is that fix: `cleanSearchTitle`'s character class is now
-// `[^\p{L}\p{N}_\s'-]` with the `u` flag, so `\p{L}`/`\p{N}` keep letters and
-// digits from ANY script (accented Latin, Cyrillic, Greek, CJK, kana, ...)
-// instead of only ASCII `\w`. Since the cleaned title is what gets sent to
-// HLTB as the search query (client.ts) *and* what candidate names are scored
-// against (via `similarity`), a non-Latin title no longer gets mangled
-// ("Pokémon" -> "Pok mon") or erased entirely ("Гарри Поттер" -> ""), which
-// used to make `similarity('', x)` always 0 — i.e. it could never match.
-//
-// See the PR description for the pin-by-pin old-expectation -> new-expectation
-// table.
+// `cleanSearchTitle` uses `[^\p{L}\p{N}_\s'-]` with the `u` flag, so
+// `\p{L}`/`\p{N}` keep letters and digits from any script (accented Latin,
+// Cyrillic, Greek, CJK, kana, ...) instead of only ASCII `\w`.
+// The cleaned title is sent to HLTB as the search query (client.ts) and used
+// to score candidate names (via `similarity`). Preserving non-Latin letters
+// avoids mangling "Pokémon" into "Pok mon" or erasing "Гарри Поттер" entirely:
+// `similarity('', x)` is always 0, so an erased title cannot match.
 describe('cleanSearchTitle — non-ASCII behavior (AH11 pins flipped by AI8)', () => {
   it.each([
     // Accented Latin: the accented letter now survives (was: dropped, leaving a gap).
@@ -165,12 +159,10 @@ describe('cleanSearchTitle — non-ASCII behavior (AH11 pins flipped by AI8)', (
 
   // KNOWN LIMITATION — cross-script matching is unsolved (pinned, not fixed).
   //
-  // AI8 only fixes cleanSearchTitle() so a non-Latin title survives cleaning
-  // instead of being erased to ''. It does NOT make similarity() (a plain
-  // character-overlap ratio) understand that "Гарри Поттер" and "Harry Potter"
-  // name the same game — that would require transliteration/romanization or an
-  // alias table, which is a separate, net-new capability (design work, not a
-  // bugfix) and is explicitly out of scope for this PR.
+  // cleanSearchTitle() preserves a non-Latin title instead of erasing it to ''.
+  // It does NOT make similarity() (a plain character-overlap ratio) understand
+  // that "Гарри Поттер" and "Harry Potter" name the same game. Cross-script
+  // matching would require transliteration, romanization, or an alias table.
   //
   // HLTBClient.search() (src/lib/hltb/client.ts:204,210,224) discards any
   // result scoring below `similarity >= 0.4` (SIMILARITY_THRESHOLD in the
